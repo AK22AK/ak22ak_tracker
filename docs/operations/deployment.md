@@ -18,7 +18,9 @@
 
 1. 在 Neon 创建数据库并设置 `DATABASE_URL`。
 2. 生成并执行 Drizzle migration。
-3. 在 GitHub 创建 OAuth App，回调地址指向正式 Vercel 域名。
+3. 在 GitHub 创建 OAuth App，主页指向正式 Vercel 域名，回调地址使用
+   `/api/auth/callback/github`；同时配置 `NEXTAUTH_URL`、`AUTH_SECRET` 和
+   `ALLOWED_GITHUB_LOGIN`。
 4. 在 Vercel 导入公共代码仓库并配置 `.env.example` 中的服务端变量。
 5. 为私有数据仓库创建最小权限 token。
 6. 配置每日 Garmin 同步和 GitHub outbox Cron；Cron 路由验证 Bearer
@@ -35,7 +37,12 @@
 - AI 任务失败保留原始反馈，允许稍后重试。
 - 每次 Schema 变更先迁移数据库，再更新私有仓库 Schema 快照。
 
-## 尚未配置
+## 当前部署状态
 
-当前仓库没有真实 Secrets，也未连接生产 Neon、Vercel、OAuth、Garmin 或
-DeepSeek。空状态页面可构建运行，但真实数据闭环需完成上述基础设施步骤。
+- Vercel 正式地址：`https://ak22ak-tracker.vercel.app`。
+- Neon `ak22ak-tracker` 项目已创建，首个 Drizzle migration 已执行；
+  `DATABASE_URL` 只保存在 Vercel 的敏感环境变量中。
+- `AUTH_SECRET`、`NEXTAUTH_URL` 与账号白名单已配置；GitHub OAuth App 仍需创建
+  并将 Client ID/Secret 写入 Vercel。
+- Garmin、DeepSeek 和 GitHub 私有数据镜像凭证尚未配置。
+- Vercel 与 GitHub 的自动部署集成尚未连接，目前由受信任的本地环境手动部署。

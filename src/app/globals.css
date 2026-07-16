@@ -31,6 +31,45 @@ body {
     var(--font-geist-sans), "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
+.login-shell {
+  display: grid;
+  min-height: 100dvh;
+  padding: 1.25rem;
+  place-items: center;
+}
+
+.login-card {
+  width: min(100%, 25rem);
+  padding: 2rem;
+  border-radius: 1.6rem;
+  background: var(--green);
+  color: white;
+  box-shadow: 0 24px 70px rgba(25, 49, 41, 0.18);
+}
+
+.login-card h1 {
+  margin-top: 0.35rem;
+}
+
+.login-card > p:not(.eyebrow) {
+  margin-top: 1rem;
+  color: #c7d7d0;
+  line-height: 1.7;
+}
+
+.sign-in-button {
+  width: 100%;
+  margin-top: 1.5rem;
+  padding: 0.9rem 1rem;
+  border: 0;
+  border-radius: 0.9rem;
+  background: white;
+  color: var(--green);
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
 button,
 a {
   -webkit-tap-highlight-color: transparent;
