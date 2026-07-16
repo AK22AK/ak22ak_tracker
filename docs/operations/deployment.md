@@ -40,9 +40,11 @@
 ## 当前部署状态
 
 - Vercel 正式地址：`https://ak22ak-tracker.vercel.app`。
-- Neon `ak22ak-tracker` 项目已创建，首个 Drizzle migration 已执行；
+- Neon `ak22ak-tracker` 项目已创建，当前 Drizzle migrations 已执行；
   `DATABASE_URL` 只保存在 Vercel 的敏感环境变量中。
 - GitHub OAuth App、`AUTH_SECRET`、`NEXTAUTH_URL` 与 `AK22AK` 账号白名单均已
   配置；未登录访问会跳转到登录页，生产环境首次登录已验证。
+- 首份计划已按 `2026-07-18` 起始日导入；数据库中包含一个计划版本和 60 个
+  待使用者确认的任务实例。
 - Garmin、DeepSeek 和 GitHub 私有数据镜像凭证尚未配置。
 - Vercel 与 GitHub 的自动部署集成尚未连接，目前由受信任的本地环境手动部署。

@@ -6,5 +6,7 @@ export function isAllowedGithubLogin(
     return false;
   }
 
-  return login.toLocaleLowerCase("en-US") === allowedLogin.toLocaleLowerCase("en-US");
+  return (
+    login.toLocaleLowerCase("en-US") === allowedLogin.toLocaleLowerCase("en-US")
+  );
 }

@@ -97,6 +97,10 @@ export const taskInstances = pgTable(
     subjectiveNote: text("subjective_note"),
   },
   (table) => [
+    uniqueIndex("task_instances_plan_task_unique").on(
+      table.planVersionId,
+      table.taskDefinitionId,
+    ),
     index("task_instances_tracker_date_index").on(
       table.trackerId,
       table.scheduledOn,

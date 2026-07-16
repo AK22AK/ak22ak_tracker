@@ -182,6 +182,177 @@ h2 {
   line-height: 1.65;
 }
 
+.task-list {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1.2rem;
+}
+
+.task-card {
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.task-card.completed {
+  background: rgba(125, 190, 158, 0.15);
+}
+
+.task-card.skipped {
+  opacity: 0.78;
+}
+
+.task-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.task-title-row em {
+  flex: 0 0 auto;
+  color: #bcd1c8;
+  font-size: 0.72rem;
+  font-style: normal;
+}
+
+.task-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  cursor: pointer;
+}
+
+.task-check input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.task-check span {
+  flex: 0 0 auto;
+  width: 1.35rem;
+  height: 1.35rem;
+  border: 1.5px solid #8bad9e;
+  border-radius: 0.4rem;
+}
+
+.task-check input:checked + span {
+  display: grid;
+  place-items: center;
+  border-color: #99cdb5;
+  background: #99cdb5;
+}
+
+.task-check input:checked + span::after {
+  color: var(--green);
+  content: "✓";
+  font-size: 0.9rem;
+  font-weight: 900;
+}
+
+.task-description {
+  margin: 0.65rem 0 0 2.05rem;
+  color: #c7d7d0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.task-card details {
+  margin: 0.85rem 0 0 2.05rem;
+}
+
+.task-card summary {
+  color: #d9e6e0;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.prescription {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.7rem;
+  color: #c7d7d0;
+  font-size: 0.76rem;
+  line-height: 1.55;
+}
+
+.prescription p strong {
+  display: block;
+  color: white;
+}
+
+.prescription ul {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.prescription li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.prescription li span {
+  text-align: right;
+}
+
+.task-note {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.9rem 0 0 2.05rem;
+  color: #d9e6e0;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.task-note textarea,
+.check-in-form textarea {
+  min-height: 5.5rem;
+  resize: vertical;
+}
+
+.task-note textarea,
+.check-in-form input,
+.check-in-form select,
+.check-in-form textarea {
+  width: 100%;
+  padding: 0.72rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+}
+
+.task-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+  margin: 0.75rem 0 0 2.05rem;
+}
+
+.task-actions button {
+  padding: 0.65rem;
+  border: 0;
+  border-radius: 0.7rem;
+  background: #dcebe4;
+  color: var(--green);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.task-actions button.quiet {
+  background: rgba(255, 255, 255, 0.09);
+  color: #c7d7d0;
+}
+
 .empty-task {
   display: flex;
   gap: 0.85rem;
@@ -233,6 +404,11 @@ h2 {
   box-sizing: content-box;
 }
 
+.status-dot.done {
+  border-color: #c9e5d6;
+  background: #42a279;
+}
+
 .feedback-card > p {
   margin-top: 0.7rem;
   color: var(--muted);
@@ -250,6 +426,83 @@ h2 {
   color: #6c8178;
   font: inherit;
   font-weight: 700;
+  cursor: pointer;
+}
+
+.feedback-card button:disabled,
+.task-actions button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.safety-message {
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+}
+
+.safety-message.green {
+  background: #e1f1e8;
+  color: #255b43;
+}
+
+.safety-message.yellow {
+  background: #fff1d6;
+  color: #81551f;
+}
+
+.safety-message.red {
+  background: #fee3df;
+  color: #8a3028;
+}
+
+.check-in-form {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.check-in-form > label,
+.pain-grid label {
+  display: grid;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.pain-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.7rem;
+}
+
+.check-in-form fieldset {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+}
+
+.check-in-form legend {
+  padding: 0 0.35rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.check-in-form fieldset label {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.8rem;
+}
+
+.check-in-form fieldset input {
+  width: auto;
 }
 
 .status-grid {

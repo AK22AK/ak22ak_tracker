@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "task_instances_plan_task_unique" ON "task_instances" USING btree ("plan_version_id","task_definition_id");
