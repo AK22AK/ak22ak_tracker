@@ -95,6 +95,12 @@ a {
   margin-bottom: 1.25rem;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 h1,
 h2,
 p {
@@ -150,6 +156,30 @@ h2 {
 
 .network-pill.offline span {
   background: var(--orange);
+}
+
+.refresh-button {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.32rem;
+  padding: 0.5rem 0.68rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--green);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.refresh-button span {
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.refresh-button:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .hero-card,

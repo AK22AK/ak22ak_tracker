@@ -305,6 +305,7 @@ export function DashboardShell({
     initialDashboard.feedbackCount,
   );
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [lastSafety, setLastSafety] = useState<
     "green" | "yellow" | "red" | null
   >(null);
@@ -329,9 +330,25 @@ export function DashboardShell({
           <p className="eyebrow">AK Tracker</p>
           <h1>{today}</h1>
         </div>
-        <div className={`network-pill ${online ? "online" : "offline"}`}>
-          <span aria-hidden="true" />
-          {online ? "已联网" : "当前离线"}
+        <div className="topbar-actions">
+          <button
+            className="refresh-button"
+            type="button"
+            aria-label="刷新今日数据"
+            title={online ? "刷新今日数据" : "联网后刷新"}
+            disabled={!online || refreshing}
+            onClick={() => {
+              setRefreshing(true);
+              window.location.reload();
+            }}
+          >
+            <span aria-hidden="true">↻</span>
+            {refreshing ? "刷新中" : "刷新"}
+          </button>
+          <div className={`network-pill ${online ? "online" : "offline"}`}>
+            <span aria-hidden="true" />
+            {online ? "已联网" : "当前离线"}
+          </div>
         </div>
       </header>
 
