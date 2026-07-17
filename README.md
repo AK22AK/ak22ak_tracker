@@ -57,9 +57,12 @@ pnpm plan:import /absolute/path/to/plan-version.json
 
 - [产品范围](docs/product-requirements.md)
 - [系统架构](docs/architecture/overview.md)
+- [功能实现总图](docs/architecture/feature-implementation-map.md)
+- [客户端数据与导航](docs/architecture/client-data-and-navigation.md)
 - [数据与同步](docs/architecture/data-and-sync.md)
 - [离线流程](docs/architecture/offline.md)
 - [AI 计划调整](docs/architecture/ai-plan-adjustment.md)
+- [产品与视觉系统](docs/design/product-and-visual-system.md)
 - [安全与隐私](docs/security.md)
 - [部署与运行](docs/operations/deployment.md)
 - [Garmin 集成](docs/operations/garmin.md)

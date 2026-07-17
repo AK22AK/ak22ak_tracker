@@ -14,6 +14,13 @@
 免费套餐适合个人第一版，但需要关注 Neon 休眠/容量、Vercel Function 与 Cron
 限制以及外部 API 用量。运行时数据不依赖 Vercel 本地文件系统。
 
+Vercel 新项目的函数默认运行在 `iad1`。函数应与 Neon 数据库部署在同一区域；
+不能只按用户位置选择函数，否则每条 SQL 都会跨区域。当前生产响应显示函数在
+`iad1`，Neon 区域仍需在控制台确认。确认前不盲目迁移任一服务。
+
+Vercel Hobby Cron 只能每日运行一次，并可能在目标小时内任意时刻触发。它适合
+每日 Garmin 同步、GitHub outbox 扫描和弱提醒，不适合分钟级精确通知。
+
 ## 部署步骤
 
 1. 在 Neon 创建数据库并设置 `DATABASE_URL`。
@@ -36,6 +43,8 @@
 - GitHub outbox 监控待处理数量、最老任务年龄和最近权限错误。
 - AI 任务失败保留原始反馈，允许稍后重试。
 - 每次 Schema 变更先迁移数据库，再更新私有仓库 Schema 快照。
+- Hobby Runtime Logs 保留时间有限，关键重试和最近错误状态必须写入数据库，
+  不能只依赖平台日志。
 
 ## 当前部署状态
 
@@ -46,5 +55,21 @@
   配置；未登录访问会跳转到登录页，生产环境首次登录已验证。
 - 首份计划已按 `2026-07-18` 起始日导入；数据库中包含一个计划版本和 60 个
   待使用者确认的任务实例。
-- Garmin、DeepSeek 和 GitHub 私有数据镜像凭证尚未配置。
+- Garmin、DeepSeek 和 GitHub 私有数据镜像凭证尚未配置。Garmin 接入需按最新
+  风险记录重新验证，不能继续把已弃用 Garth 当唯一方案。
 - Vercel 与 GitHub 的自动部署集成尚未连接，目前由受信任的本地环境手动部署。
+
+## 外部约束快照（2026-07-17）
+
+- Vercel Hobby Function 默认最长 10 秒，可配置到 60 秒；AI 调用必须设置更短
+  超时并保存可重试任务状态。
+- Vercel Python Runtime 仍为 Beta；Garmin 依赖需要先做部署 Spike。
+- DeepSeek 模型命名正在迁移，模型通过 `DEEPSEEK_MODEL` 配置，不写死旧兼容名。
+- iOS 主屏 Web App 支持 Web Push，但只能在用户操作后请求权限。
+
+## 参考
+
+- [Vercel Function regions](https://vercel.com/docs/functions/configuring-functions/region)
+- [Vercel Cron usage](https://vercel.com/docs/cron-jobs/usage-and-pricing)
+- [Vercel Hobby plan](https://vercel.com/docs/plans/hobby)
+- [Web Push on iOS and iPadOS](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/)
