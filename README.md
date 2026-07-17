@@ -57,6 +57,7 @@ pnpm plan:import /absolute/path/to/plan-version.json
 
 - [产品范围](docs/product-requirements.md)
 - [系统架构](docs/architecture/overview.md)
+- [技术选型总表](docs/architecture/technology-selection.md)
 - [功能实现总图](docs/architecture/feature-implementation-map.md)
 - [客户端数据与导航](docs/architecture/client-data-and-navigation.md)
 - [数据与同步](docs/architecture/data-and-sync.md)
