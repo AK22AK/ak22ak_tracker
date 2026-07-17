@@ -341,6 +341,75 @@ h2 {
   font-weight: 700;
 }
 
+.task-actual {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0.95rem 0 0 2.05rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.task-actual > strong {
+  color: #d9e6e0;
+  font-size: 0.78rem;
+}
+
+.actual-exercise-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.actual-exercise {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.actual-exercise label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  color: #d9e6e0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.actual-exercise input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  margin: 0.05rem 0 0;
+  accent-color: #99cdb5;
+}
+
+.task-actual input:not([type="checkbox"]) {
+  width: 100%;
+  min-width: 0;
+  padding: 0.62rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 0.65rem;
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.75rem;
+}
+
+.task-actual > label,
+.actual-number-grid label {
+  display: grid;
+  gap: 0.35rem;
+  color: #d9e6e0;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.actual-number-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
 .task-note textarea,
 .check-in-form textarea {
   min-height: 5.5rem;
@@ -381,6 +450,20 @@ h2 {
 .task-actions button.quiet {
   background: rgba(255, 255, 255, 0.09);
   color: #c7d7d0;
+}
+
+.task-save-message {
+  margin: 0.65rem 0 0 2.05rem;
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.task-save-message.success {
+  color: #a9dbc3;
+}
+
+.task-save-message.error {
+  color: #ffd0c8;
 }
 
 .empty-task {

@@ -4,13 +4,18 @@ import { and, eq } from "drizzle-orm";
 import { getServerSession } from "next-auth";
 import { z } from "zod";
 
-import { schemaVersion, trackerEventSchema } from "@/domain/schemas";
+import {
+  schemaVersion,
+  taskActualSchema,
+  trackerEventSchema,
+} from "@/domain/schemas";
 import { authOptions } from "@/server/auth/options";
 import { getDatabase } from "@/server/db/client";
 import { events, taskInstances, trackers } from "@/server/db/schema";
 
 const updateTaskSchema = z.object({
   status: z.enum(["planned", "completed", "skipped"]),
+  actual: taskActualSchema.nullable().optional(),
   note: z.string().max(2_000).nullable().optional(),
 });
 
@@ -49,6 +54,7 @@ export async function PATCH(
       status: input.status,
       completedAt: input.status === "completed" ? now : null,
       confirmedByUser: input.status !== "planned",
+      actualData: input.actual,
       subjectiveNote: input.note,
     })
     .where(eq(taskInstances.id, task.id))
@@ -67,6 +73,7 @@ export async function PATCH(
     payload: {
       taskInstanceId: task.id,
       status: input.status,
+      actual: input.actual ?? null,
       note: input.note ?? null,
     },
     provenance: { source: "user" },

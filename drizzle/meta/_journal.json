@@ -15,6 +15,13 @@
       "when": 1784193603552,
       "tag": "0001_huge_cassandra_nova",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784268740201,
+      "tag": "0002_busy_impossible_man",
+      "breakpoints": true
     }
   ]
 }

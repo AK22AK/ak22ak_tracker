@@ -2,6 +2,7 @@
 
 import { type FormEvent, useState, useSyncExternalStore } from "react";
 
+import type { TaskActual } from "@/domain/schemas";
 import type { DashboardTask, TodayDashboard } from "@/server/dashboard";
 
 function subscribeToNetworkState(onStoreChange: () => void) {
@@ -33,12 +34,8 @@ function valueText(value: unknown): string | null {
   return null;
 }
 
-function Prescription({
-  prescription,
-}: {
-  prescription: Record<string, unknown>;
-}) {
-  const exercises = Array.isArray(prescription.exercises)
+function prescriptionExercises(prescription: Record<string, unknown>) {
+  return Array.isArray(prescription.exercises)
     ? prescription.exercises.filter(
         (item): item is { name: string; dose: string } =>
           typeof item === "object" &&
@@ -47,6 +44,44 @@ function Prescription({
           typeof (item as Record<string, unknown>).dose === "string",
       )
     : [];
+}
+
+function initialTaskActual(task: DashboardTask): TaskActual {
+  if (task.actual) return task.actual;
+
+  const exercises = prescriptionExercises(task.prescription);
+  const kind =
+    exercises.length > 0
+      ? "exercise_list"
+      : task.category.includes("run")
+        ? "endurance"
+        : "general";
+
+  return {
+    kind,
+    exercises: exercises.map((exercise) => ({
+      name: exercise.name,
+      completed: false,
+      actual: "",
+    })),
+    durationMinutes: null,
+    distanceKm: null,
+    summary: "",
+  };
+}
+
+function nullableNumber(value: string) {
+  if (value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function Prescription({
+  prescription,
+}: {
+  prescription: Record<string, unknown>;
+}) {
+  const exercises = prescriptionExercises(prescription);
   const summaryKeys = [
     ["warmup", "热身"],
     ["effort", "强度"],
@@ -92,18 +127,36 @@ function TaskCard({
   onUpdated: (task: DashboardTask) => void;
 }) {
   const [note, setNote] = useState(task.subjectiveNote ?? "");
+  const [actual, setActual] = useState(() => initialTaskActual(task));
   const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [saveFailed, setSaveFailed] = useState(false);
 
   async function save(status: DashboardTask["status"], nextNote = note) {
     setSaving(true);
+    setSaveMessage(null);
+    setSaveFailed(false);
     try {
       const response = await fetch(`/api/tasks/${task.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, note: nextNote || null }),
+        body: JSON.stringify({
+          status,
+          actual,
+          note: nextNote || null,
+        }),
       });
       if (!response.ok) throw new Error("task_update_failed");
-      onUpdated({ ...task, status, subjectiveNote: nextNote || null });
+      onUpdated({
+        ...task,
+        status,
+        actual,
+        subjectiveNote: nextNote || null,
+      });
+      setSaveMessage(status === "completed" ? "已保存并完成" : "记录已保存");
+    } catch {
+      setSaveFailed(true);
+      setSaveMessage("保存失败，请检查网络后重试");
     } finally {
       setSaving(false);
     }
@@ -134,6 +187,127 @@ function TaskCard({
         <summary>查看计划内容</summary>
         <Prescription prescription={task.prescription} />
       </details>
+      <div className="task-actual">
+        <strong>实际完成情况</strong>
+        {actual.kind === "exercise_list" && (
+          <div className="actual-exercise-list">
+            {actual.exercises.map((exercise, index) => (
+              <div
+                className="actual-exercise"
+                key={`${exercise.name}-${index}`}
+              >
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={exercise.completed}
+                    disabled={saving}
+                    onChange={(event) =>
+                      setActual((current) => ({
+                        ...current,
+                        exercises: current.exercises.map((item, itemIndex) =>
+                          itemIndex === index
+                            ? { ...item, completed: event.target.checked }
+                            : item,
+                        ),
+                      }))
+                    }
+                  />
+                  {exercise.name}
+                </label>
+                <input
+                  value={exercise.actual}
+                  maxLength={500}
+                  disabled={saving}
+                  aria-label={`${exercise.name}实际重量组次`}
+                  placeholder="例如 40 kg，2×10"
+                  onChange={(event) =>
+                    setActual((current) => ({
+                      ...current,
+                      exercises: current.exercises.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? { ...item, actual: event.target.value }
+                          : item,
+                      ),
+                    }))
+                  }
+                />
+              </div>
+            ))}
+          </div>
+        )}
+        {actual.kind === "endurance" && (
+          <>
+            <div className="actual-number-grid">
+              <label>
+                实际时长（分钟）
+                <input
+                  type="number"
+                  min="0"
+                  max="1440"
+                  step="1"
+                  value={actual.durationMinutes ?? ""}
+                  disabled={saving}
+                  onChange={(event) =>
+                    setActual((current) => ({
+                      ...current,
+                      durationMinutes: nullableNumber(event.target.value),
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                实际距离（km）
+                <input
+                  type="number"
+                  min="0"
+                  max="1000"
+                  step="0.01"
+                  value={actual.distanceKm ?? ""}
+                  disabled={saving}
+                  onChange={(event) =>
+                    setActual((current) => ({
+                      ...current,
+                      distanceKm: nullableNumber(event.target.value),
+                    }))
+                  }
+                />
+              </label>
+            </div>
+            <label>
+              实际跑步／跑走结构
+              <input
+                value={actual.summary}
+                maxLength={2000}
+                disabled={saving}
+                placeholder="例如跑 2 分钟、走 1 分钟，共 6 轮"
+                onChange={(event) =>
+                  setActual((current) => ({
+                    ...current,
+                    summary: event.target.value,
+                  }))
+                }
+              />
+            </label>
+          </>
+        )}
+        {actual.kind === "general" && (
+          <label>
+            实际训练内容
+            <input
+              value={actual.summary}
+              maxLength={2000}
+              disabled={saving}
+              placeholder="记录实际完成的内容"
+              onChange={(event) =>
+                setActual((current) => ({
+                  ...current,
+                  summary: event.target.value,
+                }))
+              }
+            />
+          </label>
+        )}
+      </div>
       <label className="task-note">
         实际训练与主观感受
         <textarea
@@ -149,7 +323,7 @@ function TaskCard({
           disabled={saving}
           onClick={() => save(task.status)}
         >
-          保存备注
+          {saving ? "保存中…" : "保存训练记录"}
         </button>
         <button
           className="quiet"
@@ -162,6 +336,11 @@ function TaskCard({
           {task.status === "skipped" ? "恢复为待完成" : "今天跳过"}
         </button>
       </div>
+      {saveMessage && (
+        <p className={`task-save-message ${saveFailed ? "error" : "success"}`}>
+          {saveMessage}
+        </p>
+      )}
     </article>
   );
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "task_instances" ADD COLUMN "actual_data" jsonb;

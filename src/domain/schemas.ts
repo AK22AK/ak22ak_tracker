@@ -22,6 +22,23 @@ export const planTaskSchema = z.object({
   prescription: z.record(z.string(), z.unknown()).default({}),
 });
 
+export const taskActualSchema = z.object({
+  kind: z.enum(["exercise_list", "endurance", "general"]),
+  exercises: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(200),
+        completed: z.boolean(),
+        actual: z.string().max(500),
+      }),
+    )
+    .max(50)
+    .default([]),
+  durationMinutes: z.number().nonnegative().max(1_440).nullable().default(null),
+  distanceKm: z.number().nonnegative().max(1_000).nullable().default(null),
+  summary: z.string().max(2_000).default(""),
+});
+
 export const planVersionSchema = z.object({
   schemaVersion: z.literal(schemaVersion),
   id: z.uuid(),
@@ -116,3 +133,4 @@ export type PlanVersion = z.infer<typeof planVersionSchema>;
 export type TrackerEvent = z.infer<typeof trackerEventSchema>;
 export type ExternalRecord = z.infer<typeof externalRecordSchema>;
 export type PlanChangeProposal = z.infer<typeof planChangeProposalSchema>;
+export type TaskActual = z.infer<typeof taskActualSchema>;

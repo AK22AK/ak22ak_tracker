@@ -2,7 +2,7 @@ import "server-only";
 
 import { and, count, desc, eq } from "drizzle-orm";
 
-import { planVersionSchema } from "@/domain/schemas";
+import { planVersionSchema, type TaskActual } from "@/domain/schemas";
 
 import { getDatabase } from "./db/client";
 import { events, planVersions, taskInstances, trackers } from "./db/schema";
@@ -14,6 +14,7 @@ export type DashboardTask = {
   category: string;
   prescription: Record<string, unknown>;
   status: "planned" | "completed" | "skipped";
+  actual: TaskActual | null;
   subjectiveNote: string | null;
 };
 
@@ -100,6 +101,7 @@ export async function getTodayDashboard(
         category: definition.category,
         prescription: definition.prescription,
         status: instance.status,
+        actual: instance.actualData,
         subjectiveNote: instance.subjectiveNote,
       } satisfies DashboardTask;
     })

@@ -16,6 +16,7 @@ import type {
   ExternalRecord,
   PlanChangeProposal,
   PlanVersion,
+  TaskActual,
   TrackerEvent,
 } from "@/domain/schemas";
 
@@ -94,6 +95,7 @@ export const taskInstances = pgTable(
     status: taskStatus("status").default("planned").notNull(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     confirmedByUser: boolean("confirmed_by_user").default(false).notNull(),
+    actualData: jsonb("actual_data").$type<TaskActual>(),
     subjectiveNote: text("subjective_note"),
   },
   (table) => [
