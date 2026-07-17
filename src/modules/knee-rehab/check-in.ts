@@ -17,6 +17,10 @@ export const kneeCheckInInputSchema = z.object({
 export type KneeCheckInInput = z.infer<typeof kneeCheckInInputSchema>;
 export type SafetyLevel = "green" | "yellow" | "red";
 
+export const kneeCheckInEventPayloadSchema = kneeCheckInInputSchema.extend({
+  safetyLevel: z.enum(["green", "yellow", "red"]),
+});
+
 export function evaluateKneeCheckIn(input: KneeCheckInInput): SafetyLevel {
   if (
     input.swelling === "obvious" ||

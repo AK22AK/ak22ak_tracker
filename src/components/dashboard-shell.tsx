@@ -5,6 +5,8 @@ import { type FormEvent, useState, useSyncExternalStore } from "react";
 import type { TaskActual } from "@/domain/schemas";
 import type { DashboardTask, TodayDashboard } from "@/server/dashboard";
 
+import { BottomNav } from "./bottom-nav";
+
 function subscribeToNetworkState(onStoreChange: () => void) {
   window.addEventListener("online", onStoreChange);
   window.addEventListener("offline", onStoreChange);
@@ -643,20 +645,7 @@ export function DashboardShell({
         </article>
       </section>
 
-      <nav className="bottom-nav" aria-label="主导航">
-        <a href="#" aria-current="page">
-          <span aria-hidden="true">⌂</span>今日
-        </a>
-        <a href="#">
-          <span aria-hidden="true">✓</span>记录
-        </a>
-        <a href="#">
-          <span aria-hidden="true">⌁</span>趋势
-        </a>
-        <a href="#">
-          <span aria-hidden="true">•••</span>设置
-        </a>
-      </nav>
+      <BottomNav current="today" />
     </main>
   );
 }
