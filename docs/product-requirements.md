@@ -1,4 +1,10 @@
-# 产品范围
+# 产品需求
+
+## 文档职责
+
+本文是 AK Tracker 的产品目标、用户旅程、第一版范围和成功标准的权威来源。系统
+怎样实现见[系统架构总览](architecture/overview.md)，当前完成度和实施顺序见
+[项目计划](project-plan.md)，界面规范见[产品与 UI/UX 设计系统](design/product-and-visual-system.md)。
 
 ## 定位
 

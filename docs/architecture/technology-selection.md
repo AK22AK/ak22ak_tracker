@@ -1,13 +1,18 @@
 # 技术选型总表
 
+## 文档职责
+
+本文维护已经选择的技术、它们在系统中的职责、选择原因和替换边界。具体版本以
+`package.json` 和 lockfile 为准，当前未决项和实施状态由[项目计划](../project-plan.md)
+维护，重要决策原因由[ADR](../adr/README.md)维护。
+
 ## 目标与约束
 
 AK Tracker 第一版是单用户、手机优先的私人追踪应用。技术选择优先满足：快速进入、
 可安装 PWA、认证数据不公开、离线记录不丢、计划版本可审计、外部服务故障不阻塞
 核心流程，以及公共代码与私人数据彻底分离。
 
-具体依赖版本以 `package.json` 和 lockfile 为准；本文记录选择原因、职责和替换边界，
-不重复维护易过期的版本号。
+本文不重复维护易过期的依赖版本号。
 
 ## 已确定的技术栈
 
@@ -31,43 +36,17 @@ AK Tracker 第一版是单用户、手机优先的私人追踪应用。技术选
 | 浏览器测试     | Playwright                                              | 核心旅程、离线、缓存、移动视口                | 覆盖完整 PWA 数据流；iPhone 特有行为仍需真机验收                   |
 | 数据库集成测试 | 临时 PostgreSQL + 正式 migration                        | 事务、约束、并发和 outbox                     | 不用私人 Neon 数据；验证真实 PostgreSQL 语义                       |
 
-## 关键实现限定
+## 设计约束的权威位置
 
-### 数据读取
+技术选型只维护采用的技术、职责、选择原因和替换边界。具体运行规则由专题架构文档
+维护，避免同一约束在多处分别更新：
 
-- Server Component 只负责首次框架和必要预取；日期、Tab 和表单交互由客户端先
-  提交状态。
-- 月摘要和日详情分别查询与缓存；计划必须按目标日期解析有效版本，不能一律读取
-  最新版本。
-- API 返回页面所需聚合 DTO，不让页面拼接多轮数据库调用。
-
-### 数据写入
-
-- 客户端生成 command ID、稳定 UUID、idempotency key，并在需要时携带
-  `expectedRevision`。
-- 任务投影、追加事件与 GitHub outbox 必须原子写入。
-- 当前 `neon-http` Adapter 不使用不受支持的交互式事务。固定写入可使用单条
-  PostgreSQL CTE 或 Neon HTTP batch transaction；如果命令确实需要交互式事务，
-  则在数据库 Seam 使用支持事务的 Adapter，不能退回到多次顺序写入。
-- 在线与离线重放调用同一个命令 Interface，不为离线另造一套业务规则。
-
-### 客户端与离线
-
-- TanStack Query 是运行期读模型，不是权威数据库。
-- IndexedDB 只持久化允许离线查看的 DTO 和待同步命令，并按用户、Schema 与
-  Tracker 分区。
-- Service Worker 不保存私人 HTML 或认证数据。退出、身份变化和清除本机数据会
-  统一清理缓存。
-- iOS 不依赖 Background Sync；启动、联网、重新可见、获得焦点和手动操作都会
-  尝试重放。
-
-### 外部服务
-
-- Garmin、DeepSeek、GitHub 和 Push 分别通过 Adapter 与状态表接入；任何一个
-  失败都不能让今日计划或反馈入口不可用。
-- DeepSeek 返回值经过 JSON、Zod、确定性安全规则和基础版本校验，只保存为
-  Proposal；用户确认后由应用命令执行。
-- GitHub 镜像通过 PostgreSQL outbox 最终一致，同路径写入串行并处理 `409`。
+- 页面读取、App Shell 和 Query Cache：[客户端数据与导航](client-data-and-navigation.md)
+- PostgreSQL、幂等写入、同步和 GitHub outbox：[数据与同步](data-and-sync.md)
+- IndexedDB、Service Worker、离线重放和冲突：[离线流程](offline.md)
+- DeepSeek Proposal、校验、确认和计划版本：[AI 计划调整](ai-plan-adjustment.md)
+- Garmin Provider、同步范围和失败处理：[Garmin 集成](../operations/garmin.md)
+- 当前未决项、部署 Spike 和实施顺序：[项目计划](../project-plan.md)
 
 ## 明确未选择的方案
 
@@ -81,20 +60,10 @@ AK Tracker 第一版是单用户、手机优先的私人追踪应用。技术选
 | 正式链路依赖 Mac mini 中转 Garmin | 手机应用会受一台本地机器在线状态影响；Mac mini 只可用于迁移或开发辅助 |
 | 把全部健康数据同步进项目          | 增加隐私和复杂度；只保留康复相关活动、步行与基础睡眠背景              |
 
-## 尚未最终确定
-
-- UI 视觉方向与核心组件规范已经确定；图标细节、深色模式优先级和关键页面高保真
-  交互原型仍需在实现前验证。
-- Garmin Worker 的最终运行时；先通过部署 Spike 再在 Vercel Python Function 与
-  独立受控 Worker 之间选择。
-- Vercel Function 与 Neon 的最终同区配置；确认 Neon 区域和生产追踪后再调整。
-
-以上未决项都位于既有 Seam，不改变 PostgreSQL 主库、客户端数据引擎、计划版本
-或外部集成隔离等核心架构。
-
 ## 关联决策
 
 - [系统架构](overview.md)
+- [项目计划](../project-plan.md)
 - [客户端数据与导航](client-data-and-navigation.md)
 - [数据与同步](data-and-sync.md)
 - [离线流程](offline.md)

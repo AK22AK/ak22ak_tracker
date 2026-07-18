@@ -1,5 +1,34 @@
 # 数据与同步
 
+## 文档职责
+
+本文是应用后端、数据模型和同步链路的权威架构说明。它负责 API 写入如何进入领域
+服务和 PostgreSQL、外部作业如何编排，以及 PostgreSQL 如何更新私有数据镜像。
+系统级关系见[系统架构总览](overview.md)，浏览器缓存和离线队列见
+[客户端数据与导航](client-data-and-navigation.md)与[离线流程](offline.md)。
+
+## 后端服务边界
+
+```text
+Next.js Route Handler / Cron
+  -> 身份、账号白名单或 Cron Secret
+  -> Zod 输入校验
+  -> 应用命令或查询服务
+  -> 通用领域规则 + Tracker 模块规则
+  -> PostgreSQL Repository / 外部 Adapter
+  -> 聚合 DTO、命令回执或作业状态
+```
+
+- Route Handler 只处理 HTTP、身份和输入输出映射，不在页面层拼接业务事务。
+- 查询服务按页面返回聚合 DTO，统一解析 Tracker、目标日期和有效计划版本。
+- 命令服务负责幂等、基础版本、任务投影、追加事件和 outbox 的原子边界。
+- `src/domain` 只包含纯 Schema 与规则；`src/modules` 提供膝关节等模块策略；数据库、
+  Provider 和 Secrets 只存在于 `src/server`。
+- Cron 和手动操作调用相同的同步服务与幂等规则，不维护第二套业务逻辑。
+
+当前服务端实现仍处于基础切片，目标 API、事务和作业的交付状态以
+[项目计划](../project-plan.md)为准。
+
 ## 权威数据与镜像
 
 PostgreSQL 是应用运行时的主数据库。每次计划、任务状态或反馈更新先以事务写入
@@ -85,3 +114,6 @@ _meta/
 
 公共代码仓库中的 Zod Schema 是开发权威定义。发布数据格式时，将 JSON Schema
 快照复制到私有数据仓库；数据文件通过 `schemaVersion` 指向对应版本。
+
+私有仓库的数据使用规则、目录边界和安全要求由
+[AK Tracker Data README](https://github.com/AK22AK/ak22ak_tracker-data)维护。

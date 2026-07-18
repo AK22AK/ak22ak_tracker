@@ -1,75 +1,141 @@
-# 部署与运行
+# 部署与运行 Runbook
 
-## 服务选择
+## 文档职责
 
-- Vercel Hobby：Next.js 页面、API 和每日 Cron。
-- Neon：托管 PostgreSQL，与 Vercel 独立连接。
-- GitHub 私有仓库：结构化数据镜像。
-- DeepSeek：OpenAI-compatible API，按使用量计费。
+本文维护 AK Tracker 的部署、配置、验证、监控、恢复和回滚步骤。平台选择原因见
+[技术选型](../architecture/technology-selection.md)，当前环境完成度和风险见
+[项目计划](../project-plan.md)。
 
-第一版使用 Vercel 提供的 HTTPS `*.vercel.app` 域名即可。以后可以给 Vercel
-绑定现有域名的子域名；GitHub Pages 的静态站点不能直接承载本项目的服务端 API，
-但同一主域名可以通过不同子域名分别指向 GitHub Pages 和 Vercel。
+## 生产拓扑
 
-免费套餐适合个人第一版，但需要关注 Neon 休眠/容量、Vercel Function 与 Cron
-限制以及外部 API 用量。运行时数据不依赖 Vercel 本地文件系统。
+| 服务            | 运行职责                               | 持久化内容                       |
+| --------------- | -------------------------------------- | -------------------------------- |
+| Vercel          | Next.js 页面、API、静态资源和每日 Cron | 不保存持久业务数据               |
+| Neon            | PostgreSQL 主数据库                    | 计划、任务、事件、版本和状态     |
+| GitHub OAuth    | 单用户身份登录                         | OAuth 授权关系                   |
+| GitHub 数据私仓 | PostgreSQL 的结构化异步镜像            | 版本化 JSON 与 Schema 快照       |
+| DeepSeek        | 受约束的计划调整建议                   | 不持有本系统数据写权限           |
+| Garmin Provider | 活动、基础睡眠和步数输入               | 由 Adapter 读取后写入 PostgreSQL |
 
-Vercel 新项目的函数默认运行在 `iad1`。函数应与 Neon 数据库部署在同一区域；
-不能只按用户位置选择函数，否则每条 SQL 都会跨区域。当前生产响应显示函数在
-`iad1`，Neon 区域仍需在控制台确认。确认前不盲目迁移任一服务。
+正式地址为 `https://ak22ak-tracker.vercel.app`。Vercel Function 应与 Neon 部署在
+同一区域；区域变更必须先以生产追踪确认数据库往返是主要瓶颈，再进行对比和迁移。
 
-Vercel Hobby Cron 只能每日运行一次，并可能在目标小时内任意时刻触发。它适合
-每日 Garmin 同步、GitHub outbox 扫描和弱提醒，不适合分钟级精确通知。
+## 环境配置
 
-## 部署步骤
+具体变量名以 `.env.example` 为准。生产环境变量只保存在 Vercel Secrets，不进入
+GitHub、构建日志、浏览器或数据镜像。
 
-1. 在 Neon 创建数据库并设置 `DATABASE_URL`。
-2. 生成并执行 Drizzle migration。
-3. 在 GitHub 创建 OAuth App，主页指向正式 Vercel 域名，回调地址使用
-   `/api/auth/callback/github`；同时配置 `NEXTAUTH_URL`、`AUTH_SECRET` 和
-   `ALLOWED_GITHUB_LOGIN`。
-4. 在 Vercel 导入公共代码仓库并配置 `.env.example` 中的服务端变量。
-5. 为私有数据仓库创建最小权限 token。
-6. 配置每日 Garmin 同步和 GitHub outbox Cron；Cron 路由验证 Bearer
-   `CRON_SECRET`。
-7. 部署后验证 `/api/health`、未授权访问、登录白名单和 PWA 主屏安装。
-8. 选择计划开始日期，按固定提交版本导入当前计划。
+| 类别         | 配置内容                                          |
+| ------------ | ------------------------------------------------- |
+| 数据库       | Neon `DATABASE_URL`                               |
+| 应用身份     | `NEXTAUTH_URL`、`AUTH_SECRET`、账号白名单         |
+| GitHub OAuth | OAuth Client ID 与 Client Secret                  |
+| 数据镜像     | 只允许目标私仓 Contents 权限的 fine-grained token |
+| DeepSeek     | Base URL、API Key、模型、超时和最大输出长度       |
+| Garmin       | 认证加密密钥及加密后的 Provider Session/Token     |
+| 定时任务     | `CRON_SECRET`                                     |
 
-## 监控与恢复
+变更 Secret 时同步更新本地示例中的变量名，但不记录真实值。Token 轮换后必须验证旧值
+已经失效，并检查对应集成最近一次成功状态。
 
-- 数据库是恢复在线业务的首要来源，私有 GitHub 镜像提供第二份可读历史。
-- Garmin、DeepSeek、GitHub 三类失败分别记录，不让一个集成拖垮今日页面。
-- Garmin 超过一天未成功且最近尝试失败时显示弱提醒；认证错误升级为重新授权。
-- GitHub outbox 监控待处理数量、最老任务年龄和最近权限错误。
-- AI 任务失败保留原始反馈，允许稍后重试。
-- 每次 Schema 变更先迁移数据库，再更新私有仓库 Schema 快照。
-- Hobby Runtime Logs 保留时间有限，关键重试和最近错误状态必须写入数据库，
-  不能只依赖平台日志。
+## 首次部署
 
-## 当前部署状态
+1. 在 Neon 创建数据库，选择与预期 Vercel Function 相同或相近的区域。
+2. 配置本地 `DATABASE_URL`，生成并检查 Drizzle migration。
+3. 对目标数据库执行 migration，并验证 Schema 与 migration journal。
+4. 在 GitHub 创建 OAuth App，主页使用正式域名，回调地址使用
+   `/api/auth/callback/github`。
+5. 在 Vercel 导入公共代码仓库，配置应用身份、数据库和账号白名单变量。
+6. 部署应用，验证健康检查、未授权访问和允许账号登录。
+7. 选择 Tracker 开始日期，从原始笔记固定提交导入计划版本。
+8. 按需配置 GitHub 数据镜像、Garmin、DeepSeek 和 Cron；每项集成独立启用和验证。
 
-- Vercel 正式地址：`https://ak22ak-tracker.vercel.app`。
-- Neon `ak22ak-tracker` 项目已创建，当前 Drizzle migrations 已执行；
-  `DATABASE_URL` 只保存在 Vercel 的敏感环境变量中。
-- GitHub OAuth App、`AUTH_SECRET`、`NEXTAUTH_URL` 与 `AK22AK` 账号白名单均已
-  配置；未登录访问会跳转到登录页，生产环境首次登录已验证。
-- 首份计划已按 `2026-07-18` 起始日导入；数据库中包含一个计划版本和 60 个
-  待使用者确认的任务实例。
-- Garmin、DeepSeek 和 GitHub 私有数据镜像凭证尚未配置。Garmin 接入需按最新
-  风险记录重新验证，不能继续把已弃用 Garth 当唯一方案。
-- Vercel 与 GitHub 的自动部署集成尚未连接，目前由受信任的本地环境手动部署。
+外部集成不作为首次登录、查看今日计划、记录训练和提交反馈的前置条件。
 
-## 外部约束快照（2026-07-17）
+## 常规发布
 
-- Vercel Hobby Function 默认最长 10 秒，可配置到 60 秒；AI 调用必须设置更短
-  超时并保存可重试任务状态。
-- Vercel Python Runtime 仍为 Beta；Garmin 依赖需要先做部署 Spike。
-- DeepSeek 模型命名正在迁移，模型通过 `DEEPSEEK_MODEL` 配置，不写死旧兼容名。
-- iOS 主屏 Web App 支持 Web Push，但只能在用户操作后请求权限。
+1. 确认[项目计划](../project-plan.md)中的对应里程碑和
+   [发布门禁](../testing/core-scenarios.md#发布判定)。
+2. 运行静态检查、类型检查、自动化测试和生产构建。
+3. 如果包含数据库变更，检查 migration 的前向兼容性、锁影响和回滚策略。
+4. 先执行兼容的数据库 migration，再部署能够同时读取旧/新状态的应用版本。
+5. 部署后执行生产冒烟：健康检查、身份门禁、今日读取和本次变更的最小旅程。
+6. 观察错误率、数据库延迟和相关集成状态，确认没有新增待处理积压。
 
-## 参考
+Schema 快照的顺序是：公共代码 Schema 与 migration 先完成，数据库升级并验证后，
+再更新私有数据仓库中的 JSON Schema 快照。
 
-- [Vercel Function regions](https://vercel.com/docs/functions/configuring-functions/region)
-- [Vercel Cron usage](https://vercel.com/docs/cron-jobs/usage-and-pricing)
-- [Vercel Hobby plan](https://vercel.com/docs/plans/hobby)
-- [Web Push on iOS and iPadOS](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/)
+## 定时任务
+
+- Vercel Hobby Cron 最多每日执行一次，且可能在目标小时内漂移。
+- 适合每日 Garmin 同步、GitHub outbox 消费和弱提醒，不用于分钟级精确调度。
+- 每个任务验证 `CRON_SECRET`，使用 provider 或任务类型级锁，并持有幂等键。
+- Cron 重复触发、超时后重跑和手动同步不能产生重复记录。
+- 长时间或依赖不兼容运行时的任务可以迁移到独立受控 Worker，但仍通过相同应用
+  契约写入 PostgreSQL。
+
+## 监控
+
+### 核心应用
+
+- `/api/health` 可用且不泄露配置、身份或业务统计。
+- 登录失败、白名单拒绝、API 401/403 和服务端 5xx。
+- 页面/API 延迟与数据库查询延迟分开观察。
+- 数据库连接、migration 版本和存储容量。
+
+### 后台与集成
+
+- GitHub outbox：待处理数量、最老任务年龄、最近成功和权限错误。
+- Garmin：最近尝试、最近成功、同步游标、认证失效和 429/5xx。
+- AI：排队/运行/失败数量、超时、限流、余额和结构校验失败。
+- PWA：新版本发布后旧客户端资源错误和关键前端异常。
+
+Vercel Runtime Logs 保留时间有限。需要重试、审计和用户可见的状态必须写入数据库，
+不能只存在平台日志。
+
+## 故障处理
+
+| 故障            | 用户侧行为                         | 处理入口                                    |
+| --------------- | ---------------------------------- | ------------------------------------------- |
+| Neon 不可用     | 展示缓存；新记录保留在本机待同步   | 数据库状态、连接和区域；恢复后幂等重放      |
+| GitHub 镜像失败 | 数据库写入仍成功；显示镜像延迟     | outbox 错误、Token 权限、SHA 冲突和重试     |
+| Garmin 失效     | 核心流程正常；显示弱提醒或重新授权 | Provider 状态、Token、退避或文件导入        |
+| DeepSeek 失败   | 原始反馈保留；建议任务可稍后重试   | 分析作业错误、限流、余额、超时和 Schema     |
+| OAuth 配置错误  | 无法进入受保护页面                 | 回调 URL、应用 Secret、正式域名和账号白名单 |
+| PWA 版本不一致  | 提示刷新；保留未同步本机数据       | Service Worker 版本、静态资源和部署 ID      |
+
+任一外部集成故障不采用全屏级联错误，也不清空当前计划、表单或离线队列。
+
+## 恢复与回滚
+
+### 应用版本
+
+1. 判断问题是否涉及数据库 Schema 或只涉及应用代码。
+2. 仅应用代码问题可回滚到最近通过冒烟的 Vercel 部署。
+3. 已执行 migration 时，不直接回滚到无法理解新 Schema 的旧版本；先发布兼容修复或
+   执行经过验证的前向恢复 migration。
+4. 回滚后重新执行身份、今日读取和受影响旅程的冒烟测试。
+
+### 数据与镜像
+
+- PostgreSQL 是恢复在线业务的首要来源，优先使用数据库备份和事件历史恢复。
+- GitHub 私仓提供可读历史和第二份结构化记录，但不是直接恢复在线查询的数据库。
+- GitHub 镜像可以从 PostgreSQL 和当前 Schema 全量重建；派生快照可以删除后重算。
+- 恢复演练验证稳定 UUID、幂等键、引用完整性、计划版本顺序和 Schema 版本。
+
+### Secrets
+
+- 疑似泄露时先吊销或轮换对应 Secret，再恢复服务。
+- 检查日志、Git 历史和数据仓库是否出现敏感值；必要时清理历史并重新生成凭证。
+- Garmin、GitHub、DeepSeek、OAuth 和数据库凭证分别处理，不因为一个集成泄露而
+  暴露其他服务权限。
+
+## 相关文档
+
+- [系统架构总览](../architecture/overview.md)
+- [项目计划](../project-plan.md)
+- [技术选型](../architecture/technology-selection.md)
+- [数据与同步](../architecture/data-and-sync.md)
+- [安全与隐私](../security.md)
+- [核心场景测试与发布保障](../testing/core-scenarios.md)
+- [Garmin 集成](garmin.md)

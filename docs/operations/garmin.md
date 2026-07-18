@@ -1,5 +1,11 @@
 # Garmin 集成
 
+## 文档职责
+
+本文是 Garmin Provider、数据范围、同步作业、认证和故障处理的集成 Runbook。
+Garmin 在整体系统中的位置见[系统架构总览](../architecture/overview.md)，通用外部
+记录和同步状态见[数据与同步](../architecture/data-and-sync.md)。
+
 ## 接入方式
 
 现有个人自动化证明“云端直接读取、不经过 Mac mini”在技术上可行，但旧结论中
