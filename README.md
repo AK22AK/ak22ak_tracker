@@ -63,7 +63,7 @@ pnpm plan:import /absolute/path/to/plan-version.json
 - [数据与同步](docs/architecture/data-and-sync.md)
 - [离线流程](docs/architecture/offline.md)
 - [AI 计划调整](docs/architecture/ai-plan-adjustment.md)
-- [产品与视觉系统](docs/design/product-and-visual-system.md)
+- [产品与 UI/UX 设计系统](docs/design/product-and-visual-system.md)
 - [核心场景测试与发布保障](docs/testing/core-scenarios.md)
 - [安全与隐私](docs/security.md)
 - [部署与运行](docs/operations/deployment.md)
