@@ -16,6 +16,7 @@
     "schema:export": "tsx scripts/export-json-schemas.ts",
     "plan:import": "tsx scripts/import-plan.ts",
     "safety-policy:import": "tsx scripts/import-safety-policy.ts",
+    "execution-alternatives:import": "tsx scripts/import-execution-alternatives.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:journal:check": "tsx scripts/check-migration-journal.ts"

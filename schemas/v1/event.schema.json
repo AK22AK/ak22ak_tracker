@@ -25,7 +25,10 @@
         "symptom_check_in",
         "subjective_note",
         "plan_change_decision",
-        "external_record_link_decision"
+        "external_record_link_decision",
+        "execution_context_started",
+        "execution_context_ended",
+        "execution_day_decision"
       ]
     },
     "occurredAt": {

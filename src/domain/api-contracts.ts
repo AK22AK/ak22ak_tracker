@@ -11,6 +11,7 @@ import {
   trackerSafetyPolicySchema,
 } from "./safety-policy";
 import { externalTrainingRecordSchema } from "./external-training";
+import { executionContextTodaySchema } from "./execution-context";
 
 export const dashboardTaskSchema = z.object({
   id: z.uuid(),
@@ -65,6 +66,7 @@ export const todayAggregateSchema = z.object({
   plan: planReferenceSchema.nullable(),
   day: dayDashboardSchema,
   safetyPolicy: trackerSafetyPolicySchema,
+  execution: executionContextTodaySchema,
 });
 
 export const calendarDaySummarySchema = z.object({

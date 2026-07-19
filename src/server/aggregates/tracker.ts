@@ -17,6 +17,8 @@ import {
 } from "@/server/dashboard";
 import { getEffectiveTrackerSafetyPolicyByTrackerId } from "@/server/safety-policy/repository";
 import { getExternalTrainingRecordsForDay } from "@/server/integrations/core/external-training-aggregate";
+import { createNeonExecutionContextAggregateStore } from "@/server/execution-context/aggregate";
+import { getExecutionContextToday } from "@/server/execution-context/aggregate-core";
 
 export class AggregateTrackerNotFoundError extends Error {
   constructor() {
@@ -83,6 +85,11 @@ export async function getTodayAggregate(
       instantAtLocalNoon(targetDate, tracker.planningTimeZone),
     ),
   ]);
+  const execution = await getExecutionContextToday(
+    createNeonExecutionContextAggregateStore(tracker.id),
+    targetDate,
+    day.feedbacks.some((feedback) => feedback.safetyLevel === "red"),
+  );
 
   return todayAggregateSchema.parse({
     tracker: {
@@ -95,6 +102,7 @@ export async function getTodayAggregate(
     plan: planReference(plan),
     day,
     safetyPolicy,
+    execution,
   });
 }
 

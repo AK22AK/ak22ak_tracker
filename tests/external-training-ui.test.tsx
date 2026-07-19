@@ -163,6 +163,12 @@ function todayAggregate(): TodayAggregate {
       ],
       hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     },
+    execution: {
+      context: null,
+      day: null,
+      alternatives: [],
+      safety: { blocked: false, reason: null },
+    },
   };
 }
 

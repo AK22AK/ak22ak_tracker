@@ -71,6 +71,9 @@ Garmin Session/Token、训记 API Key、集成加密主密钥、Cookie 或 Autho
 - 个性化安全策略不是 Secret，但属于私人领域数据：公共仓库只保存通用 Schema 和
   执行器；真实策略仅通过鉴权 DTO、PostgreSQL、私人 IndexedDB 白名单和私有镜像
   流转。每次判定记录策略版本/hash，客户端值不能取代服务端权威重算。
+- 出差和器械受限的具体备选处方同样属于私人领域数据：公共仓库只保存中性 Schema、
+  鉴权投影和匿名测试；真实动作、剂量和个性化说明仅进入 PostgreSQL、私人数据仓库
+  及已授权客户端响应。
 - Web Push payload 使用抽象提醒文案，不把疼痛、诊断、训练备注放到锁屏通知。
 - 退出登录、身份变化和“清除本机数据”必须共同清理 Query Cache、IndexedDB、
   Cache Storage 中的用户专属状态和跨标签页状态。

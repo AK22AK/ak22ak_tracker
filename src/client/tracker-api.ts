@@ -8,6 +8,15 @@ import {
   externalRecordAssociationResultSchema,
   type ExternalRecordAssociationCommand,
 } from "@/domain/external-training";
+import {
+  createExecutionContextCommandSchema,
+  endExecutionContextCommandSchema,
+  executionContextCommandResultSchema,
+  setExecutionDayCommandSchema,
+  type CreateExecutionContextCommand,
+  type EndExecutionContextCommand,
+  type SetExecutionDayCommand,
+} from "@/domain/execution-context";
 
 async function getJson(url: string, signal?: AbortSignal) {
   const response = await fetch(url, {
@@ -75,4 +84,58 @@ export async function saveExternalRecordAssociation(
   );
   if (!response.ok) throw new Error(`request_failed_${response.status}`);
   return externalRecordAssociationResultSchema.parse(await response.json());
+}
+
+async function sendExecutionCommand(
+  url: string,
+  method: "POST" | "PUT",
+  body: unknown,
+) {
+  const response = await fetch(url, {
+    method,
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(payload?.error ?? `request_failed_${response.status}`);
+  }
+  return executionContextCommandResultSchema.parse(await response.json());
+}
+
+export function createExecutionContext(
+  trackerKey: string,
+  input: CreateExecutionContextCommand,
+) {
+  return sendExecutionCommand(
+    `/api/trackers/${encodeURIComponent(trackerKey)}/execution-contexts`,
+    "POST",
+    createExecutionContextCommandSchema.parse(input),
+  );
+}
+
+export function endExecutionContext(
+  trackerKey: string,
+  input: EndExecutionContextCommand,
+) {
+  const command = endExecutionContextCommandSchema.parse(input);
+  return sendExecutionCommand(
+    `/api/trackers/${encodeURIComponent(trackerKey)}/execution-contexts/${encodeURIComponent(command.contextId)}/end`,
+    "POST",
+    command,
+  );
+}
+
+export function setExecutionDay(
+  trackerKey: string,
+  input: SetExecutionDayCommand,
+) {
+  const command = setExecutionDayCommandSchema.parse(input);
+  return sendExecutionCommand(
+    `/api/trackers/${encodeURIComponent(trackerKey)}/execution-contexts/${encodeURIComponent(command.contextId)}/days/${encodeURIComponent(command.localDate)}`,
+    "PUT",
+    command,
+  );
 }

@@ -2571,6 +2571,241 @@ summary:focus-visible {
   width: 100%;
 }
 
+.execution-context-card {
+  display: grid;
+  gap: 1rem;
+}
+
+.execution-context-card.active {
+  border-color: color-mix(in srgb, var(--color-brand) 30%, var(--color-border));
+  background: linear-gradient(
+    180deg,
+    var(--color-brand-soft) 0,
+    var(--color-surface) 8rem
+  );
+}
+
+.execution-supporting-copy,
+.execution-context-range,
+.execution-plan-invariant {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  line-height: 1.375rem;
+}
+
+.execution-context-range {
+  color: var(--color-ink);
+  font-weight: 700;
+}
+
+.execution-plan-invariant {
+  width: fit-content;
+  padding: 0.375rem 0.625rem;
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-brand);
+  font-size: 0.75rem;
+  font-weight: 760;
+}
+
+.execution-context-form,
+.execution-day-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.execution-day-form {
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.execution-day-form h3 {
+  margin: 0.75rem 0 0;
+  font-size: 1rem;
+  line-height: 1.375rem;
+}
+
+.execution-context-form label,
+.execution-day-form > label,
+.execution-condition-grid label {
+  display: grid;
+  min-width: 0;
+  gap: 0.375rem;
+  color: var(--color-ink);
+  font-size: 0.8125rem;
+  font-weight: 720;
+}
+
+.execution-context-form input,
+.execution-context-form select,
+.execution-day-form input[type="number"],
+.execution-day-form select,
+.execution-day-form textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-height);
+  padding: 0.6875rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 400;
+}
+
+.execution-day-form textarea {
+  min-height: 5.5rem;
+  line-height: 1.5rem;
+  resize: vertical;
+}
+
+.execution-date-grid,
+.execution-condition-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.execution-equipment-options,
+.execution-alternative-list {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0;
+  border: 0;
+}
+
+.execution-equipment-options legend,
+.execution-alternative-list legend {
+  margin-bottom: 0.5rem;
+  color: var(--color-ink);
+  font-size: 0.8125rem;
+  font-weight: 760;
+}
+
+.execution-equipment-options {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.execution-equipment-options legend {
+  grid-column: 1 / -1;
+}
+
+.execution-equipment-options label {
+  display: grid;
+  min-height: var(--control-height);
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.execution-equipment-options label:has(input:checked) {
+  border-color: var(--color-brand);
+  background: var(--color-brand-soft);
+}
+
+.execution-equipment-options input,
+.execution-alternative-option > input {
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0;
+  accent-color: var(--color-brand);
+}
+
+.execution-alternative-option {
+  display: grid;
+  min-height: var(--control-height);
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  align-items: start;
+  gap: 0.75rem;
+  padding: 0.875rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  cursor: pointer;
+}
+
+.execution-alternative-option:has(input:checked) {
+  border-color: var(--color-brand);
+  background: var(--color-brand-soft);
+}
+
+.execution-alternative-option > input {
+  margin-top: 0.125rem;
+}
+
+.execution-alternative-option > span {
+  display: grid;
+  min-width: 0;
+  gap: 0.375rem;
+}
+
+.execution-alternative-option strong {
+  color: var(--color-ink);
+  font-size: 0.9375rem;
+  line-height: 1.25rem;
+}
+
+.execution-alternative-option small,
+.execution-alternative-option span > span {
+  color: var(--color-muted);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+
+.execution-alternative-option ol {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.25rem 0 0;
+  padding-left: 1.25rem;
+  color: var(--color-ink);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.execution-stop-alert {
+  display: grid;
+  gap: 0.375rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-control);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.execution-stop-alert p {
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.execution-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+}
+
+.execution-form-actions button {
+  min-height: var(--control-height);
+}
+
+.execution-message {
+  color: var(--color-success);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  line-height: 1.25rem;
+}
+
+.execution-message.error {
+  color: var(--color-danger);
+}
+
 @media (min-width: 700px) {
   .app-shell {
     padding-top: 3rem;
@@ -2598,8 +2833,15 @@ summary:focus-visible {
   }
 
   .feedback-pain-grid,
-  .feedback-result-actions {
+  .feedback-result-actions,
+  .execution-date-grid,
+  .execution-condition-grid,
+  .execution-equipment-options {
     grid-template-columns: 1fr;
+  }
+
+  .execution-equipment-options legend {
+    grid-column: 1;
   }
 }
 

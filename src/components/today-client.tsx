@@ -135,8 +135,12 @@ export function TodayClient() {
   return (
     <DashboardShell
       today={todayLabel(localDate)}
+      localDate={localDate}
+      planVersion={query.data.plan?.version ?? null}
       initialDashboard={query.data.day}
+      execution={query.data.execution}
       onRefresh={() => query.refetch()}
+      onExecutionChanged={() => query.refetch()}
       onTaskUpdated={handleTaskUpdated}
       onExternalTrainingUpdated={handleExternalTrainingUpdated}
     />

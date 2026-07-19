@@ -98,6 +98,12 @@ function aggregate(
       ],
       hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     },
+    execution: {
+      context: null,
+      day: null,
+      alternatives: [],
+      safety: { blocked: false, reason: null },
+    },
   };
 }
 
@@ -238,6 +244,77 @@ describe("today background refresh", () => {
     ).toBe("未提交任务草稿");
     const feedbackLink = screen.getByRole("link", { name: "再次反馈" });
     expect(feedbackLink.getAttribute("href")).toBe("/feedback");
+  });
+
+  it("preserves a task draft when an execution-context command refreshes today", async () => {
+    const data = aggregate("planned", 0);
+    data.execution = {
+      context: {
+        id: "019c0000-0000-7000-8000-000000000020",
+        kind: "travel",
+        startDate: "2026-07-19",
+        endDate: "2026-07-24",
+        status: "active",
+      },
+      day: null,
+      alternatives: [],
+      safety: { blocked: false, reason: null },
+    };
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === "PUT") {
+          return jsonResponse({
+            commandId: JSON.parse(String(init.body)).commandId,
+            replayed: false,
+            day: {
+              localDate: "2026-07-19",
+              conditions: {
+                availableMinutes: 20,
+                venue: "room",
+                equipment: [],
+                healthStatus: "normal",
+              },
+              selection: null,
+              safetyDisposition: "normal",
+            },
+          });
+        }
+        if (String(input).includes("/today")) return jsonResponse(data);
+        return jsonResponse({}, 404);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <TodayClient />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "展开 Anonymous task" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "没有同步记录？手工记录" }),
+    );
+    fireEvent.change(screen.getByLabelText("实际训练与主观感受"), {
+      target: { value: "Draft survives context refresh" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存今天的执行方式" }));
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.filter(([, init]) => init?.method === "PUT"),
+      ).toHaveLength(1),
+    );
+    expect(
+      (screen.getByLabelText("实际训练与主观感受") as HTMLTextAreaElement)
+        .value,
+    ).toBe("Draft survives context refresh");
   });
 
   it("keeps the today hierarchy stable and separates task expansion from completion", async () => {

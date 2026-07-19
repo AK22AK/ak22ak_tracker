@@ -15,6 +15,10 @@ import {
 import { sql } from "drizzle-orm";
 
 import type {
+  ExecutionAlternativeDocument,
+  ExecutionDayConditions,
+} from "@/domain/execution-context";
+import type {
   ExternalRecord,
   PlanChangeProposal,
   PlanVersion,
@@ -45,6 +49,14 @@ export const outboxStatus = pgEnum("outbox_status", [
   "succeeded",
   "failed",
 ]);
+export const executionContextKind = pgEnum("execution_context_kind", [
+  "travel",
+  "equipment_limited",
+]);
+export const executionSafetyDisposition = pgEnum(
+  "execution_safety_disposition",
+  ["normal", "stop_reassess"],
+);
 
 export const trackers = pgTable("trackers", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -119,6 +131,109 @@ export const trackerSafetyPolicies = pgTable(
     index("tracker_safety_policies_tracker_effective_index").on(
       table.trackerId,
       table.effectiveFrom,
+    ),
+  ],
+);
+
+export const executionContexts = pgTable(
+  "execution_contexts",
+  {
+    id: uuid("id").primaryKey(),
+    trackerId: uuid("tracker_id")
+      .notNull()
+      .references(() => trackers.id, { onDelete: "cascade" }),
+    kind: executionContextKind("kind").notNull(),
+    startDate: date("start_date").notNull(),
+    endDate: date("end_date").notNull(),
+    endedOn: date("ended_on"),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    check(
+      "execution_contexts_date_range_check",
+      sql`${table.endDate} >= ${table.startDate}`,
+    ),
+    index("execution_contexts_tracker_range_index").on(
+      table.trackerId,
+      table.startDate,
+      table.endDate,
+    ),
+    // Migration 0007 adds a btree_gist exclusion constraint so open date
+    // ranges cannot overlap. Drizzle does not model EXCLUDE constraints.
+  ],
+);
+
+export const executionAlternativeVersions = pgTable(
+  "execution_alternative_versions",
+  {
+    id: uuid("id").primaryKey(),
+    trackerId: uuid("tracker_id")
+      .notNull()
+      .references(() => trackers.id, { onDelete: "cascade" }),
+    optionKey: text("option_key").notNull(),
+    version: integer("version").notNull(),
+    effectiveFrom: date("effective_from").notNull(),
+    document: jsonb("document").$type<ExecutionAlternativeDocument>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("execution_alternatives_tracker_key_version_unique").on(
+      table.trackerId,
+      table.optionKey,
+      table.version,
+    ),
+    index("execution_alternatives_tracker_effective_index").on(
+      table.trackerId,
+      table.effectiveFrom,
+    ),
+  ],
+);
+
+export const executionDayDecisions = pgTable(
+  "execution_day_decisions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    trackerId: uuid("tracker_id")
+      .notNull()
+      .references(() => trackers.id, { onDelete: "cascade" }),
+    contextId: uuid("context_id")
+      .notNull()
+      .references(() => executionContexts.id, { onDelete: "cascade" }),
+    localDate: date("local_date").notNull(),
+    conditions: jsonb("conditions").$type<ExecutionDayConditions>().notNull(),
+    selectedAlternativeId: uuid("selected_alternative_id").references(
+      () => executionAlternativeVersions.id,
+      { onDelete: "restrict" },
+    ),
+    selectedAlternativeVersion: integer("selected_alternative_version"),
+    safetyDisposition: executionSafetyDisposition("safety_disposition")
+      .default("normal")
+      .notNull(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("execution_day_decisions_context_date_unique").on(
+      table.contextId,
+      table.localDate,
+    ),
+    check(
+      "execution_day_decisions_selection_check",
+      sql`(${table.selectedAlternativeId} IS NULL AND ${table.selectedAlternativeVersion} IS NULL) OR (${table.selectedAlternativeId} IS NOT NULL AND ${table.selectedAlternativeVersion} IS NOT NULL)`,
+    ),
+    index("execution_day_decisions_tracker_date_index").on(
+      table.trackerId,
+      table.localDate,
     ),
   ],
 );

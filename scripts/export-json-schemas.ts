@@ -10,6 +10,7 @@ import {
   trackerEventSchema,
 } from "../src/domain/schemas";
 import { trackerSafetyPolicyDocumentSchema } from "../src/domain/safety-policy";
+import { executionAlternativeBundleSchema } from "../src/domain/execution-context";
 
 const schemas = {
   "plan-version.schema.json": planVersionSchema,
@@ -17,10 +18,14 @@ const schemas = {
   "external-record.schema.json": externalRecordSchema,
   "plan-change-proposal.schema.json": planChangeProposalSchema,
   "tracker-safety-policy.schema.json": trackerSafetyPolicyDocumentSchema,
+  "execution-alternative-bundle.schema.json": executionAlternativeBundleSchema,
 };
 
 async function main() {
-  const outputDirectory = resolve(process.argv[2] ?? "schemas/v1");
+  const outputArgument = process.argv
+    .slice(2)
+    .find((argument) => argument !== "--");
+  const outputDirectory = resolve(outputArgument ?? "schemas/v1");
   await mkdir(outputDirectory, { recursive: true });
 
   await Promise.all(

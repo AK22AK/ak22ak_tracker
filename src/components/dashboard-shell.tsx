@@ -13,9 +13,11 @@ import type {
 } from "@/domain/external-training";
 import type { TaskActual } from "@/domain/schemas";
 import type { DashboardTask, TodayDashboard } from "@/server/dashboard";
+import type { ExecutionContextToday } from "@/domain/execution-context";
 
 import { SignOutButton } from "./sign-out-button";
 import { ExternalTrainingSection } from "./external-training-section";
+import { ExecutionContextCard } from "./execution-context-card";
 import {
   SectionHeading,
   StatusPill,
@@ -507,14 +509,22 @@ function safetyGuidance(level: "green" | "yellow" | "red") {
 
 export function DashboardShell({
   today,
+  localDate,
+  planVersion,
   initialDashboard,
+  execution,
   onRefresh,
+  onExecutionChanged,
   onTaskUpdated,
   onExternalTrainingUpdated,
 }: {
   today: string;
+  localDate: string;
+  planVersion: number | null;
   initialDashboard: TodayDashboard;
+  execution: ExecutionContextToday;
   onRefresh: () => Promise<unknown>;
+  onExecutionChanged: () => Promise<unknown>;
   onTaskUpdated: (task: DashboardTask) => void;
   onExternalTrainingUpdated: (
     recordId: string,
@@ -623,6 +633,14 @@ export function DashboardShell({
           <p>{safetyGuidance(currentSafety)}</p>
         </section>
       ) : null}
+
+      <ExecutionContextCard
+        trackerKey="knee-rehab"
+        localDate={localDate}
+        planVersion={planVersion}
+        execution={execution}
+        onChanged={onExecutionChanged}
+      />
 
       <SurfaceCard className="today-plan-card" aria-label="今日计划">
         <SectionHeading
