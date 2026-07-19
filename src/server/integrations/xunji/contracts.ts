@@ -8,11 +8,30 @@ export const xunjiSyncRequestSchema = z.object({
   include_full_data: z.literal(true),
 });
 
+const epochMillisecondsSchema = z
+  .number()
+  .int()
+  .min(-8_640_000_000_000_000)
+  .max(8_640_000_000_000_000);
+
 export const xunjiTrainSchema = z
   .object({
+    datestr: localDateSchema,
     localid: z.union([z.string().min(1), z.number()]).transform(String),
+    start: epochMillisecondsSchema,
+    end: epochMillisecondsSchema,
+    movements: z.array(z.unknown()),
   })
-  .passthrough();
+  .passthrough()
+  .superRefine((train, context) => {
+    if (train.end < train.start) {
+      context.addIssue({
+        code: "custom",
+        path: ["end"],
+        message: "Xunji training end must not precede start",
+      });
+    }
+  });
 
 export const xunjiTrainResponseSchema = z.object({
   res: z.object({

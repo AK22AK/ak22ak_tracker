@@ -84,8 +84,14 @@ export function createXunjiReadOnlyAdapter({
       }
 
       try {
-        return xunjiTrainResponseSchema.parse(await response.json()).res.trains;
+        const trains = xunjiTrainResponseSchema.parse(await response.json()).res
+          .trains;
+        if (trains.some((train) => train.datestr !== date)) {
+          throw new XunjiProviderError("invalid_response");
+        }
+        return trains;
       } catch (error) {
+        if (error instanceof XunjiProviderError) throw error;
         throw new XunjiProviderError("invalid_response", { cause: error });
       }
     },

@@ -37,6 +37,21 @@ integration("P1a Xunji provider-neutral database slice", () => {
   const taskId = randomUUID();
   const taskCommandId = randomUUID();
   const date = "2026-07-19";
+  const trainStart = Date.parse("2026-07-19T10:00:00+08:00");
+  const trainEnd = Date.parse("2026-07-19T11:00:00+08:00");
+  const anonymousTrain = (title: string) => ({
+    datestr: date,
+    localid: "anonymous-train-1",
+    start: trainStart,
+    end: trainEnd,
+    movements: [
+      {
+        name: "Anonymous movement",
+        sets: [{ weight: 10, reps: 8 }],
+      },
+    ],
+    title,
+  });
 
   beforeAll(async () => {
     process.env.DATABASE_URL = testDatabaseUrl;
@@ -128,7 +143,7 @@ integration("P1a Xunji provider-neutral database slice", () => {
       store,
       readSource: async () =>
         normalizeXunjiTrains({
-          trains: [{ localid: "anonymous-train-1", title }],
+          trains: [anonymousTrain(title)],
           date,
           fetchedAt: now,
           planningTimeZone: "Asia/Shanghai",
@@ -165,6 +180,8 @@ integration("P1a Xunji provider-neutral database slice", () => {
     );
     const rows = await database
       .select({
+        localDate: externalRecords.localDate,
+        occurredAt: externalRecords.occurredAt,
         sourceVersion: externalRecords.sourceVersion,
         sourceChangedAt: externalRecords.sourceChangedAt,
       })
@@ -189,6 +206,8 @@ integration("P1a Xunji provider-neutral database slice", () => {
     expect(changed).toMatchObject({ changed: 1 });
     expect(rows).toEqual([
       expect.objectContaining({
+        localDate: date,
+        occurredAt: new Date(trainStart),
         sourceVersion: 2,
         sourceChangedAt: expect.any(Date),
       }),
