@@ -51,6 +51,11 @@ type PendingPause = {
   pauseId: string;
 };
 
+type PendingEnd = {
+  command: PendingClientCommand;
+  assessmentId: string;
+};
+
 const pauseReasonLabels = {
   illness: "生病或全身不适",
   acute_symptom: "急性反应",
@@ -86,7 +91,7 @@ export function ExecutionPauseCard({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const pendingStart = useRef<PendingPause | null>(null);
-  const pendingEnd = useRef<PendingClientCommand | null>(null);
+  const pendingEnd = useRef<PendingEnd | null>(null);
   const pause = execution.pause;
 
   async function startPause() {
@@ -124,9 +129,22 @@ export function ExecutionPauseCard({
     setMessage(null);
     try {
       const payload = { pauseId: pause.id };
-      const command = createOrReuseClientCommand(pendingEnd.current, payload);
-      pendingEnd.current = command;
-      await endExecutionPause(trackerKey, { ...payload, ...command.metadata });
+      const command = createOrReuseClientCommand(
+        pendingEnd.current?.command ?? null,
+        payload,
+      );
+      if (command !== pendingEnd.current?.command) {
+        pendingEnd.current = {
+          command,
+          assessmentId: crypto.randomUUID(),
+        };
+      }
+      const pending = pendingEnd.current!;
+      await endExecutionPause(trackerKey, {
+        ...payload,
+        assessmentId: pending.assessmentId,
+        ...pending.command.metadata,
+      });
       pendingEnd.current = null;
       setMessage("暂停已结束，下一步需要接续评估");
       await onChanged();
@@ -281,7 +299,7 @@ function ExecutionContextCardState({
   const [failed, setFailed] = useState(false);
   const pendingCreate = useRef<PendingCreate | null>(null);
   const pendingDay = useRef<PendingClientCommand | null>(null);
-  const pendingEnd = useRef<PendingClientCommand | null>(null);
+  const pendingEnd = useRef<PendingEnd | null>(null);
 
   const localSafetyBlocked =
     execution.safety.blocked || healthStatus !== "normal";
@@ -372,11 +390,21 @@ function ExecutionContextCardState({
     setFailed(false);
     try {
       const payload = { contextId: execution.context.id };
-      const command = createOrReuseClientCommand(pendingEnd.current, payload);
-      pendingEnd.current = command;
+      const command = createOrReuseClientCommand(
+        pendingEnd.current?.command ?? null,
+        payload,
+      );
+      if (command !== pendingEnd.current?.command) {
+        pendingEnd.current = {
+          command,
+          assessmentId: crypto.randomUUID(),
+        };
+      }
+      const pending = pendingEnd.current!;
       await endExecutionContext(trackerKey, {
         ...payload,
-        ...command.metadata,
+        assessmentId: pending.assessmentId,
+        ...pending.command.metadata,
       });
       pendingEnd.current = null;
       setMessage("执行上下文已结束");

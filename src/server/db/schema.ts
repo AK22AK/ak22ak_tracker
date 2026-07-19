@@ -27,6 +27,7 @@ import type {
   TaskActual,
   TrackerEvent,
 } from "@/domain/schemas";
+import type { ResumptionAssessmentSnapshot } from "@/domain/resumption";
 import type { TrackerSafetyPolicyDocument } from "@/domain/safety-policy";
 
 export const taskStatus = pgEnum("task_status", [
@@ -271,6 +272,95 @@ export const executionPauses = pgTable(
     check(
       "execution_pauses_end_check",
       sql`${table.endedOn} IS NULL OR ${table.endedOn} >= ${table.startedOn}`,
+    ),
+  ],
+);
+
+export const resumptionAssessments = pgTable(
+  "resumption_assessments",
+  {
+    id: uuid("id").primaryKey(),
+    trackerId: uuid("tracker_id")
+      .notNull()
+      .references(() => trackers.id, { onDelete: "cascade" }),
+    triggerType: text("trigger_type").notNull(),
+    triggerId: uuid("trigger_id").notNull(),
+    basePlanVersionId: uuid("base_plan_version_id")
+      .notNull()
+      .references(() => planVersions.id, { onDelete: "restrict" }),
+    planningTimeZone: text("planning_time_zone").notNull(),
+    status: text("status").default("pending").notNull(),
+    snapshot: jsonb("snapshot").$type<ResumptionAssessmentSnapshot>().notNull(),
+    decision: text("decision"),
+    appliedPlanVersionId: uuid("applied_plan_version_id").references(
+      () => planVersions.id,
+      { onDelete: "restrict" },
+    ),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("resumption_assessments_trigger_unique").on(
+      table.trackerId,
+      table.triggerType,
+      table.triggerId,
+      table.basePlanVersionId,
+    ),
+    index("resumption_assessments_tracker_status_index").on(
+      table.trackerId,
+      table.status,
+    ),
+    check(
+      "resumption_assessments_trigger_type_check",
+      sql`${table.triggerType} IN ('execution_context', 'pause')`,
+    ),
+    check(
+      "resumption_assessments_status_check",
+      sql`${table.status} IN ('pending', 'kept_original', 'shifted', 'expired')`,
+    ),
+    check(
+      "resumption_assessments_decision_check",
+      sql`${table.decision} IS NULL OR ${table.decision} IN ('keep_original', 'shift')`,
+    ),
+  ],
+);
+
+export const resumptionDecisions = pgTable(
+  "resumption_decisions",
+  {
+    id: uuid("id").primaryKey(),
+    trackerId: uuid("tracker_id")
+      .notNull()
+      .references(() => trackers.id, { onDelete: "cascade" }),
+    assessmentId: uuid("assessment_id")
+      .notNull()
+      .references(() => resumptionAssessments.id, { onDelete: "restrict" }),
+    basePlanVersionId: uuid("base_plan_version_id")
+      .notNull()
+      .references(() => planVersions.id, { onDelete: "restrict" }),
+    decision: text("decision").notNull(),
+    appliedPlanVersionId: uuid("applied_plan_version_id").references(
+      () => planVersions.id,
+      { onDelete: "restrict" },
+    ),
+    decidedAt: timestamp("decided_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("resumption_decisions_assessment_unique").on(
+      table.assessmentId,
+    ),
+    index("resumption_decisions_tracker_index").on(table.trackerId),
+    check(
+      "resumption_decisions_decision_check",
+      sql`${table.decision} IN ('keep_original', 'shift')`,
     ),
   ],
 );

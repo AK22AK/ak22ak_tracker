@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { TrackerEvent } from "@/domain/schemas";
+import { schemaVersion, type TrackerEvent } from "@/domain/schemas";
+import type { ResumptionAssessmentSnapshot } from "@/domain/resumption";
 import {
   ExecutionAlternativeVersionConflictError,
   ExecutionContextOverlapError,
@@ -60,6 +61,7 @@ function createMemoryStore() {
       endedOn: string | null;
     }
   >();
+  const assessments = new Map<string, ResumptionAssessmentSnapshot>();
   let redDate: string | null = null;
 
   const store: ExecutionContextCommandStore = {
@@ -104,6 +106,39 @@ function createMemoryStore() {
     hasBlockingPause: vi.fn(async (_trackerId, localDate) =>
       [...pauses.values()].some((pause) => pause.startedOn <= localDate),
     ),
+    buildResumptionAssessment: vi.fn(async (input) => {
+      const interruptionDays = 2;
+      return {
+        schemaVersion,
+        id: input.id,
+        trackerKey: input.trackerKey,
+        trigger: {
+          type: input.triggerType,
+          id: input.triggerId,
+          startDate: input.startDate,
+          endDate: input.endDate,
+          interruptionDays,
+          pausedDays: input.triggerType === "pause" ? interruptionDays : 0,
+          restrictedDays:
+            input.triggerType === "execution_context" ? interruptionDays : 0,
+        },
+        basePlanVersion: {
+          id: "019c0000-0000-7000-8000-000000000090",
+          version: 1,
+          effectiveFrom: "2026-07-01",
+        },
+        planningTimeZone: input.planningTimeZone,
+        createdAt: input.createdAt.toISOString(),
+        recommendedEffectiveFrom: "2026-07-25",
+        shiftDays: interruptionDays,
+        lastConfirmedTraining: null,
+        futureTasks: [],
+        shiftPreview: [],
+      };
+    }),
+    findResumptionAssessment: vi.fn(
+      async (_trackerId, assessmentId) => assessments.get(assessmentId) ?? null,
+    ),
     commitAtomically: vi.fn(async (prepared) => {
       if (prepared.type === "create") {
         contexts.set(prepared.context.id, prepared.context);
@@ -114,6 +149,12 @@ function createMemoryStore() {
             ...current,
             endedOn: prepared.endedOn,
           });
+        if (prepared.assessment) {
+          assessments.set(
+            prepared.assessment.snapshot.id,
+            prepared.assessment.snapshot,
+          );
+        }
       } else if (prepared.type === "set_day") {
         decisions.set(`${prepared.contextId}:${prepared.localDate}`, prepared);
       } else if (prepared.type === "start_pause") {
@@ -122,6 +163,10 @@ function createMemoryStore() {
         const pause = pauses.get(prepared.pauseId);
         if (pause)
           pauses.set(prepared.pauseId, { ...pause, endedOn: prepared.endedOn });
+        assessments.set(
+          prepared.assessment.snapshot.id,
+          prepared.assessment.snapshot,
+        );
       }
       events.set(prepared.event.idempotencyKey, prepared.event);
     }),
@@ -132,6 +177,7 @@ function createMemoryStore() {
     contexts,
     decisions,
     pauses,
+    assessments,
     setRedDate(value: string | null) {
       redDate = value;
     },
@@ -397,6 +443,7 @@ describe("execution context commands", () => {
       ),
       trackerKey: "anonymous-tracker",
       contextId,
+      assessmentId: "019c0000-0000-7000-8000-000000000023",
     };
 
     const first = await executeEndExecutionContextCommand(store, input);
@@ -451,6 +498,7 @@ describe("execution context commands", () => {
       ...metadata("019c0000-0000-7000-8000-000000000042"),
       trackerKey: "anonymous-tracker",
       pauseId,
+      assessmentId: "019c0000-0000-7000-8000-000000000045",
     };
     await expect(
       executeEndExecutionPauseCommand(store, end, commandNow),

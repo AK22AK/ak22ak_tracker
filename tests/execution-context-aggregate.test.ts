@@ -47,6 +47,30 @@ function store(overrides: Record<string, unknown> = {}) {
 }
 
 describe("execution context aggregate", () => {
+  it("blocks alternatives while a resumption assessment is pending", async () => {
+    const dataStore = store({
+      findPendingResumption: vi.fn(async () => ({
+        id: "019c0000-0000-7000-8000-000000000099",
+        triggerType: "pause",
+        recommendedEffectiveFrom: "2026-07-20",
+        basePlanVersion: {
+          id: "019c0000-0000-7000-8000-000000000098",
+          version: 2,
+        },
+        status: "pending" as const,
+      })),
+    });
+
+    const result = await getExecutionContextToday(
+      dataStore,
+      "2026-07-20",
+      false,
+    );
+
+    expect(result.safety).toEqual({ blocked: true, reason: "resumption" });
+    expect(result.resumption?.status).toBe("pending");
+    expect(result.alternatives).toEqual([]);
+  });
   it("returns an authenticated display projection without leaking private document internals", async () => {
     const result = await getExecutionContextToday(store(), "2026-07-20", false);
 

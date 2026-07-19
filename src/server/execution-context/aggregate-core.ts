@@ -20,6 +20,13 @@ export type ExecutionDayDecisionAggregateRow = {
 };
 
 export type ExecutionContextAggregateStore = {
+  findPendingResumption?(): Promise<{
+    id: string;
+    triggerType: "execution_context" | "pause";
+    recommendedEffectiveFrom: string;
+    basePlanVersion: { id: string; version: number };
+    status: "pending";
+  } | null>;
   findRelevantPause(targetDate: string): Promise<{
     id: string;
     reason: "illness" | "acute_symptom" | "red_feedback" | "other";
@@ -44,8 +51,11 @@ export async function getExecutionContextToday(
   targetDate: string,
   hasRedFeedback: boolean,
 ) {
-  const pause = await store.findRelevantPause(targetDate);
-  const context = await store.findRelevantContext(targetDate);
+  const [pause, context, resumption] = await Promise.all([
+    store.findRelevantPause(targetDate),
+    store.findRelevantContext(targetDate),
+    store.findPendingResumption?.() ?? Promise.resolve(null),
+  ]);
   if (!context) {
     return executionContextTodaySchema.parse({
       pause: pause
@@ -57,9 +67,12 @@ export async function getExecutionContextToday(
       context: null,
       day: null,
       alternatives: [],
-      safety: pause
-        ? { blocked: true, reason: "pause" }
-        : { blocked: false, reason: null },
+      resumption,
+      safety: resumption
+        ? { blocked: true, reason: "resumption" }
+        : pause
+          ? { blocked: true, reason: "pause" }
+          : { blocked: false, reason: null },
     });
   }
 
@@ -75,9 +88,12 @@ export async function getExecutionContextToday(
       context: { ...context, status },
       day: null,
       alternatives: [],
-      safety: pause
-        ? { blocked: true, reason: "pause" }
-        : { blocked: false, reason: null },
+      resumption,
+      safety: resumption
+        ? { blocked: true, reason: "resumption" }
+        : pause
+          ? { blocked: true, reason: "pause" }
+          : { blocked: false, reason: null },
     });
   }
 
@@ -88,11 +104,13 @@ export async function getExecutionContextToday(
       : day?.conditions.healthStatus === "acute_symptom"
         ? "acute_symptom"
         : null;
-  const reason = pause
-    ? "pause"
-    : hasRedFeedback
-      ? "red_feedback"
-      : conditionReason;
+  const reason = resumption
+    ? "resumption"
+    : pause
+      ? "pause"
+      : hasRedFeedback
+        ? "red_feedback"
+        : conditionReason;
   const blocked = reason !== null;
   const alternatives = blocked
     ? []
@@ -119,6 +137,7 @@ export async function getExecutionContextToday(
     context: { ...context, status },
     day,
     alternatives,
+    resumption,
     safety: { blocked, reason },
   });
 }

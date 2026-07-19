@@ -15,6 +15,7 @@ import type {
   SetExecutionDayCommand,
   StartExecutionPauseCommand,
 } from "@/domain/execution-context";
+import type { ResumptionAssessmentSnapshot } from "@/domain/resumption";
 import { eventMirrorPath } from "@/server/mirror/path";
 
 export type ExecutionCommandTracker = {
@@ -75,6 +76,12 @@ type PreparedBase = {
   };
 };
 
+type PreparedAssessmentCreation = {
+  snapshot: ResumptionAssessmentSnapshot;
+  event: TrackerEvent;
+  outbox: PreparedBase["outbox"];
+};
+
 export type PreparedExecutionContextCommand =
   | (PreparedBase & {
       type: "create";
@@ -85,6 +92,7 @@ export type PreparedExecutionContextCommand =
       contextId: string;
       endedOn: string;
       endedAt: Date;
+      assessment: PreparedAssessmentCreation | null;
     })
   | (PreparedBase & {
       type: "set_day";
@@ -104,6 +112,7 @@ export type PreparedExecutionContextCommand =
       pauseId: string;
       endedOn: string;
       endedAt: Date;
+      assessment: PreparedAssessmentCreation;
     });
 
 export type ExecutionContextCommandStore = {
@@ -130,6 +139,21 @@ export type ExecutionContextCommandStore = {
     pauseId: string,
   ): Promise<ExecutionCommandPause | null>;
   hasBlockingPause(trackerId: string, localDate: string): Promise<boolean>;
+  buildResumptionAssessment(input: {
+    id: string;
+    trackerId: string;
+    trackerKey: string;
+    planningTimeZone: string;
+    triggerType: "execution_context" | "pause";
+    triggerId: string;
+    startDate: string;
+    endDate: string;
+    createdAt: Date;
+  }): Promise<ResumptionAssessmentSnapshot>;
+  findResumptionAssessment(
+    trackerId: string,
+    assessmentId: string,
+  ): Promise<ResumptionAssessmentSnapshot | null>;
   commitAtomically(command: PreparedExecutionContextCommand): Promise<void>;
 };
 
@@ -252,6 +276,44 @@ function preparedBase(trackerId: string, event: TrackerEvent): PreparedBase {
       payload: event,
     },
   };
+}
+
+function assessmentProjection(snapshot: ResumptionAssessmentSnapshot) {
+  return {
+    ...snapshot,
+    status: "pending" as const,
+    decision: null,
+    decidedAt: null,
+    appliedPlanVersionId: null,
+  };
+}
+
+function prepareAssessmentCreation(
+  tracker: ExecutionCommandTracker,
+  input: {
+    assessmentId: string;
+    occurredAt: string;
+    occurredTimeZone: string;
+    occurredUtcOffsetMinutes: number;
+  },
+  snapshot: ResumptionAssessmentSnapshot,
+  now: Date,
+): PreparedAssessmentCreation {
+  const event = eventFor(
+    tracker,
+    { ...input, commandId: input.assessmentId },
+    "resumption_assessment_created",
+    {
+      assessmentId: snapshot.id,
+      triggerType: snapshot.trigger.type,
+      triggerId: snapshot.trigger.id,
+      basePlanVersionId: snapshot.basePlanVersion.id,
+      startDate: snapshot.trigger.startDate,
+      endDate: snapshot.trigger.endDate,
+    },
+    now,
+  );
+  return { snapshot, event, outbox: preparedBase(tracker.id, event).outbox };
 }
 
 function commandMatches(
@@ -406,7 +468,57 @@ export async function executeEndExecutionContextCommand(
     input.occurredAt,
     tracker.planningTimeZone,
   );
-  const payload = { contextId: input.contextId, endedOn };
+  const existing = await store.findEventByCommandId(input.commandId);
+  if (existing) {
+    const assessment = await store.findResumptionAssessment(
+      tracker.id,
+      input.assessmentId,
+    );
+    const payload = {
+      contextId: input.contextId,
+      endedOn,
+      assessmentId: assessment?.id ?? null,
+    };
+    const matches = (event: TrackerEvent) =>
+      commandMatches(
+        event,
+        input,
+        tracker.key,
+        "execution_context_ended",
+        payload,
+      );
+    if (!matches(existing)) throw new ExecutionContextCommandConflictError();
+    return {
+      commandId: input.commandId,
+      replayed: true,
+      endedOn,
+      ...(assessment ? { assessment: assessmentProjection(assessment) } : {}),
+    } as const;
+  }
+  const context = await store.findContext(tracker.id, input.contextId);
+  if (!context || context.endedOn !== null) {
+    throw new ExecutionContextNotFoundError();
+  }
+  const assessmentEnd = endedOn < context.endDate ? endedOn : context.endDate;
+  const snapshot =
+    assessmentEnd >= context.startDate
+      ? await store.buildResumptionAssessment({
+          id: input.assessmentId,
+          trackerId: tracker.id,
+          trackerKey: tracker.key,
+          planningTimeZone: tracker.planningTimeZone,
+          triggerType: "execution_context",
+          triggerId: context.id,
+          startDate: context.startDate,
+          endDate: assessmentEnd,
+          createdAt: now,
+        })
+      : null;
+  const payload = {
+    contextId: input.contextId,
+    endedOn,
+    assessmentId: snapshot?.id ?? null,
+  };
   const matches = (event: TrackerEvent) =>
     commandMatches(
       event,
@@ -415,15 +527,6 @@ export async function executeEndExecutionContextCommand(
       "execution_context_ended",
       payload,
     );
-  const existing = await store.findEventByCommandId(input.commandId);
-  if (existing) {
-    if (!matches(existing)) throw new ExecutionContextCommandConflictError();
-    return { commandId: input.commandId, replayed: true, endedOn } as const;
-  }
-  const context = await store.findContext(tracker.id, input.contextId);
-  if (!context || context.endedOn !== null) {
-    throw new ExecutionContextNotFoundError();
-  }
   const event = eventFor(
     tracker,
     input,
@@ -437,9 +540,17 @@ export async function executeEndExecutionContextCommand(
     contextId: context.id,
     endedOn,
     endedAt: new Date(input.occurredAt),
+    assessment: snapshot
+      ? prepareAssessmentCreation(tracker, input, snapshot, now)
+      : null,
   };
   const replayed = await commitOrReplay(store, prepared, matches);
-  return { commandId: input.commandId, replayed, endedOn } as const;
+  return {
+    commandId: input.commandId,
+    replayed,
+    endedOn,
+    ...(snapshot ? { assessment: assessmentProjection(snapshot) } : {}),
+  } as const;
 }
 
 export async function executeSetExecutionDayCommand(
@@ -669,23 +780,56 @@ export async function executeEndExecutionPauseCommand(
     input.occurredAt,
     tracker.planningTimeZone,
   );
-  const payload = { pauseId: input.pauseId, endedOn };
-  const matches = (event: TrackerEvent) =>
-    commandMatches(event, input, tracker.key, "execution_pause_ended", payload);
   const existing = await store.findEventByCommandId(input.commandId);
   if (existing) {
+    const assessment = await store.findResumptionAssessment(
+      tracker.id,
+      input.assessmentId,
+    );
+    const payload = {
+      pauseId: input.pauseId,
+      endedOn,
+      assessmentId: assessment?.id ?? null,
+    };
+    const matches = (event: TrackerEvent) =>
+      commandMatches(
+        event,
+        input,
+        tracker.key,
+        "execution_pause_ended",
+        payload,
+      );
     if (!matches(existing)) throw new ExecutionContextCommandConflictError();
     const pause = await store.findPause(tracker.id, input.pauseId);
-    if (!pause) throw new ExecutionPauseNotFoundError();
+    if (!pause || !assessment) throw new ExecutionPauseNotFoundError();
     return {
       commandId: input.commandId,
       replayed: true,
       pause: pauseProjection(pause, "pending_resume_assessment", endedOn),
+      assessment: assessmentProjection(assessment),
     } as const;
   }
   const pause = await store.findPause(tracker.id, input.pauseId);
   if (!pause || pause.endedOn !== null) throw new ExecutionPauseNotFoundError();
   if (endedOn < pause.startedOn) throw new ExecutionContextRangeError();
+  const snapshot = await store.buildResumptionAssessment({
+    id: input.assessmentId,
+    trackerId: tracker.id,
+    trackerKey: tracker.key,
+    planningTimeZone: tracker.planningTimeZone,
+    triggerType: "pause",
+    triggerId: pause.id,
+    startDate: pause.startedOn,
+    endDate: endedOn,
+    createdAt: now,
+  });
+  const payload = {
+    pauseId: input.pauseId,
+    endedOn,
+    assessmentId: snapshot.id,
+  };
+  const matches = (event: TrackerEvent) =>
+    commandMatches(event, input, tracker.key, "execution_pause_ended", payload);
   const event = eventFor(tracker, input, "execution_pause_ended", payload, now);
   const replayed = await commitOrReplay(
     store,
@@ -695,6 +839,7 @@ export async function executeEndExecutionPauseCommand(
       pauseId: input.pauseId,
       endedOn,
       endedAt: new Date(input.occurredAt),
+      assessment: prepareAssessmentCreation(tracker, input, snapshot, now),
     },
     matches,
   );
@@ -702,5 +847,6 @@ export async function executeEndExecutionPauseCommand(
     commandId: input.commandId,
     replayed,
     pause: pauseProjection(pause, "pending_resume_assessment", endedOn),
+    assessment: assessmentProjection(snapshot),
   } as const;
 }

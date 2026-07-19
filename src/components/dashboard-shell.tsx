@@ -511,6 +511,7 @@ function safetyGuidance(level: "green" | "yellow" | "red") {
 }
 
 function executionModeLabel(execution: ExecutionContextToday) {
+  if (execution.resumption?.status === "pending") return "待接续评估";
   if (execution.pause?.status === "active") return "暂停模式";
   if (execution.pause?.status === "pending_resume_assessment") {
     return "待接续评估";
@@ -657,6 +658,30 @@ export function DashboardShell({
         execution={execution}
         onChanged={onExecutionChanged}
       />
+
+      {execution.resumption?.status === "pending" ? (
+        <SurfaceCard className="resumption-entry-card" aria-label="待接续评估">
+          <SectionHeading
+            eyebrow="计划接续"
+            title="中断结束后需要确认怎样继续"
+            aside={
+              <StatusPill tone="attention" icon="!">
+                待确认
+              </StatusPill>
+            }
+          />
+          <p>
+            基础计划尚未改变。请先查看中断摘要和未来日期差异，再决定按原计划继续或顺延。
+          </p>
+          <Link
+            className="primary-button"
+            href={`/resumption/${execution.resumption.id}`}
+            scroll={false}
+          >
+            查看接续评估
+          </Link>
+        </SurfaceCard>
+      ) : null}
 
       <ExecutionContextCard
         trackerKey="knee-rehab"

@@ -36,6 +36,8 @@ integration("P1b S06 execution context atomic integration", () => {
   const taskId = randomUUID();
   const contextId = randomUUID();
   const optionId = randomUUID();
+  const contextAssessmentId = randomUUID();
+  const pauseAssessmentId = randomUUID();
   const commandIds = [
     randomUUID(),
     randomUUID(),
@@ -110,7 +112,13 @@ integration("P1b S06 execution context atomic integration", () => {
     const database = getDatabase();
     await database
       .delete(githubSyncOutbox)
-      .where(inArray(githubSyncOutbox.aggregateId, commandIds));
+      .where(
+        inArray(githubSyncOutbox.aggregateId, [
+          ...commandIds,
+          contextAssessmentId,
+          pauseAssessmentId,
+        ]),
+      );
     await database.delete(trackers).where(eq(trackers.id, trackerId));
   });
 
@@ -229,6 +237,7 @@ integration("P1b S06 execution context atomic integration", () => {
       commandId: commandIds[3]!,
       trackerKey,
       contextId,
+      assessmentId: contextAssessmentId,
       occurredAt: "2026-07-21T02:00:00.000Z",
       occurredTimeZone: "Europe/Paris",
       occurredUtcOffsetMinutes: 120,
@@ -334,6 +343,7 @@ integration("P1b S06 execution context atomic integration", () => {
       commandId: commandIds[8]!,
       trackerKey,
       pauseId,
+      assessmentId: pauseAssessmentId,
       occurredAt: "2026-07-23T16:30:00.000Z",
       occurredTimeZone: "Europe/Paris",
       occurredUtcOffsetMinutes: 120,

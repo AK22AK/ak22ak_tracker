@@ -7,6 +7,7 @@ import {
   schemaVersion,
   trackerKeySchema,
 } from "./schemas";
+import { resumptionAssessmentDtoSchema } from "./resumption";
 
 const optionKeySchema = z
   .string()
@@ -101,6 +102,7 @@ export const createExecutionContextCommandSchema =
 export const endExecutionContextCommandSchema =
   clientCommandMetadataSchema.extend({
     contextId: z.uuid(),
+    assessmentId: z.uuid(),
   });
 
 export const setExecutionDayCommandSchema = clientCommandMetadataSchema.extend({
@@ -120,6 +122,7 @@ export const startExecutionPauseCommandSchema =
 export const endExecutionPauseCommandSchema =
   clientCommandMetadataSchema.extend({
     pauseId: z.uuid(),
+    assessmentId: z.uuid(),
   });
 
 export const executionPauseDtoSchema = z.object({
@@ -164,10 +167,23 @@ export const executionContextTodaySchema = z.object({
   context: executionContextSummarySchema.nullable(),
   day: executionDayDecisionDtoSchema.nullable(),
   alternatives: z.array(executionAlternativeDtoSchema),
+  resumption: z
+    .object({
+      id: z.uuid(),
+      triggerType: z.enum(["execution_context", "pause"]),
+      recommendedEffectiveFrom: localDateSchema,
+      basePlanVersion: z.object({
+        id: z.uuid(),
+        version: z.number().int().positive(),
+      }),
+      status: z.literal("pending"),
+    })
+    .nullable()
+    .optional(),
   safety: z.object({
     blocked: z.boolean(),
     reason: z
-      .enum(["red_feedback", "illness", "acute_symptom", "pause"])
+      .enum(["red_feedback", "illness", "acute_symptom", "pause", "resumption"])
       .nullable(),
   }),
 });
@@ -179,6 +195,7 @@ export const executionContextCommandResultSchema = z.object({
   endedOn: localDateSchema.optional(),
   day: executionDayDecisionDtoSchema.optional(),
   pause: executionPauseDtoSchema.optional(),
+  assessment: resumptionAssessmentDtoSchema.optional(),
 });
 
 export type ExecutionDayConditions = z.infer<

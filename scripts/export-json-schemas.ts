@@ -11,6 +11,7 @@ import {
 } from "../src/domain/schemas";
 import { trackerSafetyPolicyDocumentSchema } from "../src/domain/safety-policy";
 import { executionAlternativeBundleSchema } from "../src/domain/execution-context";
+import { resumptionAssessmentDtoSchema } from "../src/domain/resumption";
 
 const schemas = {
   "plan-version.schema.json": planVersionSchema,
@@ -19,6 +20,7 @@ const schemas = {
   "plan-change-proposal.schema.json": planChangeProposalSchema,
   "tracker-safety-policy.schema.json": trackerSafetyPolicyDocumentSchema,
   "execution-alternative-bundle.schema.json": executionAlternativeBundleSchema,
+  "resumption-assessment.schema.json": resumptionAssessmentDtoSchema,
 };
 
 async function main() {

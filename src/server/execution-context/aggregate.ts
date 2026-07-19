@@ -13,6 +13,7 @@ import {
   executionContexts,
   executionDayDecisions,
   executionPauses,
+  resumptionAssessments,
 } from "@/server/db/schema";
 
 import type { ExecutionContextAggregateStore } from "./aggregate-core";
@@ -31,6 +32,30 @@ export function createNeonExecutionContextAggregateStore(
   };
 
   return {
+    async findPendingResumption() {
+      const [row] = await database
+        .select({ snapshot: resumptionAssessments.snapshot })
+        .from(resumptionAssessments)
+        .where(
+          and(
+            eq(resumptionAssessments.trackerId, trackerId),
+            eq(resumptionAssessments.status, "pending"),
+          ),
+        )
+        .orderBy(desc(resumptionAssessments.createdAt))
+        .limit(1);
+      if (!row) return null;
+      return {
+        id: row.snapshot.id,
+        triggerType: row.snapshot.trigger.type,
+        recommendedEffectiveFrom: row.snapshot.recommendedEffectiveFrom,
+        basePlanVersion: {
+          id: row.snapshot.basePlanVersion.id,
+          version: row.snapshot.basePlanVersion.version,
+        },
+        status: "pending" as const,
+      };
+    },
     async findRelevantPause(targetDate) {
       const [row] = await database
         .select({
@@ -45,6 +70,7 @@ export function createNeonExecutionContextAggregateStore(
           and(
             eq(executionPauses.trackerId, trackerId),
             lte(executionPauses.startedOn, targetDate),
+            isNull(executionPauses.endedAt),
           ),
         )
         .orderBy(

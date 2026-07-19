@@ -21,6 +21,12 @@ import {
   type SetExecutionDayCommand,
   type StartExecutionPauseCommand,
 } from "@/domain/execution-context";
+import {
+  resumptionAssessmentDtoSchema,
+  resumptionDecisionCommandSchema,
+  resumptionDecisionResultSchema,
+  type ResumptionDecisionCommand,
+} from "@/domain/resumption";
 
 async function getJson(url: string, signal?: AbortSignal) {
   const response = await fetch(url, {
@@ -165,4 +171,42 @@ export function endExecutionPause(
     "POST",
     command,
   );
+}
+
+export async function fetchResumptionAssessment(
+  trackerKey: string,
+  assessmentId: string,
+  signal?: AbortSignal,
+) {
+  return resumptionAssessmentDtoSchema.parse(
+    await getJson(
+      `/api/trackers/${encodeURIComponent(trackerKey)}/resumption-assessments/${encodeURIComponent(assessmentId)}`,
+      signal,
+    ),
+  );
+}
+
+export async function decideResumption(
+  trackerKey: string,
+  input: ResumptionDecisionCommand,
+) {
+  const command = resumptionDecisionCommandSchema.parse(input);
+  const response = await fetch(
+    `/api/trackers/${encodeURIComponent(trackerKey)}/resumption-assessments/${encodeURIComponent(command.assessmentId)}/decision`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(command),
+    },
+  );
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(payload?.error ?? `request_failed_${response.status}`);
+  }
+  return resumptionDecisionResultSchema.parse(await response.json());
 }

@@ -13,8 +13,10 @@ import {
   executionDayDecisions,
   executionPauses,
   githubSyncOutbox,
+  resumptionAssessments,
   trackers,
 } from "@/server/db/schema";
+import { buildResumptionAssessmentSnapshot } from "@/server/resumption/build-assessment";
 
 import type { ExecutionContextCommandStore } from "./execution-context-core";
 
@@ -186,17 +188,48 @@ export function createNeonExecutionContextCommandStore(
     },
 
     async hasBlockingPause(trackerId, localDate) {
+      const [pauseRows, assessmentRows] = await Promise.all([
+        database
+          .select({ id: executionPauses.id })
+          .from(executionPauses)
+          .where(
+            and(
+              eq(executionPauses.trackerId, trackerId),
+              lte(executionPauses.startedOn, localDate),
+              isNull(executionPauses.endedAt),
+            ),
+          )
+          .limit(1),
+        database
+          .select({ id: resumptionAssessments.id })
+          .from(resumptionAssessments)
+          .where(
+            and(
+              eq(resumptionAssessments.trackerId, trackerId),
+              eq(resumptionAssessments.status, "pending"),
+            ),
+          )
+          .limit(1),
+      ]);
+      return Boolean(pauseRows[0] || assessmentRows[0]);
+    },
+
+    async buildResumptionAssessment(input) {
+      return buildResumptionAssessmentSnapshot(input, database);
+    },
+
+    async findResumptionAssessment(trackerId, assessmentId) {
       const [row] = await database
-        .select({ id: executionPauses.id })
-        .from(executionPauses)
+        .select({ snapshot: resumptionAssessments.snapshot })
+        .from(resumptionAssessments)
         .where(
           and(
-            eq(executionPauses.trackerId, trackerId),
-            lte(executionPauses.startedOn, localDate),
+            eq(resumptionAssessments.id, assessmentId),
+            eq(resumptionAssessments.trackerId, trackerId),
           ),
         )
         .limit(1);
-      return Boolean(row);
+      return row?.snapshot ?? null;
     },
 
     async commitAtomically(command) {
@@ -232,17 +265,45 @@ export function createNeonExecutionContextCommandStore(
       }
 
       if (command.type === "end") {
+        const contextUpdate = database
+          .update(executionContexts)
+          .set({
+            endedOn: command.endedOn,
+            endedAt: command.endedAt,
+            updatedAt: new Date(),
+          })
+          .where(eq(executionContexts.id, command.contextId));
+        if (!command.assessment) {
+          await database.batch([contextUpdate, eventInsert, outboxInsert]);
+          return;
+        }
         await database.batch([
-          database
-            .update(executionContexts)
-            .set({
-              endedOn: command.endedOn,
-              endedAt: command.endedAt,
-              updatedAt: new Date(),
-            })
-            .where(eq(executionContexts.id, command.contextId)),
+          contextUpdate,
           eventInsert,
           outboxInsert,
+          database.insert(resumptionAssessments).values({
+            id: command.assessment.snapshot.id,
+            trackerId: command.trackerId,
+            triggerType: command.assessment.snapshot.trigger.type,
+            triggerId: command.assessment.snapshot.trigger.id,
+            basePlanVersionId: command.assessment.snapshot.basePlanVersion.id,
+            planningTimeZone: command.assessment.snapshot.planningTimeZone,
+            snapshot: command.assessment.snapshot,
+          }),
+          database.insert(events).values({
+            id: command.assessment.event.id,
+            trackerId: command.trackerId,
+            kind: command.assessment.event.kind,
+            localDate: command.assessment.event.localDate,
+            occurredAt: new Date(command.assessment.event.occurredAt),
+            recordedAt: new Date(command.assessment.event.recordedAt),
+            occurredTimeZone: command.assessment.event.occurredTimeZone,
+            occurredUtcOffsetMinutes:
+              command.assessment.event.occurredUtcOffsetMinutes,
+            idempotencyKey: command.assessment.event.idempotencyKey,
+            document: command.assessment.event,
+          }),
+          database.insert(githubSyncOutbox).values(command.assessment.outbox),
         ]);
         return;
       }
@@ -274,6 +335,29 @@ export function createNeonExecutionContextCommandStore(
             .where(eq(executionPauses.id, command.pauseId)),
           eventInsert,
           outboxInsert,
+          database.insert(resumptionAssessments).values({
+            id: command.assessment.snapshot.id,
+            trackerId: command.trackerId,
+            triggerType: command.assessment.snapshot.trigger.type,
+            triggerId: command.assessment.snapshot.trigger.id,
+            basePlanVersionId: command.assessment.snapshot.basePlanVersion.id,
+            planningTimeZone: command.assessment.snapshot.planningTimeZone,
+            snapshot: command.assessment.snapshot,
+          }),
+          database.insert(events).values({
+            id: command.assessment.event.id,
+            trackerId: command.trackerId,
+            kind: command.assessment.event.kind,
+            localDate: command.assessment.event.localDate,
+            occurredAt: new Date(command.assessment.event.occurredAt),
+            recordedAt: new Date(command.assessment.event.recordedAt),
+            occurredTimeZone: command.assessment.event.occurredTimeZone,
+            occurredUtcOffsetMinutes:
+              command.assessment.event.occurredUtcOffsetMinutes,
+            idempotencyKey: command.assessment.event.idempotencyKey,
+            document: command.assessment.event,
+          }),
+          database.insert(githubSyncOutbox).values(command.assessment.outbox),
         ]);
         return;
       }

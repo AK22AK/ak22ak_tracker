@@ -30,7 +30,10 @@
         "execution_context_ended",
         "execution_day_decision",
         "execution_pause_started",
-        "execution_pause_ended"
+        "execution_pause_ended",
+        "resumption_assessment_created",
+        "resumption_assessment_expired",
+        "resumption_decision"
       ]
     },
     "occurredAt": {
