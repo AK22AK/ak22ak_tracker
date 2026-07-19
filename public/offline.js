@@ -208,6 +208,8 @@
           title,
           status,
           prescription: objectValue(value.prescription) ?? {},
+          actual: value.actual ?? null,
+          note: value.subjectiveNote ?? null,
         };
       })
       .filter(Boolean);
@@ -310,7 +312,121 @@
     return [name, dose].filter(Boolean).join(" · ");
   }
 
-  function renderTaskList(day) {
+  function nextCreatedAt(now) {
+    const latest = state.commands.reduce((value, command) => {
+      const createdAt = Date.parse(command.createdAt);
+      return Number.isFinite(createdAt) ? Math.max(value, createdAt) : value;
+    }, 0);
+    return new Date(Math.max(now.valueOf(), latest + 1)).toISOString();
+  }
+
+  function deviceOccurrence(now) {
+    let timeZone = "UTC";
+    let utcOffsetMinutes = 0;
+    try {
+      const resolved = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (resolved) {
+        new Intl.DateTimeFormat("en", { timeZone: resolved }).format(now);
+        timeZone = resolved;
+        utcOffsetMinutes = -now.getTimezoneOffset();
+      }
+    } catch {
+      // Keep the explicit UTC fallback when the device does not expose a
+      // usable IANA time zone.
+    }
+    return { timeZone, utcOffsetMinutes };
+  }
+
+  async function persistPendingCommand(command) {
+    const database = await openExistingDatabase();
+    if (!database) throw new Error("offline_database_unavailable");
+    if (
+      !database.objectStoreNames.contains("metadata") ||
+      !database.objectStoreNames.contains("pendingCommands")
+    ) {
+      database.close();
+      throw new Error("offline_command_store_unavailable");
+    }
+
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(
+        ["metadata", "pendingCommands"],
+        "readwrite",
+      );
+      let failure = null;
+      const abort = (code) => {
+        failure = new Error(code);
+        try {
+          transaction.abort();
+        } catch {
+          // The transaction may already be aborting because IndexedDB failed.
+        }
+      };
+      transaction.oncomplete = () => {
+        database.close();
+        resolve(command);
+      };
+      transaction.onerror = () => {
+        failure ??= transaction.error;
+      };
+      transaction.onabort = () => {
+        const error =
+          failure ?? transaction.error ?? new Error("offline_write_failed");
+        database.close();
+        reject(error);
+      };
+
+      const metadata = transaction.objectStore("metadata");
+      const activeIdentity = metadata.get("active-identity");
+      activeIdentity.onerror = () => abort("offline_identity_unavailable");
+      activeIdentity.onsuccess = () => {
+        const identity = stringValue(objectValue(activeIdentity.result)?.value);
+        if (identity !== command.githubUserId || identity !== state.identity) {
+          abort("offline_identity_mismatch");
+          return;
+        }
+        const add = transaction.objectStore("pendingCommands").add(command);
+        add.onerror = () => {
+          failure = add.error ?? new Error("offline_write_failed");
+        };
+      };
+    });
+  }
+
+  function createTaskCommand(task, options, status) {
+    if (
+      state.identity === null ||
+      state.trackerKey !== "knee-rehab" ||
+      options.date !== localDateNow() ||
+      !Number.isInteger(options.planVersion) ||
+      options.planVersion <= 0 ||
+      !["planned", "completed"].includes(task.status) ||
+      !["planned", "completed"].includes(status)
+    ) {
+      return null;
+    }
+    const occurred = new Date();
+    const occurrence = deviceOccurrence(occurred);
+    return snapshotContract?.createPendingTaskCommand({
+      id: crypto.randomUUID(),
+      githubUserId: state.identity,
+      trackerKey: state.trackerKey,
+      createdAt: nextCreatedAt(occurred),
+      occurredAt: occurred.toISOString(),
+      localDate: options.date,
+      occurredTimeZone: occurrence.timeZone,
+      occurredUtcOffsetMinutes: occurrence.utcOffsetMinutes,
+      sourceVersion: options.sourceVersion,
+      taskId: task.id,
+      status,
+      actual: task.actual,
+      note: task.note,
+      baseStatus: task.status,
+      planVersion: options.planVersion,
+    });
+  }
+
+  function renderTaskList(day, options = null) {
     const tasks = safeTasks(day);
     const list = element("div", "task-list");
     if (tasks.length === 0) {
@@ -330,6 +446,47 @@
       article.append(heading);
       const dose = taskDose(task);
       if (dose) article.append(element("p", "", dose));
+      const canWrite =
+        options?.writable === true &&
+        state.identity !== null &&
+        state.trackerKey === "knee-rehab" &&
+        options.date === localDateNow() &&
+        Number.isInteger(options.planVersion) &&
+        task.id !== null &&
+        ["planned", "completed"].includes(task.status);
+      if (canWrite) {
+        const nextStatus = task.status === "planned" ? "completed" : "planned";
+        const action = element(
+          "button",
+          "offline-task-toggle",
+          nextStatus === "completed" ? "确认完成" : "恢复待完成",
+        );
+        action.type = "button";
+        const saveStatus = element(
+          "p",
+          "offline-task-save-status",
+          "仅保存在本机，联网后同步。",
+        );
+        action.addEventListener("click", async () => {
+          action.disabled = true;
+          saveStatus.textContent = "正在保存到本机…";
+          const command = createTaskCommand(task, options, nextStatus);
+          if (!command) {
+            action.disabled = false;
+            saveStatus.textContent = "尚未保存，请重新打开今日页后再试。";
+            return;
+          }
+          try {
+            await persistPendingCommand(command);
+            state.commands.push(command);
+            render();
+          } catch {
+            action.disabled = false;
+            saveStatus.textContent = "尚未保存，请重试。";
+          }
+        });
+        article.append(action, saveStatus);
+      }
       list.append(article);
     }
     return list;
@@ -417,7 +574,15 @@
       heading.append(badge(`计划 v${plan.version}`));
     }
     const projectedDay = projectDay(data.day, today);
-    planSection.append(heading, renderTaskList(projectedDay));
+    planSection.append(
+      heading,
+      renderTaskList(projectedDay, {
+        writable: true,
+        date: today,
+        planVersion: numberValue(plan?.version),
+        sourceVersion: row.sourceVersion,
+      }),
+    );
     const pending = renderPendingStatus(today);
     replaceContent(
       ...(pending ? [pending] : []),

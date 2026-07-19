@@ -210,6 +210,28 @@ h1 {
   font-size: 0.88rem;
 }
 
+.offline-task-toggle {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 12px;
+  border: 1px solid var(--primary);
+  border-radius: 12px;
+  color: #fff;
+  background: var(--primary);
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.offline-task-toggle:disabled {
+  cursor: wait;
+  opacity: 0.64;
+}
+
+.offline-task-save-status {
+  margin-top: 6px !important;
+  font-size: 0.78rem !important;
+}
+
 .month-toolbar {
   display: grid;
   grid-template-columns: 44px 1fr 44px;
@@ -234,6 +256,7 @@ h1 {
 
 .month-toolbar button:focus-visible,
 .calendar-day:focus-visible,
+.offline-task-toggle:focus-visible,
 .offline-tabs button:focus-visible {
   outline: 3px solid rgba(23, 63, 53, 0.28);
   outline-offset: 2px;

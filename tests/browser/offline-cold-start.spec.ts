@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const githubUserId = "10001";
-const trackerKey = "anonymous-tracker";
+const trackerKey = "knee-rehab";
 
 async function waitForServiceWorkerControl(
   page: import("@playwright/test").Page,
@@ -23,7 +23,7 @@ async function waitForServiceWorkerControl(
 
 async function seedAnonymousSnapshots(
   page: import("@playwright/test").Page,
-  options: { withPending?: boolean } = {},
+  options: { withPending?: boolean; trackerKey?: string } = {},
 ) {
   return page.evaluate(
     async ({ identity, key, withPending }) => {
@@ -47,8 +47,14 @@ async function seedAnonymousSnapshots(
         category: "general",
         prescription: { main: "Anonymous cached dose" },
         status: "planned",
-        actual: null,
-        subjectiveNote: null,
+        actual: {
+          kind: "general",
+          exercises: [],
+          durationMinutes: 18,
+          distanceKm: null,
+          summary: "Anonymous cached actual",
+        },
+        subjectiveNote: "Anonymous cached note",
       };
       const day = {
         state: "ready",
@@ -263,7 +269,7 @@ async function seedAnonymousSnapshots(
     },
     {
       identity: githubUserId,
-      key: trackerKey,
+      key: options.trackerKey ?? trackerKey,
       withPending: options.withPending ?? false,
     },
   );
@@ -283,10 +289,13 @@ async function cachedPaths(page: import("@playwright/test").Page) {
   });
 }
 
-async function prepareOnlineSnapshots(page: import("@playwright/test").Page) {
+async function prepareOnlineSnapshots(
+  page: import("@playwright/test").Page,
+  options: { trackerKey?: string } = {},
+) {
   await page.goto("/login");
   await waitForServiceWorkerControl(page);
-  return seedAnonymousSnapshots(page);
+  return seedAnonymousSnapshots(page, options);
 }
 
 async function corruptSnapshot(
@@ -358,7 +367,7 @@ async function openOfflineColdStart(
 ) {
   const page = await context.newPage();
   await page.goto(path, { waitUntil: "domcontentloaded" });
-  await expect(page.getByText("离线缓存 · 仅供查看")).toBeVisible();
+  await expect(page.getByText("离线缓存 · 今日任务可记录")).toBeVisible();
   return page;
 }
 
@@ -368,7 +377,7 @@ test("online direct access returns to the protected identity path", async ({
   await page.goto("/offline.html");
 
   await expect(page).toHaveURL(/\/login(?:\?|$)/);
-  await expect(page.getByText("离线缓存 · 仅供查看")).toHaveCount(0);
+  await expect(page.getByText("离线缓存 · 今日任务可记录")).toHaveCount(0);
 });
 
 test("cold starts from the public shell after the old document is destroyed", async ({
@@ -399,7 +408,9 @@ test("cold starts from the public shell after the old document is destroyed", as
   ).toBeVisible();
   await expect(coldStart.getByText(/最近更新：/)).toBeVisible();
   await expect(
-    coldStart.getByText("本页仅供查看；此前保存在本机的任务和反馈会叠加显示。"),
+    coldStart.getByText(
+      "今日任务状态可先保存在本机；其他内容仅供查看，联网后由受保护应用同步。",
+    ),
   ).toBeVisible();
   expect(
     await coldStart.evaluate(
@@ -438,6 +449,183 @@ test("cold starts from the public shell after the old document is destroyed", as
   ).toBeVisible();
   await expect(
     emptyColdStart.getByText("Anonymous browser cache task"),
+  ).toHaveCount(0);
+});
+
+test("cold-start shell persists ordered today task toggles before changing the UI", async ({
+  context,
+  page,
+}) => {
+  const { today } = await prepareOnlineSnapshots(page);
+  await context.setOffline(true);
+  await page.close();
+
+  const firstStart = await openOfflineColdStart(context, "/");
+  await firstStart.getByRole("button", { name: "确认完成" }).click();
+  await expect(firstStart.getByText("1 条仅保存在本机")).toBeVisible();
+  await expect(firstStart.getByText("已完成")).toBeVisible();
+  await expect(
+    firstStart.getByText("仅保存在本机，联网后同步。"),
+  ).toBeVisible();
+  await firstStart.close();
+
+  const secondStart = await openOfflineColdStart(context, "/");
+  await expect(secondStart.getByText("已完成")).toBeVisible();
+  await expect(secondStart.getByText("1 条仅保存在本机")).toBeVisible();
+  await secondStart.getByRole("button", { name: "恢复待完成" }).click();
+  await expect(secondStart.getByText("2 条仅保存在本机")).toBeVisible();
+  await secondStart.close();
+
+  const thirdStart = await openOfflineColdStart(context, "/");
+  await expect(thirdStart.getByText("待完成")).toBeVisible();
+  await expect(thirdStart.getByText("2 条仅保存在本机")).toBeVisible();
+
+  const commands = await thirdStart.evaluate(async () => {
+    return new Promise<Record<string, unknown>[]>((resolve, reject) => {
+      const request = indexedDB.open("ak22ak-tracker", 3);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const database = request.result;
+        const transaction = database.transaction("pendingCommands", "readonly");
+        const getAll = transaction.objectStore("pendingCommands").getAll();
+        getAll.onerror = () => reject(getAll.error);
+        getAll.onsuccess = () =>
+          resolve(
+            (getAll.result as Record<string, unknown>[]).sort((left, right) =>
+              String(left.createdAt).localeCompare(String(right.createdAt)),
+            ),
+          );
+      };
+    });
+  });
+  expect(commands).toHaveLength(2);
+  expect(commands.map((command) => command.status)).toEqual([
+    "local_only",
+    "local_only",
+  ]);
+  expect(commands.map((command) => command.schemaVersion)).toEqual([1, 1]);
+  expect(commands.map((command) => command.localDate)).toEqual([today, today]);
+  expect(commands.every((command) => command.trackerKey === trackerKey)).toBe(
+    true,
+  );
+  expect(
+    commands.every((command) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        String(command.id),
+      ),
+    ),
+  ).toBe(true);
+  expect(
+    commands.every(
+      (command) =>
+        typeof command.occurredTimeZone === "string" &&
+        Number.isInteger(command.occurredUtcOffsetMinutes),
+    ),
+  ).toBe(true);
+  const payloads = commands.map(
+    (command) => command.payload as Record<string, unknown>,
+  );
+  expect(payloads.map((payload) => payload.status)).toEqual([
+    "completed",
+    "planned",
+  ]);
+  expect(payloads.map((payload) => payload.baseStatus)).toEqual([
+    "planned",
+    "completed",
+  ]);
+  expect(payloads.every((payload) => payload.planVersion === 1)).toBe(true);
+  expect(
+    payloads.every(
+      (payload) =>
+        (payload.actual as Record<string, unknown>).summary ===
+          "Anonymous cached actual" && payload.note === "Anonymous cached note",
+    ),
+  ).toBe(true);
+  expect(
+    String(commands[0]?.createdAt).localeCompare(
+      String(commands[1]?.createdAt),
+    ),
+  ).toBeLessThan(0);
+
+  const offlineCache = await cachedPaths(thirdStart);
+  expect(offlineCache).not.toContain("/");
+  expect(offlineCache).not.toContain("/calendar");
+  expect(offlineCache.some((path) => path.startsWith("/api/"))).toBe(false);
+  expect(offlineCache.some((path) => path.includes("_rsc"))).toBe(false);
+});
+
+test("cold-start shell never changes the task when write-ahead persistence fails", async ({
+  context,
+  page,
+}) => {
+  await prepareOnlineSnapshots(page);
+  await context.setOffline(true);
+  await page.close();
+
+  const coldStart = await openOfflineColdStart(context, "/");
+  await coldStart.evaluate(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open("ak22ak-tracker", 3);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction("metadata", "readwrite");
+          transaction.objectStore("metadata").put({
+            key: "active-identity",
+            value: "20002",
+            updatedAt: new Date().toISOString(),
+          });
+          transaction.oncomplete = () => {
+            database.close();
+            resolve();
+          };
+          transaction.onerror = () => reject(transaction.error);
+        };
+      }),
+  );
+
+  await coldStart.getByRole("button", { name: "确认完成" }).click();
+  await expect(coldStart.getByText("尚未保存，请重试。")).toBeVisible();
+  await expect(coldStart.getByText("待完成")).toBeVisible();
+  await expect(coldStart.getByText("已完成")).toHaveCount(0);
+  await expect(coldStart.getByText(/条仅保存在本机/)).toHaveCount(0);
+  expect(
+    await coldStart.evaluate(
+      () =>
+        new Promise<number>((resolve, reject) => {
+          const request = indexedDB.open("ak22ak-tracker", 3);
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => {
+            const count = request.result
+              .transaction("pendingCommands", "readonly")
+              .objectStore("pendingCommands")
+              .count();
+            count.onerror = () => reject(count.error);
+            count.onsuccess = () => resolve(count.result);
+          };
+        }),
+    ),
+  ).toBe(0);
+});
+
+test("cold-start shell keeps a non-knee tracker strictly read-only", async ({
+  context,
+  page,
+}) => {
+  await prepareOnlineSnapshots(page, { trackerKey: "anonymous-tracker" });
+  await context.setOffline(true);
+  await page.close();
+
+  const coldStart = await openOfflineColdStart(context, "/");
+  await expect(
+    coldStart.getByText("Anonymous browser cache task"),
+  ).toBeVisible();
+  await expect(coldStart.getByRole("button", { name: "确认完成" })).toHaveCount(
+    0,
+  );
+  await expect(
+    coldStart.getByRole("button", { name: "恢复待完成" }),
   ).toHaveCount(0);
 });
 

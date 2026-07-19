@@ -597,11 +597,44 @@
     );
   }
 
+  function createPendingTaskCommand(value) {
+    const input = objectValue(value);
+    if (!input) return null;
+    const command = {
+      id: input.id,
+      schemaVersion: 1,
+      githubUserId: input.githubUserId,
+      trackerKey: input.trackerKey,
+      kind: "task_update",
+      createdAt: input.createdAt,
+      occurredAt: input.occurredAt,
+      localDate: input.localDate,
+      occurredTimeZone: input.occurredTimeZone,
+      occurredUtcOffsetMinutes: input.occurredUtcOffsetMinutes,
+      attemptCount: 0,
+      nextAttemptAt: input.createdAt,
+      lastAttemptAt: null,
+      lastErrorCode: null,
+      status: "local_only",
+      sourceVersion: input.sourceVersion ?? null,
+      payload: {
+        taskId: input.taskId,
+        status: input.status,
+        actual: input.actual,
+        note: input.note,
+        baseStatus: input.baseStatus,
+        planVersion: input.planVersion,
+      },
+    };
+    return validPendingCommand(command, command.githubUserId) ? command : null;
+  }
+
   globalThis.AKTrackerOfflineContract = Object.freeze({
     validSnapshotRow,
     validTodayData,
     validCalendarData,
     validDayData,
     validPendingCommand,
+    createPendingTaskCommand,
   });
 })();
