@@ -15,6 +15,12 @@ import type { ExternalRecordAssociation } from "@/domain/external-training";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { CalendarShell } from "./calendar-shell";
+import type {
+  OfflineCalendarSnapshot,
+  OfflineDaySnapshot,
+} from "@/offline/snapshot-contracts";
+import { useQuerySnapshot } from "@/offline/use-query-snapshot";
+import { useEffect } from "react";
 
 const trackerKey = "knee-rehab";
 const planningTimeZone = "Asia/Shanghai";
@@ -30,12 +36,54 @@ export function CalendarClient({ initialDate }: { initialDate?: string }) {
     queryFn: ({ signal }) => fetchCalendarAggregate(trackerKey, month, signal),
     staleTime: 5 * 60_000,
   });
+  const {
+    data: monthSnapshotData,
+    isPending: monthSnapshotPending,
+    persist: persistMonthSnapshot,
+  } = useQuerySnapshot<OfflineCalendarSnapshot>({
+    trackerKey,
+    kind: "calendar-month",
+    scope: month,
+  });
   const dayQuery = useQuery({
     queryKey: trackerQueryKeys.day(trackerKey, selectedDate),
     queryFn: ({ signal }) =>
       fetchDayAggregate(trackerKey, selectedDate, signal),
     staleTime: 60_000,
   });
+  const {
+    data: daySnapshotData,
+    isPending: daySnapshotPending,
+    persist: persistDaySnapshot,
+  } = useQuerySnapshot<OfflineDaySnapshot>({
+    trackerKey,
+    kind: "day",
+    scope: selectedDate,
+  });
+
+  useEffect(() => {
+    if (!monthQuery.data) return;
+    void persistMonthSnapshot(
+      monthQuery.data,
+      `month:${monthQuery.data.month}`,
+      monthQuery.dataUpdatedAt,
+    );
+  }, [monthQuery.data, monthQuery.dataUpdatedAt, persistMonthSnapshot]);
+
+  useEffect(() => {
+    if (!dayQuery.data) return;
+    void persistDaySnapshot(
+      dayQuery.data,
+      `plan:${dayQuery.data.plan?.version ?? "none"}`,
+      dayQuery.dataUpdatedAt,
+    );
+  }, [dayQuery.data, dayQuery.dataUpdatedAt, persistDaySnapshot]);
+
+  const monthData = monthQuery.data ?? monthSnapshotData?.data;
+  const dayData = dayQuery.data ?? daySnapshotData?.data;
+  const readOnlyOffline =
+    (!monthQuery.data && !!monthSnapshotData) ||
+    (!dayQuery.data && !!daySnapshotData);
 
   const selectDate = useCallback((date: string) => {
     setSelectedDate(date);
@@ -84,12 +132,34 @@ export function CalendarClient({ initialDate }: { initialDate?: string }) {
       month={month}
       today={today}
       selectedDate={selectedDate}
-      days={monthQuery.data?.days ?? []}
-      monthLoading={monthQuery.isPending}
-      monthError={monthQuery.isError}
-      dashboard={dayQuery.data?.day ?? null}
-      detailLoading={dayQuery.isPending}
-      detailError={dayQuery.isError}
+      days={monthData?.days ?? []}
+      monthLoading={
+        !monthData &&
+        (monthSnapshotPending ||
+          (monthQuery.isPending && monthQuery.fetchStatus !== "paused"))
+      }
+      monthError={
+        !monthData &&
+        !monthSnapshotPending &&
+        (monthQuery.isError || monthQuery.fetchStatus === "paused")
+      }
+      dashboard={dayData?.day ?? null}
+      detailLoading={
+        !dayData &&
+        (daySnapshotPending ||
+          (dayQuery.isPending && dayQuery.fetchStatus !== "paused"))
+      }
+      detailError={
+        !dayData &&
+        !daySnapshotPending &&
+        (dayQuery.isError || dayQuery.fetchStatus === "paused")
+      }
+      readOnlyOffline={readOnlyOffline}
+      offlineSavedAt={
+        readOnlyOffline
+          ? (daySnapshotData?.savedAt ?? monthSnapshotData?.savedAt ?? null)
+          : null
+      }
       onRetryDetail={() => void dayQuery.refetch()}
       onRetryMonth={() => void monthQuery.refetch()}
       onSelectDate={selectDate}

@@ -2,6 +2,7 @@ import { IntegrationCard } from "@/components/integration-card";
 import { integrationStatusSchema } from "@/domain/integrations";
 import { getIntegrationStatus } from "@/server/integrations/credentials/repository";
 import { integrationProviderDefinitions } from "@/server/integrations/providers";
+import { LocalDataCard } from "@/components/local-data-card";
 
 const trackerKey = "knee-rehab";
 export default async function SettingsPage() {
@@ -23,6 +24,7 @@ export default async function SettingsPage() {
         definition={definition}
         initialStatus={status}
       />
+      <LocalDataCard />
     </main>
   );
 }

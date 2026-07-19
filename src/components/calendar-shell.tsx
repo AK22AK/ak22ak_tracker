@@ -9,6 +9,7 @@ import type { ExternalRecordAssociation } from "@/domain/external-training";
 
 import { SignOutButton } from "./sign-out-button";
 import { ExternalTrainingSection } from "./external-training-section";
+import { useNetworkState } from "@/client/use-network-state";
 
 const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
 const timingLabels: Record<DashboardFeedback["timing"], string> = {
@@ -239,6 +240,8 @@ export function CalendarShell({
   onSelectDate,
   onSelectMonth,
   onExternalTrainingUpdated,
+  readOnlyOffline = false,
+  offlineSavedAt = null,
 }: {
   month: string;
   today: string;
@@ -257,7 +260,11 @@ export function CalendarShell({
     recordId: string,
     association: ExternalRecordAssociation,
   ) => void;
+  readOnlyOffline?: boolean;
+  offlineSavedAt?: string | null;
 }) {
+  const online = useNetworkState();
+  const writesDisabled = readOnlyOffline || !online;
   const summaries = new Map(days.map((day) => [day.date, day]));
   const cells = calendarMonthCells(month);
   const previousMonth = shiftMonth(month, -1);
@@ -281,6 +288,26 @@ export function CalendarShell({
           <SignOutButton />
         </div>
       </header>
+
+      {writesDisabled ? (
+        <section className="offline-cache-notice" role="status">
+          <strong>
+            {readOnlyOffline ? "离线缓存 · 仅供查看" : "当前离线 · 仅供查看"}
+          </strong>
+          <span>
+            最近更新：
+            {offlineSavedAt
+              ? new Intl.DateTimeFormat("zh-CN", {
+                  month: "numeric",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }).format(new Date(offlineSavedAt))
+              : "未知"}
+          </span>
+          <small>可以浏览日期；训练关联请联网后操作。</small>
+        </section>
+      ) : null}
 
       <section
         className="calendar-card"
@@ -465,6 +492,7 @@ export function CalendarShell({
                 records={dashboard.externalTrainingRecords}
                 tasks={dashboard.tasks}
                 onUpdated={onExternalTrainingUpdated}
+                readOnly={writesDisabled}
               />
               <div className="calendar-task-list">
                 <div className="calendar-subsection-heading">

@@ -8,10 +8,14 @@ export default async function ProtectedLayout({
   children,
   feedback,
 }: Readonly<{ children: React.ReactNode; feedback: React.ReactNode }>) {
-  if (!(await getAuthorizedSession())) redirect("/login");
+  const session = await getAuthorizedSession();
+  if (!session?.user?.githubId) redirect("/login");
 
   return (
-    <AppProviders>
+    <AppProviders
+      key={session.user.githubId}
+      githubUserId={session.user.githubId}
+    >
       <ProtectedAppShell>{children}</ProtectedAppShell>
       {feedback}
     </AppProviders>

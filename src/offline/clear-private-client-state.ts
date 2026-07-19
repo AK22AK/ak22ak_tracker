@@ -1,5 +1,6 @@
 import "client-only";
 
+import { clearOfflinePrivateData } from "./query-snapshots";
 import { offlineDatabase } from "./store";
 import { clearPrivateClientState } from "./private-state";
 
@@ -27,7 +28,7 @@ export async function clearCurrentUserClientState() {
     clearQueryState: async () => {
       for (const cleaner of queryStateCleaners) await cleaner();
     },
-    clearIndexedDb: () => offlineDatabase.delete(),
+    clearIndexedDb: () => clearOfflinePrivateData(offlineDatabase),
     cacheStorage: {
       keys: async () => [...(await caches.keys())],
       delete: (name) => caches.delete(name),

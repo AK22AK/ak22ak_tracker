@@ -9,6 +9,11 @@ import type { TodayAggregate } from "@/domain/api-contracts";
 import type { ExternalRecordAssociation } from "@/domain/external-training";
 import { localDateInTimeZone } from "@/domain/planning-time";
 import type { DashboardTask } from "@/server/dashboard";
+import {
+  projectTodaySnapshot,
+  type OfflineTodaySnapshot,
+} from "@/offline/snapshot-contracts";
+import { useQuerySnapshot } from "@/offline/use-query-snapshot";
 
 import { DashboardShell } from "./dashboard-shell";
 
@@ -35,6 +40,15 @@ export function TodayClient() {
     queryFn: ({ signal }) => fetchTodayAggregate(trackerKey, localDate, signal),
     staleTime: 60_000,
   });
+  const {
+    data: snapshotData,
+    isPending: snapshotPending,
+    persist: persistSnapshot,
+  } = useQuerySnapshot<OfflineTodaySnapshot>({
+    trackerKey,
+    kind: "today",
+    scope: localDate,
+  });
 
   useEffect(() => {
     if (!query.data) return;
@@ -49,9 +63,21 @@ export function TodayClient() {
       ),
       query.data.safetyPolicy,
     );
-  }, [query.data, queryClient]);
+    void persistSnapshot(
+      projectTodaySnapshot(query.data),
+      `plan:${query.data.plan?.version ?? "none"};policy:${query.data.safetyPolicy.version}:${query.data.safetyPolicy.hash}`,
+      query.dataUpdatedAt,
+    );
+  }, [persistSnapshot, query.data, query.dataUpdatedAt, queryClient]);
 
-  if (query.isPending) {
+  const aggregate = query.data ?? snapshotData?.data;
+  const readOnlyOffline =
+    !query.data && snapshotData !== null && snapshotData !== undefined;
+
+  if (
+    !aggregate &&
+    (snapshotPending || (query.isPending && query.fetchStatus !== "paused"))
+  ) {
     return (
       <main className="app-shell page-frame today-page" aria-busy="true">
         <header className="today-header">
@@ -67,12 +93,14 @@ export function TodayClient() {
     );
   }
 
-  if (query.isError) {
+  if (!aggregate) {
     return (
       <main className="app-shell page-frame today-page">
         <section className="surface-card today-error-card" role="alert">
-          <h1>今日数据暂时无法加载</h1>
-          <p>你的任务和草稿不会因此改变，可以稍后重试。</p>
+          <h1>
+            {query.isError ? "今日数据暂时无法加载" : "当前离线且没有可用缓存"}
+          </h1>
+          <p>你的任务和草稿不会因此改变；联网后可以重新加载。</p>
           <button
             className="primary-button"
             type="button"
@@ -136,9 +164,11 @@ export function TodayClient() {
     <DashboardShell
       today={todayLabel(localDate)}
       localDate={localDate}
-      planVersion={query.data.plan?.version ?? null}
-      initialDashboard={query.data.day}
-      execution={query.data.execution}
+      planVersion={aggregate.plan?.version ?? null}
+      initialDashboard={aggregate.day}
+      execution={aggregate.execution}
+      readOnlyOffline={readOnlyOffline}
+      offlineSavedAt={readOnlyOffline ? (snapshotData?.savedAt ?? null) : null}
       onRefresh={() => query.refetch()}
       onExecutionChanged={() => query.refetch()}
       onTaskUpdated={handleTaskUpdated}

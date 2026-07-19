@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, useSyncExternalStore } from "react";
+import { useRef, useState } from "react";
 
 import {
   createOrReuseClientCommand,
@@ -14,6 +14,7 @@ import type {
 import type { TaskActual } from "@/domain/schemas";
 import type { DashboardTask, TodayDashboard } from "@/server/dashboard";
 import type { ExecutionContextToday } from "@/domain/execution-context";
+import { useNetworkState } from "@/client/use-network-state";
 
 import { SignOutButton } from "./sign-out-button";
 import { ExternalTrainingSection } from "./external-training-section";
@@ -27,15 +28,6 @@ import {
   SurfaceCard,
   type StatusTone,
 } from "./ui/primitives";
-
-function subscribeToNetworkState(onStoreChange: () => void) {
-  window.addEventListener("online", onStoreChange);
-  window.addEventListener("offline", onStoreChange);
-  return () => {
-    window.removeEventListener("online", onStoreChange);
-    window.removeEventListener("offline", onStoreChange);
-  };
-}
 
 function formatStartDate(value: string | null) {
   if (!value) return "待设置";
@@ -172,6 +164,7 @@ function TaskCard({
   tasks,
   onUpdated,
   onExternalTrainingUpdated,
+  readOnlyOffline,
 }: {
   task: DashboardTask;
   records: ExternalTrainingRecord[];
@@ -181,6 +174,7 @@ function TaskCard({
     recordId: string,
     association: ExternalRecordAssociation,
   ) => void;
+  readOnlyOffline: boolean;
 }) {
   const [note, setNote] = useState(task.subjectiveNote ?? "");
   const [actual, setActual] = useState(() => initialTaskActual(task));
@@ -246,7 +240,7 @@ function TaskCard({
             type="checkbox"
             aria-label={task.title}
             checked={task.status === "completed"}
-            disabled={saving}
+            disabled={saving || readOnlyOffline}
             onChange={(event) =>
               save(event.target.checked ? "completed" : "planned")
             }
@@ -290,6 +284,7 @@ function TaskCard({
               tasks={tasks}
               heading="已同步训练"
               onUpdated={onExternalTrainingUpdated}
+              readOnly={readOnlyOffline}
             />
           ) : null}
 
@@ -318,7 +313,7 @@ function TaskCard({
                             <input
                               type="checkbox"
                               checked={exercise.completed}
-                              disabled={saving}
+                              disabled={saving || readOnlyOffline}
                               onChange={(event) =>
                                 setActual((current) => ({
                                   ...current,
@@ -339,7 +334,7 @@ function TaskCard({
                           <input
                             value={exercise.actual}
                             maxLength={500}
-                            disabled={saving}
+                            disabled={saving || readOnlyOffline}
                             aria-label={`${exercise.name}实际重量组次`}
                             placeholder="例如 40 kg，2×10"
                             onChange={(event) =>
@@ -369,7 +364,7 @@ function TaskCard({
                             max="1440"
                             step="1"
                             value={actual.durationMinutes ?? ""}
-                            disabled={saving}
+                            disabled={saving || readOnlyOffline}
                             onChange={(event) =>
                               setActual((current) => ({
                                 ...current,
@@ -388,7 +383,7 @@ function TaskCard({
                             max="1000"
                             step="0.01"
                             value={actual.distanceKm ?? ""}
-                            disabled={saving}
+                            disabled={saving || readOnlyOffline}
                             onChange={(event) =>
                               setActual((current) => ({
                                 ...current,
@@ -403,7 +398,7 @@ function TaskCard({
                         <input
                           value={actual.summary}
                           maxLength={2000}
-                          disabled={saving}
+                          disabled={saving || readOnlyOffline}
                           placeholder="例如跑 2 分钟、走 1 分钟，共 6 轮"
                           onChange={(event) =>
                             setActual((current) => ({
@@ -421,7 +416,7 @@ function TaskCard({
                       <input
                         value={actual.summary}
                         maxLength={2000}
-                        disabled={saving}
+                        disabled={saving || readOnlyOffline}
                         placeholder="记录实际完成的内容"
                         onChange={(event) =>
                           setActual((current) => ({
@@ -445,7 +440,7 @@ function TaskCard({
                 <button
                   className="primary-button"
                   type="button"
-                  disabled={saving}
+                  disabled={saving || readOnlyOffline}
                   onClick={() => save(task.status)}
                 >
                   {saving ? "保存中…" : "保存训练记录"}
@@ -458,7 +453,7 @@ function TaskCard({
             <button
               className="text-button"
               type="button"
-              disabled={saving}
+              disabled={saving || readOnlyOffline}
               onClick={() =>
                 save(task.status === "skipped" ? "planned" : "skipped")
               }
@@ -536,6 +531,8 @@ export function DashboardShell({
   onExecutionChanged,
   onTaskUpdated,
   onExternalTrainingUpdated,
+  readOnlyOffline = false,
+  offlineSavedAt = null,
 }: {
   today: string;
   localDate: string;
@@ -549,12 +546,11 @@ export function DashboardShell({
     recordId: string,
     association: ExternalRecordAssociation,
   ) => void;
+  readOnlyOffline?: boolean;
+  offlineSavedAt?: string | null;
 }) {
-  const online = useSyncExternalStore(
-    subscribeToNetworkState,
-    () => navigator.onLine,
-    () => true,
-  );
+  const online = useNetworkState();
+  const writesDisabled = readOnlyOffline || !online;
   const [refreshing, setRefreshing] = useState(false);
 
   const tasks = initialDashboard.tasks;
@@ -637,6 +633,26 @@ export function DashboardShell({
         </div>
       </header>
 
+      {writesDisabled ? (
+        <section className="offline-cache-notice" role="status">
+          <strong>
+            {readOnlyOffline ? "离线缓存 · 仅供查看" : "当前离线 · 仅供查看"}
+          </strong>
+          <span>
+            最近更新：
+            {offlineSavedAt
+              ? new Intl.DateTimeFormat("zh-CN", {
+                  month: "numeric",
+                  day: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }).format(new Date(offlineSavedAt))
+              : "未知"}
+          </span>
+          <small>离线提交尚未开放，请联网后操作。</small>
+        </section>
+      ) : null}
+
       {currentSafety && currentSafety !== "green" ? (
         <section
           className={`safety-banner ${currentSafety}`}
@@ -653,11 +669,13 @@ export function DashboardShell({
         </section>
       ) : null}
 
-      <ExecutionPauseCard
-        trackerKey="knee-rehab"
-        execution={execution}
-        onChanged={onExecutionChanged}
-      />
+      <fieldset className="offline-write-boundary" disabled={writesDisabled}>
+        <ExecutionPauseCard
+          trackerKey="knee-rehab"
+          execution={execution}
+          onChanged={onExecutionChanged}
+        />
+      </fieldset>
 
       {execution.resumption?.status === "pending" ? (
         <SurfaceCard className="resumption-entry-card" aria-label="待接续评估">
@@ -673,23 +691,31 @@ export function DashboardShell({
           <p>
             基础计划尚未改变。请先查看中断摘要和未来日期差异，再决定按原计划继续或顺延。
           </p>
-          <Link
-            className="primary-button"
-            href={`/resumption/${execution.resumption.id}`}
-            scroll={false}
-          >
-            查看接续评估
-          </Link>
+          {writesDisabled ? (
+            <span className="secondary-button" aria-disabled="true">
+              联网后处理接续评估
+            </span>
+          ) : (
+            <Link
+              className="primary-button"
+              href={`/resumption/${execution.resumption.id}`}
+              scroll={false}
+            >
+              查看接续评估
+            </Link>
+          )}
         </SurfaceCard>
       ) : null}
 
-      <ExecutionContextCard
-        trackerKey="knee-rehab"
-        localDate={localDate}
-        planVersion={planVersion}
-        execution={execution}
-        onChanged={onExecutionChanged}
-      />
+      <fieldset className="offline-write-boundary" disabled={writesDisabled}>
+        <ExecutionContextCard
+          trackerKey="knee-rehab"
+          localDate={localDate}
+          planVersion={planVersion}
+          execution={execution}
+          onChanged={onExecutionChanged}
+        />
+      </fieldset>
 
       <SurfaceCard className="today-plan-card" aria-label="今日计划">
         <SectionHeading
@@ -733,6 +759,7 @@ export function DashboardShell({
                   tasks={tasks}
                   onUpdated={onTaskUpdated}
                   onExternalTrainingUpdated={onExternalTrainingUpdated}
+                  readOnlyOffline={writesDisabled}
                 />
               );
             })}
@@ -771,9 +798,15 @@ export function DashboardShell({
         <p className="feedback-supporting-copy">
           可提交训练前后、次日反应或突发情况；每天至少记录一次。
         </p>
-        <Link className="secondary-button" href="/feedback" scroll={false}>
-          {feedbackCount > 0 ? "再次反馈" : "添加反馈"}
-        </Link>
+        {writesDisabled ? (
+          <span className="secondary-button" aria-disabled="true">
+            联网后{feedbackCount > 0 ? "再次反馈" : "添加反馈"}
+          </span>
+        ) : (
+          <Link className="secondary-button" href="/feedback" scroll={false}>
+            {feedbackCount > 0 ? "再次反馈" : "添加反馈"}
+          </Link>
+        )}
       </SurfaceCard>
 
       <SurfaceCard className="pending-sources-card" aria-label="待处理来源">
@@ -820,6 +853,7 @@ export function DashboardShell({
             tasks={tasks}
             heading="未归入任务的训练"
             onUpdated={onExternalTrainingUpdated}
+            readOnly={writesDisabled}
           />
         ) : null}
       </SurfaceCard>

@@ -89,11 +89,13 @@ function ExternalTrainingCard({
   record,
   tasks,
   onUpdated,
+  readOnly,
 }: {
   trackerKey: string;
   record: ExternalTrainingRecord;
   tasks: DashboardTask[];
   onUpdated: (recordId: string, association: ExternalRecordAssociation) => void;
+  readOnly: boolean;
 }) {
   const [selectedTaskId, setSelectedTaskId] = useState(
     record.association?.taskId ??
@@ -227,7 +229,7 @@ function ExternalTrainingCard({
             康复任务
             <select
               value={selectedTaskId}
-              disabled={saving}
+              disabled={saving || readOnly}
               onChange={(event) => setSelectedTaskId(event.target.value)}
             >
               {tasks.map((task) => (
@@ -242,7 +244,7 @@ function ExternalTrainingCard({
           {tasks.length > 0 && (
             <button
               type="button"
-              disabled={saving || !selectedTaskId}
+              disabled={saving || readOnly || !selectedTaskId}
               onClick={() => void decide("link")}
             >
               {saving ? "保存中…" : linkButtonLabel}
@@ -251,7 +253,7 @@ function ExternalTrainingCard({
           <button
             className="quiet"
             type="button"
-            disabled={saving}
+            disabled={saving || readOnly}
             onClick={() => void decide("unrelated")}
           >
             与计划无关
@@ -272,12 +274,14 @@ export function ExternalTrainingSection({
   tasks,
   heading = "当天训练记录",
   onUpdated,
+  readOnly = false,
 }: {
   trackerKey: string;
   records: ExternalTrainingRecord[];
   tasks: DashboardTask[];
   heading?: string;
   onUpdated: (recordId: string, association: ExternalRecordAssociation) => void;
+  readOnly?: boolean;
 }) {
   if (records.length === 0) return null;
   return (
@@ -293,6 +297,7 @@ export function ExternalTrainingSection({
           record={record}
           tasks={tasks}
           onUpdated={onUpdated}
+          readOnly={readOnly}
         />
       ))}
     </section>
