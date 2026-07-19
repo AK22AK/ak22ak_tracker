@@ -668,9 +668,11 @@ h2 {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.8);
   color: var(--green);
+  font: inherit;
   font-size: 0.76rem;
   font-weight: 750;
   text-decoration: none;
+  cursor: pointer;
 }
 
 .calendar-topbar-actions {
@@ -717,15 +719,20 @@ h2 {
   text-align: center;
 }
 
-.month-switcher a {
+.month-switcher a,
+.month-switcher button {
   display: grid;
   width: 2.35rem;
   height: 2.35rem;
   place-items: center;
   border-radius: 50%;
+  border: 0;
+  background: transparent;
   color: var(--green);
+  font: inherit;
   font-size: 1.5rem;
   text-decoration: none;
+  cursor: pointer;
 }
 
 .calendar-weekdays,
@@ -757,9 +764,12 @@ h2 {
   gap: 0.22rem;
   border: 1px solid transparent;
   border-radius: 0.72rem;
+  background: transparent;
   color: var(--ink);
+  font: inherit;
   font-size: 0.76rem;
   text-decoration: none;
+  cursor: pointer;
 }
 
 .calendar-day.today {
