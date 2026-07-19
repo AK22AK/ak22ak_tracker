@@ -17,6 +17,8 @@ import { TodayClient } from "@/components/today-client";
 import type { TodayAggregate } from "@/domain/api-contracts";
 
 const commandHarness = vi.hoisted(() => ({
+  commands: [] as Array<Record<string, unknown>>,
+  confirmedCommandIds: [] as string[],
   enqueue: vi.fn(),
   replayNow: vi.fn(),
 }));
@@ -27,7 +29,8 @@ vi.mock("@/offline/private-offline-context", () => ({
 }));
 vi.mock("@/offline/offline-command-context", () => ({
   useOfflineCommands: () => ({
-    commands: [],
+    commands: commandHarness.commands,
+    confirmedCommandIds: commandHarness.confirmedCommandIds,
     ready: true,
     enqueue: commandHarness.enqueue,
     replayNow: commandHarness.replayNow,
@@ -133,8 +136,46 @@ function aggregate(
   };
 }
 
+function pendingTaskCommand(
+  status: "retryable" | "waiting_auth" | "needs_attention",
+) {
+  return {
+    id: "019c0000-0000-7000-8000-000000000701",
+    schemaVersion: 1,
+    githubUserId: "10001",
+    trackerKey: "knee-rehab",
+    kind: "task_update",
+    createdAt: "2026-07-19T10:00:00.000Z",
+    occurredAt: "2026-07-19T10:00:00.000Z",
+    localDate: "2026-07-19",
+    occurredTimeZone: "Asia/Shanghai",
+    occurredUtcOffsetMinutes: 480,
+    attemptCount: 1,
+    nextAttemptAt: "2026-07-19T10:01:00.000Z",
+    lastAttemptAt: "2026-07-19T10:00:30.000Z",
+    lastErrorCode:
+      status === "waiting_auth"
+        ? "authentication_required"
+        : status === "needs_attention"
+          ? "version_conflict"
+          : "server_unavailable",
+    status,
+    sourceVersion: null,
+    payload: {
+      taskId: "019c0000-0000-7000-8000-000000000002",
+      status: "completed",
+      actual: null,
+      note: null,
+      baseStatus: "planned",
+      planVersion: 1,
+    },
+  };
+}
+
 describe("today background refresh", () => {
   beforeEach(() => {
+    commandHarness.commands = [];
+    commandHarness.confirmedCommandIds = [];
     commandHarness.enqueue.mockImplementation(
       async (
         input: { createdAt: string; sourceVersion?: string | null } & Record<
@@ -237,6 +278,86 @@ describe("today background refresh", () => {
     expect(screen.getByText("当前在线")).toBeTruthy();
     expect(screen.queryByText("已同步到云端")).toBeNull();
   });
+
+  it("does not offer an immediate retry for a command that needs manual attention", async () => {
+    commandHarness.enqueue.mockImplementationOnce(
+      async (
+        input: { createdAt: string; sourceVersion?: string | null } & Record<
+          string,
+          unknown
+        >,
+      ) => {
+        const command = {
+          ...input,
+          schemaVersion: 1,
+          attemptCount: 1,
+          nextAttemptAt: input.createdAt,
+          lastAttemptAt: input.createdAt,
+          lastErrorCode: "version_conflict",
+          status: "needs_attention",
+          sourceVersion: input.sourceVersion ?? null,
+        };
+        commandHarness.commands = [command];
+        return command;
+      },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse(aggregate("planned", 0))),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = render(
+      <QueryClientProvider client={queryClient}>
+        <TodayClient />
+      </QueryClientProvider>,
+    );
+
+    const task = await screen.findByRole("article", { name: "Anonymous task" });
+    fireEvent.click(
+      within(task).getByRole("checkbox", { name: "Anonymous task" }),
+    );
+    await waitFor(() => expect(commandHarness.enqueue).toHaveBeenCalledOnce());
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <TodayClient />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("1 条需要人工处理")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "立即重试" })).toBeNull();
+    expect(await within(task).findByText(/本机记录需要人工处理/)).toBeTruthy();
+    expect(within(task).queryByText(/使用上方重试入口/)).toBeNull();
+  });
+
+  it.each([
+    ["retryable", "1 条等待重试"],
+    ["waiting_auth", "1 条等待重新验证"],
+  ] as const)(
+    "offers a working manual retry for a %s queue head",
+    async (status, expectedLabel) => {
+      commandHarness.commands = [pendingTaskCommand(status)];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(jsonResponse(aggregate("planned", 0))),
+      );
+
+      render(
+        <QueryClientProvider
+          client={
+            new QueryClient({ defaultOptions: { queries: { retry: false } } })
+          }
+        >
+          <TodayClient />
+        </QueryClientProvider>,
+      );
+
+      expect(await screen.findByText(expectedLabel)).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "立即重试" }));
+      expect(commandHarness.replayNow).toHaveBeenCalledOnce();
+    },
+  );
 
   it("preserves a task draft after server data refreshes", async () => {
     const refreshed = deferred<Response>();

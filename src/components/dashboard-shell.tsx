@@ -208,12 +208,12 @@ function TaskCard({
     }
     const command = commands.find((item) => item.id === commandId);
     if (!command) return;
-    if (
-      command.status === "waiting_auth" ||
-      command.status === "needs_attention"
-    ) {
+    if (command.status === "needs_attention") {
       setSaveFailed(true);
-      setSaveMessage("本机记录需要处理；请联网并使用上方重试入口");
+      setSaveMessage("本机记录需要人工处理；自动重试已停止，记录不会丢失");
+    } else if (command.status === "waiting_auth") {
+      setSaveFailed(true);
+      setSaveMessage("本机记录等待重新验证；可使用上方重试入口");
     } else if (command.status === "syncing") {
       setSaveFailed(false);
       setSaveMessage("已保存在本机，正在同步");
@@ -710,20 +710,31 @@ export function DashboardShell({
       {pendingSummary &&
       pendingSummary.localOnly +
         pendingSummary.syncing +
+        pendingSummary.retryable +
+        pendingSummary.waitingAuth +
         pendingSummary.needsAttention >
         0 ? (
         <section className="offline-command-status" role="status">
           <strong>
-            {pendingSummary.needsAttention > 0
-              ? `${pendingSummary.needsAttention} 条需要处理`
-              : pendingSummary.syncing > 0
-                ? `${pendingSummary.syncing} 条正在同步`
-                : `${pendingSummary.localOnly} 条仅保存在本机`}
+            {pendingSummary.headStatus === "needs_attention"
+              ? `${pendingSummary.needsAttention} 条需要人工处理`
+              : pendingSummary.headStatus === "waiting_auth"
+                ? `${pendingSummary.waitingAuth} 条等待重新验证`
+                : pendingSummary.headStatus === "retryable"
+                  ? `${pendingSummary.retryable} 条等待重试`
+                  : pendingSummary.headStatus === "syncing"
+                    ? `${pendingSummary.syncing} 条正在同步`
+                    : `${pendingSummary.localOnly} 条仅保存在本机`}
           </strong>
+          {pendingSummary.headStatus === "needs_attention" ? (
+            <span>
+              队首记录存在冲突或目标已变化，需要人工处理；自动重试已停止，记录不会丢失。
+            </span>
+          ) : null}
           {pendingSummary.unclassifiedFeedback > 0 ? (
             <span>身体反馈尚未完成安全判断，请先按保守原则处理。</span>
           ) : null}
-          {online ? (
+          {online && pendingSummary.canRetryNow ? (
             <button
               className="text-button"
               type="button"

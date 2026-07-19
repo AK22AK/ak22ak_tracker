@@ -5,13 +5,17 @@ import type {
 } from "@/domain/api-contracts";
 import type { DashboardFeedback, TodayDashboard } from "@/server/dashboard";
 
-import type { PendingCommand } from "./command-contracts";
+import type { PendingCommand, PendingCommandStatus } from "./command-contracts";
 
 export type PendingProjectionSummary = {
   localOnly: number;
   syncing: number;
+  retryable: number;
+  waitingAuth: number;
   needsAttention: number;
   unclassifiedFeedback: number;
+  headStatus: PendingCommandStatus | null;
+  canRetryNow: boolean;
 };
 
 function relevantCommands(
@@ -35,17 +39,20 @@ function relevantCommands(
 export function summarizePendingCommands(
   commands: readonly PendingCommand[],
 ): PendingProjectionSummary {
-  return commands.reduce<PendingProjectionSummary>(
+  const ordered = [...commands].sort(
+    (left, right) =>
+      left.createdAt.localeCompare(right.createdAt) ||
+      left.id.localeCompare(right.id),
+  );
+  const headStatus = ordered[0]?.status ?? null;
+  return ordered.reduce<PendingProjectionSummary>(
     (summary, command) => {
       if (command.status === "syncing") summary.syncing += 1;
-      else if (
-        command.status === "needs_attention" ||
-        command.status === "waiting_auth"
-      ) {
+      else if (command.status === "retryable") summary.retryable += 1;
+      else if (command.status === "waiting_auth") summary.waitingAuth += 1;
+      else if (command.status === "needs_attention") {
         summary.needsAttention += 1;
-      } else {
-        summary.localOnly += 1;
-      }
+      } else summary.localOnly += 1;
       if (
         command.kind === "symptom_check_in" &&
         command.payload.localSafetyLevel === null
@@ -54,7 +61,19 @@ export function summarizePendingCommands(
       }
       return summary;
     },
-    { localOnly: 0, syncing: 0, needsAttention: 0, unclassifiedFeedback: 0 },
+    {
+      localOnly: 0,
+      syncing: 0,
+      retryable: 0,
+      waitingAuth: 0,
+      needsAttention: 0,
+      unclassifiedFeedback: 0,
+      headStatus,
+      canRetryNow:
+        headStatus === "local_only" ||
+        headStatus === "retryable" ||
+        headStatus === "waiting_auth",
+    },
   );
 }
 

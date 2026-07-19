@@ -345,6 +345,67 @@ describe("P2b-1 pending command write-ahead", () => {
     expect(await db.pendingCommands.count()).toBe(0);
   });
 
+  it("lets a manual retry resend a waiting-auth command without changing its id", async () => {
+    const db = database();
+    await prepareOfflineIdentity(db, "10001");
+    await enqueuePendingCommand(db, taskCommand());
+    await replayPendingCommands(db, {
+      githubUserId: "10001",
+      trackerKey: "knee-rehab",
+      ownerId: "anonymous-tab-one",
+      now: () => new Date("2026-07-20T10:02:00.000Z"),
+      send: async () => {
+        throw new PendingCommandTransportError("authentication_required", 401);
+      },
+    });
+    const send = vi.fn(async (command) => ({
+      kind: "task_update" as const,
+      commandId: command.id,
+      status: "completed" as const,
+      replayed: true,
+    }));
+
+    const manual = await replayPendingCommands(db, {
+      githubUserId: "10001",
+      trackerKey: "knee-rehab",
+      ownerId: "anonymous-tab-two",
+      force: true,
+      now: () => new Date("2026-07-20T10:02:01.000Z"),
+      send,
+    });
+
+    expect(manual.succeeded).toBe(1);
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ id: commandId }),
+    );
+    expect(await db.pendingCommands.count()).toBe(0);
+  });
+
+  it("keeps an invalid server response in the local queue for a safe retry", async () => {
+    const db = database();
+    await prepareOfflineIdentity(db, "10001");
+    await enqueuePendingCommand(db, taskCommand());
+
+    const result = await replayPendingCommands(db, {
+      githubUserId: "10001",
+      trackerKey: "knee-rehab",
+      ownerId: "anonymous-tab",
+      now: () => new Date("2026-07-20T10:02:00.000Z"),
+      send: async () => {
+        throw new PendingCommandTransportError("invalid_response", null);
+      },
+    });
+
+    expect(result).toMatchObject({ sent: 1, succeeded: 0, failed: 1 });
+    expect(await db.pendingCommands.get(commandId)).toEqual(
+      expect.objectContaining({
+        id: commandId,
+        status: "retryable",
+        lastErrorCode: "invalid_response",
+      }),
+    );
+  });
+
   it.each(["waiting_auth", "needs_attention"] as const)(
     "does not overtake a first command in %s state",
     async (blockedStatus) => {
@@ -380,4 +441,33 @@ describe("P2b-1 pending command write-ahead", () => {
       expect(send).not.toHaveBeenCalled();
     },
   );
+
+  it("does not send a needs-attention queue head even when manual replay is forced", async () => {
+    const db = database();
+    await prepareOfflineIdentity(db, "10001");
+    await enqueuePendingCommand(db, taskCommand());
+    const first = await db.pendingCommands.get(commandId);
+    expect(first).toBeDefined();
+    await db.pendingCommands.put({
+      ...first!,
+      status: "needs_attention",
+      lastErrorCode: "version_conflict",
+    });
+    const send = vi.fn();
+
+    const result = await replayPendingCommands(db, {
+      githubUserId: "10001",
+      trackerKey: "knee-rehab",
+      ownerId: "anonymous-tab",
+      force: true,
+      now: () => new Date("2026-07-20T10:02:00.000Z"),
+      send,
+    });
+
+    expect(result.sent).toBe(0);
+    expect(send).not.toHaveBeenCalled();
+    expect(await db.pendingCommands.get(commandId)).toEqual(
+      expect.objectContaining({ status: "needs_attention" }),
+    );
+  });
 });
