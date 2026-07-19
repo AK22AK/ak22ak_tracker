@@ -26,6 +26,12 @@ function displayText(value: unknown, maxLength: number): string | null {
   return trimmed ? trimmed.slice(0, maxLength) : null;
 }
 
+function displayNote(value: unknown, maxLength: number): string | null {
+  if (typeof value === "string") return displayText(value, maxLength);
+  const note = objectValue(value);
+  return note ? displayText(note.text, maxLength) : null;
+}
+
 function displayMetric(value: unknown): number | string | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") return displayText(value, 100);
@@ -43,17 +49,59 @@ function displayNumber(value: unknown): number | null {
   return null;
 }
 
-function projectSet(value: unknown, index: number) {
-  const set = objectValue(value) ?? {};
+function displayBoolean(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
+}
+
+function projectSetDetails(set: Record<string, unknown>) {
+  const explicitKilograms = firstValue(set, ["weight_kg", "weightKg"]);
+  const weight =
+    explicitKilograms === null
+      ? displayMetric(firstValue(set, ["weight"]))
+      : displayMetric(explicitKilograms);
+  const unit =
+    explicitKilograms === null
+      ? displayText(firstValue(set, ["unit"]), 30)
+      : "kg";
+  const durationSeconds = firstValue(set, ["duration_s", "durationSeconds"]);
+  const duration =
+    durationSeconds === null
+      ? displayMetric(firstValue(set, ["time"]))
+      : displayMetric(durationSeconds);
+
   return {
-    index: index + 1,
-    weight: displayMetric(firstValue(set, ["weight", "weightKg", "kg"])),
+    completed: displayBoolean(firstValue(set, ["done", "completed"])),
+    weight,
+    unit,
     reps: displayMetric(firstValue(set, ["reps", "repetitions", "times"])),
+    duration,
+    durationUnit: durationSeconds === null ? null : "s",
+    selfWeight: displayBoolean(firstValue(set, ["selfWeight", "self_weight"])),
     rpe: displayNumber(firstValue(set, ["rpe", "RPE"])),
     restSeconds: displayNumber(
       firstValue(set, ["restSeconds", "rest", "rest_time"]),
     ),
-    note: displayText(firstValue(set, ["note", "remark", "memo"]), 1_000),
+    note: displayNote(firstValue(set, ["note", "remark", "memo"]), 1_000),
+  };
+}
+
+function projectSetItem(value: unknown, index: number) {
+  const item = objectValue(value) ?? {};
+  return {
+    name:
+      displayText(firstValue(item, ["name", "title", "movementName"]), 300) ??
+      `子项 ${index + 1}`,
+    ...projectSetDetails(item),
+  };
+}
+
+function projectSet(value: unknown, index: number) {
+  const set = objectValue(value) ?? {};
+  const items = firstValue(set, ["items"]);
+  return {
+    index: index + 1,
+    ...projectSetDetails(set),
+    items: Array.isArray(items) ? items.map(projectSetItem) : [],
   };
 }
 
@@ -67,11 +115,17 @@ function projectMovement(value: unknown, index: number) {
         300,
       ) ?? `动作 ${index + 1}`,
     sets: Array.isArray(sets) ? sets.map(projectSet) : [],
+    difficulty:
+      movement.difficulty === "easy" ||
+      movement.difficulty === "normal" ||
+      movement.difficulty === "hard"
+        ? movement.difficulty
+        : null,
     rpe: displayNumber(firstValue(movement, ["rpe", "RPE"])),
     restSeconds: displayNumber(
       firstValue(movement, ["restSeconds", "rest", "rest_time"]),
     ),
-    note: displayText(firstValue(movement, ["note", "remark", "memo"]), 1_000),
+    note: displayNote(firstValue(movement, ["note", "remark", "memo"]), 1_000),
   };
 }
 
@@ -94,6 +148,6 @@ export function projectXunjiTrainingDetails(
     restSeconds: displayNumber(
       firstValue(train, ["restSeconds", "rest", "rest_time"]),
     ),
-    note: displayText(firstValue(train, ["note", "remark", "memo"]), 2_000),
+    note: displayNote(firstValue(train, ["note", "remark", "memo"]), 2_000),
   });
 }

@@ -7,18 +7,34 @@ const displayMetricSchema = z.union([
   z.string().min(1).max(100),
 ]);
 
-export const externalTrainingSetSchema = z.object({
-  index: z.number().int().positive(),
+const externalTrainingSetDetailFields = {
+  completed: z.boolean().nullable(),
   weight: displayMetricSchema.nullable(),
+  unit: z.string().min(1).max(30).nullable(),
   reps: displayMetricSchema.nullable(),
+  duration: displayMetricSchema.nullable(),
+  durationUnit: z.string().min(1).max(30).nullable(),
+  selfWeight: z.boolean().nullable(),
   rpe: z.number().finite().nonnegative().nullable(),
   restSeconds: z.number().finite().nonnegative().nullable(),
   note: z.string().max(1_000).nullable(),
+};
+
+export const externalTrainingSetItemSchema = z.object({
+  name: z.string().min(1).max(300),
+  ...externalTrainingSetDetailFields,
+});
+
+export const externalTrainingSetSchema = z.object({
+  index: z.number().int().positive(),
+  ...externalTrainingSetDetailFields,
+  items: z.array(externalTrainingSetItemSchema).max(100),
 });
 
 export const externalTrainingMovementSchema = z.object({
   name: z.string().min(1).max(300),
   sets: z.array(externalTrainingSetSchema).max(200),
+  difficulty: z.enum(["easy", "normal", "hard"]).nullable(),
   rpe: z.number().finite().nonnegative().nullable(),
   restSeconds: z.number().finite().nonnegative().nullable(),
   note: z.string().max(1_000).nullable(),

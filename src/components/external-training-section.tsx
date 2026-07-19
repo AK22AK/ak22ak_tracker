@@ -33,18 +33,44 @@ function metric(value: string | number | null, suffix = "") {
   return value === null ? null : `${value}${suffix}`;
 }
 
-function setSummary(
-  set: ExternalTrainingRecord["details"]["movements"][number]["sets"][number],
-) {
+type TrainingSetDetails =
+  ExternalTrainingRecord["details"]["movements"][number]["sets"][number];
+
+function setDetailSummary(set: Omit<TrainingSetDetails, "index" | "items">) {
+  const duration =
+    set.duration === null
+      ? null
+      : set.durationUnit === "s"
+        ? `${set.duration} 秒`
+        : set.durationUnit
+          ? `${set.duration} ${set.durationUnit}`
+          : `计时 ${set.duration}`;
   return [
-    metric(set.weight, " kg"),
+    set.completed === true
+      ? "已完成"
+      : set.completed === false
+        ? "未完成"
+        : null,
+    set.selfWeight === true ? "自重" : null,
+    metric(set.weight, set.unit ? ` ${set.unit}` : ""),
     metric(set.reps, " 次"),
+    duration,
     metric(set.rpe, " RPE"),
     metric(set.restSeconds, " 秒休息"),
   ]
     .filter(Boolean)
     .join(" · ");
 }
+
+function setSummary(set: TrainingSetDetails) {
+  return setDetailSummary(set);
+}
+
+const difficultyLabels = {
+  easy: "轻松",
+  normal: "适中",
+  hard: "困难",
+} as const;
 
 function associationLabel(
   association: ExternalRecordAssociation | null,
@@ -154,12 +180,27 @@ function ExternalTrainingCard({
           {record.details.movements.map((movement, movementIndex) => (
             <div key={`${movement.name}-${movementIndex}`}>
               <strong>{movement.name}</strong>
+              {movement.difficulty && (
+                <span className="external-movement-difficulty">
+                  难度：{difficultyLabels[movement.difficulty]}
+                </span>
+              )}
               {movement.sets.length > 0 && (
                 <ol>
                   {movement.sets.map((set) => (
                     <li key={set.index}>
                       第 {set.index} 组：{setSummary(set) || "已记录"}
                       {set.note ? ` · ${set.note}` : ""}
+                      {set.items.length > 0 && (
+                        <ul className="external-set-items">
+                          {set.items.map((item, itemIndex) => (
+                            <li key={`${item.name}-${itemIndex}`}>
+                              {item.name}：{setDetailSummary(item) || "已记录"}
+                              {item.note ? ` · ${item.note}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                     </li>
                   ))}
                 </ol>

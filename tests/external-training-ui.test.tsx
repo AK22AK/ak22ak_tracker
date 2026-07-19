@@ -85,13 +85,48 @@ function todayAggregate() {
                 sets: [
                   {
                     index: 1,
+                    completed: false,
                     weight: 10,
+                    unit: "lb",
                     reps: 8,
+                    duration: null,
+                    durationUnit: null,
+                    selfWeight: false,
                     rpe: 6,
                     restSeconds: 60,
                     note: null,
+                    items: [],
+                  },
+                  {
+                    index: 2,
+                    completed: true,
+                    weight: null,
+                    unit: null,
+                    reps: null,
+                    duration: 45,
+                    durationUnit: "s",
+                    selfWeight: true,
+                    rpe: null,
+                    restSeconds: null,
+                    note: null,
+                    items: [
+                      {
+                        name: "Anonymous nested set",
+                        completed: true,
+                        weight: 5,
+                        unit: "kg",
+                        reps: 10,
+                        duration: null,
+                        durationUnit: null,
+                        selfWeight: null,
+                        rpe: null,
+                        restSeconds: null,
+                        note: null,
+                      },
+                    ],
                   },
                 ],
+                difficulty: "hard",
                 rpe: null,
                 restSeconds: null,
                 note: null,
@@ -176,7 +211,13 @@ describe("external training association UI", () => {
     );
 
     expect(await screen.findByText("Anonymous session")).toBeTruthy();
-    expect(screen.getByText(/10 kg · 8 次 · 6 RPE/)).toBeTruthy();
+    expect(screen.getByText(/未完成 · 10 lb · 8 次 · 6 RPE/)).toBeTruthy();
+    expect(screen.queryByText(/10 kg/)).toBeNull();
+    expect(screen.getByText(/已完成 · 自重 · 45 秒/)).toBeTruthy();
+    expect(
+      screen.getByText(/Anonymous nested set：已完成 · 5 kg · 10 次/),
+    ).toBeTruthy();
+    expect(screen.getByText("难度：困难")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("实际训练与主观感受"), {
       target: { value: "未提交任务草稿" },
