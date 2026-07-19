@@ -87,11 +87,12 @@ function projectSetDetails(set: Record<string, unknown>) {
 
 function projectSetItem(value: unknown, index: number) {
   const item = objectValue(value) ?? {};
+  const nestedSet = objectValue(item.set);
   return {
     name:
       displayText(firstValue(item, ["name", "title", "movementName"]), 300) ??
       `子项 ${index + 1}`,
-    ...projectSetDetails(item),
+    ...projectSetDetails(nestedSet ?? item),
   };
 }
 

@@ -110,18 +110,32 @@ describe("authenticated Xunji display projection", () => {
               items: [
                 {
                   name: "Anonymous drop A",
-                  weight: 15,
-                  unit: "kg",
-                  reps: 10,
-                  done: true,
+                  set: {
+                    weight: 15,
+                    unit: "kg",
+                    reps: 10,
+                    duration_s: 20,
+                    done: true,
+                    rpe: "7",
+                    note: {
+                      text: "Nested completed note",
+                      hidden: "private-item-set-data",
+                    },
+                  },
                 },
                 {
                   name: "Anonymous drop B",
-                  weight: 10,
-                  unit: "lb",
-                  reps: 12,
-                  done: false,
-                  note: { text: "Nested note", hidden: "private-item-data" },
+                  set: {
+                    weight: 10,
+                    unit: "lb",
+                    reps: 12,
+                    time: "00:15",
+                    completed: false,
+                    note: {
+                      text: "Nested note",
+                      hidden: "private-item-data",
+                    },
+                  },
                 },
               ],
             },
@@ -160,12 +174,20 @@ describe("authenticated Xunji display projection", () => {
               completed: true,
               weight: 15,
               unit: "kg",
+              reps: 10,
+              duration: 20,
+              durationUnit: "s",
+              rpe: 7,
+              note: "Nested completed note",
             }),
             expect.objectContaining({
               name: "Anonymous drop B",
               completed: false,
               weight: 10,
               unit: "lb",
+              reps: 12,
+              duration: "00:15",
+              durationUnit: null,
               note: "Nested note",
             }),
           ],
@@ -176,6 +198,7 @@ describe("authenticated Xunji display projection", () => {
     expect(serialized).not.toContain("must-not-leave-server");
     expect(serialized).not.toContain("private-set-data");
     expect(serialized).not.toContain("private-compound-data");
+    expect(serialized).not.toContain("private-item-set-data");
     expect(serialized).not.toContain("private-item-data");
   });
 });
