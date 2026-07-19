@@ -25,15 +25,15 @@
 具体变量名以 `.env.example` 为准。生产环境变量只保存在 Vercel Secrets，不进入
 GitHub、构建日志、浏览器或数据镜像。
 
-| 类别         | 配置内容                                          |
-| ------------ | ------------------------------------------------- |
-| 数据库       | Neon `DATABASE_URL`                               |
-| 应用身份     | `NEXTAUTH_URL`、`AUTH_SECRET`、账号白名单         |
-| GitHub OAuth | OAuth Client ID 与 Client Secret                  |
-| 数据镜像     | 只允许目标私仓 Contents 权限的 fine-grained token |
-| DeepSeek     | Base URL、API Key、模型、超时和最大输出长度       |
-| Garmin       | 认证加密密钥及加密后的 Provider Session/Token     |
-| 定时任务     | `CRON_SECRET`                                     |
+| 类别         | 配置内容                                             |
+| ------------ | ---------------------------------------------------- |
+| 数据库       | Neon `DATABASE_URL`                                  |
+| 应用身份     | `NEXTAUTH_URL`、`AUTH_SECRET`、GitHub 数字 ID 白名单 |
+| GitHub OAuth | OAuth Client ID 与 Client Secret                     |
+| 数据镜像     | 只允许目标私仓 Contents 权限的 fine-grained token    |
+| DeepSeek     | Base URL、API Key、模型、超时和最大输出长度          |
+| Garmin       | 认证加密密钥及加密后的 Provider Session/Token        |
+| 定时任务     | `CRON_SECRET`                                        |
 
 变更 Secret 时同步更新本地示例中的变量名，但不记录真实值。Token 轮换后必须验证旧值
 已经失效，并检查对应集成最近一次成功状态。
@@ -68,11 +68,17 @@ Schema 快照的顺序是：公共代码 Schema 与 migration 先完成，数据
 ## 定时任务
 
 - Vercel Hobby Cron 最多每日执行一次，且可能在目标小时内漂移。
+- Vercel 不会替失败的 Cron 调用自动重试；任务自身必须持久化状态和下次重试时间。
 - 适合每日 Garmin 同步、GitHub outbox 消费和弱提醒，不用于分钟级精确调度。
 - 每个任务验证 `CRON_SECRET`，使用 provider 或任务类型级锁，并持有幂等键。
 - Cron 重复触发、超时后重跑和手动同步不能产生重复记录。
+- GitHub outbox 由业务写入后的响应后任务、应用启动、手动同步和每日 Cron 共同
+  消费；AI 第一版由用户请求内执行一次，失败后保留任务供手动重试。
 - 长时间或依赖不兼容运行时的任务可以迁移到独立受控 Worker，但仍通过相同应用
   契约写入 PostgreSQL。
+
+平台限制以 [Vercel Cron 用量与计划](https://vercel.com/docs/cron-jobs/usage-and-pricing)
+和 [Cron 管理与失败行为](https://vercel.com/docs/cron-jobs/manage-cron-jobs)为准。
 
 ## 监控
 

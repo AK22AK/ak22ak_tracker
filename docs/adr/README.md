@@ -6,3 +6,4 @@
 - [ADR-0004：客户端应用壳与服务端状态缓存](0004-client-app-shell-and-server-state-cache.md)
 - [ADR-0005：临时执行条件使用覆盖层](0005-execution-context-overlays.md)
 - [ADR-0006：外部集成不得阻塞核心闭环](0006-integrations-cannot-block-core-loop.md)
+- [ADR-0007：Tracker 使用固定计划时区](0007-fixed-planning-time-zone.md)

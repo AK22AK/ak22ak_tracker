@@ -24,8 +24,9 @@
 ## 单用户身份
 
 第一版使用 GitHub OAuth，是标准第三方登录流程。服务端不只判断“已登录”，还
-必须把 GitHub login 与 `ALLOWED_GITHUB_LOGIN` 精确匹配；所有数据 API 和变更
-入口都重复验证。OAuth App 的 client secret 只配置在 Vercel 环境变量。
+必须把 GitHub Profile 的不可变数字用户 ID 与 `ALLOWED_GITHUB_ID` 精确匹配；login
+只用于显示、日志脱敏后的诊断或迁移期附加校验，不能作为唯一授权标识。所有数据
+API 和变更入口都重复验证。OAuth App 的 client secret 只配置在 Vercel 环境变量。
 
 公开网址不等于公开数据：未授权访问只得到登录页或 401，不返回计划、反馈、
 同步状态或可推断的统计数据。健康检查接口不得包含配置或用户信息。
