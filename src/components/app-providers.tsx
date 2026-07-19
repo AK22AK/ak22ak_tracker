@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { registerPrivateQueryStateCleaner } from "@/offline/clear-private-client-state";
 import { PrivateOfflineIdentityProvider } from "@/offline/private-offline-context";
+import { OfflineCommandProvider } from "@/offline/offline-command-context";
 
 export function AppProviders({
   githubUserId,
@@ -38,7 +39,9 @@ export function AppProviders({
   return (
     <QueryClientProvider client={queryClient}>
       <PrivateOfflineIdentityProvider githubUserId={githubUserId}>
-        {children}
+        <OfflineCommandProvider githubUserId={githubUserId}>
+          {children}
+        </OfflineCommandProvider>
       </PrivateOfflineIdentityProvider>
     </QueryClientProvider>
   );

@@ -2,7 +2,10 @@ import "client-only";
 
 import Dexie, { type EntityTable } from "dexie";
 
-export const PRIVATE_OFFLINE_SCHEMA_VERSION = 2 as const;
+import type { PendingCommand } from "./command-contracts";
+
+export const PRIVATE_OFFLINE_DATABASE_VERSION = 3 as const;
+export const PRIVATE_OFFLINE_SNAPSHOT_SCHEMA_VERSION = 2 as const;
 
 export type QuerySnapshotKind = "today" | "calendar-month" | "day";
 
@@ -12,22 +15,23 @@ export interface QuerySnapshotRow {
   trackerKey: string;
   kind: QuerySnapshotKind;
   scope: string;
-  schemaVersion: typeof PRIVATE_OFFLINE_SCHEMA_VERSION;
+  schemaVersion: typeof PRIVATE_OFFLINE_SNAPSHOT_SCHEMA_VERSION;
   savedAt: string;
   expiresAt: string;
   sourceVersion: string;
   data: unknown;
 }
 
-// P2a reserves this table boundary only. No offline command is enqueued or
-// replayed until P2b defines the command lifecycle.
-export interface PendingCommandRow {
+export interface SafetyPolicyRow {
   id: string;
   githubUserId: string;
   trackerKey: string;
-  createdAt: string;
-  kind: "reserved";
-  payload: unknown;
+  policyId: string;
+  version: number;
+  hash: string;
+  savedAt: string;
+  expiresAt: string;
+  data: unknown;
 }
 
 export interface OfflineMetadataRow {
@@ -38,7 +42,8 @@ export interface OfflineMetadataRow {
 
 export class TrackerOfflineDatabase extends Dexie {
   querySnapshots!: EntityTable<QuerySnapshotRow, "id">;
-  pendingCommands!: EntityTable<PendingCommandRow, "id">;
+  pendingCommands!: EntityTable<PendingCommand, "id">;
+  safetyPolicies!: EntityTable<SafetyPolicyRow, "id">;
   metadata!: EntityTable<OfflineMetadataRow, "key">;
 
   constructor(name = "ak22ak-tracker") {
@@ -47,7 +52,7 @@ export class TrackerOfflineDatabase extends Dexie {
       pendingEvents: "id, queuedAt",
       cachedPlans: "trackerKey, cachedAt",
     });
-    this.version(PRIVATE_OFFLINE_SCHEMA_VERSION).stores({
+    this.version(PRIVATE_OFFLINE_SNAPSHOT_SCHEMA_VERSION).stores({
       pendingEvents: null,
       cachedPlans: null,
       querySnapshots:
@@ -55,6 +60,21 @@ export class TrackerOfflineDatabase extends Dexie {
       pendingCommands: "&id, githubUserId, trackerKey, createdAt",
       metadata: "&key, updatedAt",
     });
+    this.version(PRIVATE_OFFLINE_DATABASE_VERSION)
+      .stores({
+        querySnapshots:
+          "&id, [githubUserId+trackerKey+kind+scope], githubUserId, trackerKey, kind, savedAt, expiresAt",
+        pendingCommands:
+          "&id, [githubUserId+trackerKey], githubUserId, trackerKey, status, createdAt, nextAttemptAt",
+        safetyPolicies:
+          "&id, [githubUserId+trackerKey+policyId+version], githubUserId, trackerKey, policyId, version, expiresAt",
+        metadata: "&key, updatedAt",
+      })
+      .upgrade(async (transaction) => {
+        // P2a reserved this table but never wrote commands. Clear any
+        // unsupported scaffold rows before enabling the versioned outbox.
+        await transaction.table("pendingCommands").clear();
+      });
   }
 }
 

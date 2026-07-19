@@ -25,6 +25,10 @@ const taskStatusLabels: Record<DashboardTask["status"], string> = {
   skipped: "已跳过",
 };
 
+type CalendarDisplayDay = CalendarDaySummary & {
+  localPendingCount?: number;
+};
+
 function formatMonth(month: string) {
   const [year, monthNumber] = month.split("-");
   return `${year} 年 ${Number(monthNumber)} 月`;
@@ -45,7 +49,7 @@ function selectedDateContext(localDate: string, today: string) {
 }
 
 function dayTaskLabel(
-  summary: CalendarDaySummary | undefined,
+  summary: CalendarDisplayDay | undefined,
   date: string,
   today: string,
   monthLoading: boolean,
@@ -62,7 +66,7 @@ function dayTaskLabel(
 
 function dayAccessibleLabel(
   date: string,
-  summary: CalendarDaySummary | undefined,
+  summary: CalendarDisplayDay | undefined,
   selectedDate: string,
   today: string,
   monthLoading: boolean,
@@ -75,12 +79,15 @@ function dayAccessibleLabel(
   if (summary?.feedbackCount) {
     parts.push(`${summary.feedbackCount} 次反馈`);
   }
+  if (summary?.localPendingCount) {
+    parts.push(`${summary.localPendingCount} 条本机待同步`);
+  }
   if (summary?.paused) parts.push("暂停日");
   return parts.join("，");
 }
 
 function dayVisualTaskLabel(
-  summary: CalendarDaySummary | undefined,
+  summary: CalendarDisplayDay | undefined,
   date: string,
   today: string,
 ) {
@@ -202,7 +209,7 @@ function CalendarDayUnavailable({ dashboard }: { dashboard: TodayDashboard }) {
 
 function dayClass(
   date: string,
-  summary: CalendarDaySummary | undefined,
+  summary: CalendarDisplayDay | undefined,
   selectedDate: string,
   today: string,
 ) {
@@ -213,6 +220,7 @@ function dayClass(
     date > today ? "future" : "past",
     summary?.taskCount ? "has-tasks" : "",
     summary?.feedbackCount ? "has-feedback" : "",
+    summary?.localPendingCount ? "has-local-pending" : "",
     summary?.paused ? "paused" : "",
     summary?.completedCount === summary?.taskCount && summary?.taskCount
       ? "all-completed"
@@ -246,7 +254,7 @@ export function CalendarShell({
   month: string;
   today: string;
   selectedDate: string;
-  days: CalendarDaySummary[];
+  days: CalendarDisplayDay[];
   monthLoading: boolean;
   monthError: boolean;
   dashboard: TodayDashboard | null;
@@ -393,6 +401,11 @@ export function CalendarShell({
                       ◆
                     </span>
                   )}
+                  {(summary?.localPendingCount ?? 0) > 0 && (
+                    <span className="local-pending-marker" aria-hidden="true">
+                      本
+                    </span>
+                  )}
                   {summary?.paused && (
                     <span className="pause-marker" aria-hidden="true">
                       暂
@@ -421,6 +434,12 @@ export function CalendarShell({
               ◆
             </i>
             有反馈
+          </span>
+          <span>
+            <i className="legend-symbol local-pending" aria-hidden="true">
+              本
+            </i>
+            本机待同步
           </span>
           <span>
             <i className="legend-symbol paused" aria-hidden="true">

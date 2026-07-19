@@ -21,9 +21,12 @@ async function waitForServiceWorkerControl(
   });
 }
 
-async function seedAnonymousSnapshots(page: import("@playwright/test").Page) {
+async function seedAnonymousSnapshots(
+  page: import("@playwright/test").Page,
+  options: { withPending?: boolean } = {},
+) {
   return page.evaluate(
-    async ({ identity, key }) => {
+    async ({ identity, key, withPending }) => {
       const parts = new Intl.DateTimeFormat("en-CA", {
         timeZone: "Asia/Shanghai",
         year: "numeric",
@@ -147,7 +150,7 @@ async function seedAnonymousSnapshots(page: import("@playwright/test").Page) {
       ];
 
       await new Promise<void>((resolve, reject) => {
-        const request = indexedDB.open("ak22ak-tracker", 2);
+        const request = indexedDB.open("ak22ak-tracker", 3);
         request.onupgradeneeded = () => {
           const database = request.result;
           const snapshots = database.createObjectStore("querySnapshots", {
@@ -155,13 +158,14 @@ async function seedAnonymousSnapshots(page: import("@playwright/test").Page) {
           });
           snapshots.createIndex("githubUserId", "githubUserId");
           database.createObjectStore("pendingCommands", { keyPath: "id" });
+          database.createObjectStore("safetyPolicies", { keyPath: "id" });
           database.createObjectStore("metadata", { keyPath: "key" });
         };
         request.onerror = () => reject(request.error);
         request.onsuccess = () => {
           const database = request.result;
           const transaction = database.transaction(
-            ["metadata", "querySnapshots"],
+            ["metadata", "querySnapshots", "pendingCommands"],
             "readwrite",
           );
           transaction.objectStore("metadata").put({
@@ -172,6 +176,82 @@ async function seedAnonymousSnapshots(page: import("@playwright/test").Page) {
           for (const row of rows) {
             transaction.objectStore("querySnapshots").put(row);
           }
+          if (withPending) {
+            const common = (id: string, createdAt: string) => ({
+              id,
+              schemaVersion: 1,
+              githubUserId: identity,
+              trackerKey: key,
+              createdAt,
+              occurredAt: createdAt,
+              localDate: today,
+              occurredTimeZone: "Asia/Shanghai",
+              occurredUtcOffsetMinutes: 480,
+              attemptCount: 0,
+              nextAttemptAt: createdAt,
+              lastAttemptAt: null,
+              lastErrorCode: null,
+              status: "local_only",
+              sourceVersion: null,
+            });
+            const pendingStore = transaction.objectStore("pendingCommands");
+            pendingStore.put({
+              ...common("019c0000-0000-7000-8000-000000000011", now),
+              kind: "task_update",
+              payload: {
+                taskId: task.id,
+                status: "completed",
+                actual: {
+                  kind: "general",
+                  exercises: [],
+                  durationMinutes: null,
+                  distanceKm: null,
+                  summary: "Anonymous local actual",
+                },
+                note: "Anonymous local note",
+                baseStatus: "planned",
+                planVersion: 1,
+              },
+            });
+            for (const [index, localSafetyLevel] of [
+              "yellow",
+              null,
+            ].entries()) {
+              const occurredAt = new Date(
+                Date.parse(now) + (index + 1) * 1_000,
+              ).toISOString();
+              pendingStore.put({
+                ...common(
+                  `019c0000-0000-7000-8000-00000000001${index + 2}`,
+                  occurredAt,
+                ),
+                kind: "symptom_check_in",
+                payload: {
+                  checkIn: {
+                    timing: "post_training",
+                    leftPain: index === 0 ? 5 : 1,
+                    rightPain: 0,
+                    swelling: "none",
+                    stiffness: false,
+                    mechanicalSymptoms: false,
+                    weightBearingIssue: false,
+                    localizedBonePain: false,
+                    nightOrRestPain: false,
+                    note: "Anonymous local feedback",
+                  },
+                  clientSafetyPolicy:
+                    index === 0
+                      ? {
+                          policyId: "019c0000-0000-7000-8000-000000000004",
+                          version: 1,
+                          hash: "a".repeat(64),
+                        }
+                      : null,
+                  localSafetyLevel,
+                },
+              });
+            }
+          }
           transaction.oncomplete = () => {
             database.close();
             resolve();
@@ -181,7 +261,11 @@ async function seedAnonymousSnapshots(page: import("@playwright/test").Page) {
       });
       return { today };
     },
-    { identity: githubUserId, key: trackerKey },
+    {
+      identity: githubUserId,
+      key: trackerKey,
+      withPending: options.withPending ?? false,
+    },
   );
 }
 
@@ -216,7 +300,7 @@ async function corruptSnapshot(
     async ({ identity, key, kind, scope }) => {
       const id = `${identity}:${key}:${kind}:${scope}`;
       await new Promise<void>((resolve, reject) => {
-        const request = indexedDB.open("ak22ak-tracker", 2);
+        const request = indexedDB.open("ak22ak-tracker", 3);
         request.onerror = () => reject(request.error);
         request.onsuccess = () => {
           const database = request.result;
@@ -315,7 +399,7 @@ test("cold starts from the public shell after the old document is destroyed", as
   ).toBeVisible();
   await expect(coldStart.getByText(/最近更新：/)).toBeVisible();
   await expect(
-    coldStart.getByText("离线提交尚未开放，请联网后操作。"),
+    coldStart.getByText("本页仅供查看；此前保存在本机的任务和反馈会叠加显示。"),
   ).toBeVisible();
   expect(
     await coldStart.evaluate(
@@ -355,6 +439,30 @@ test("cold starts from the public shell after the old document is destroyed", as
   await expect(
     emptyColdStart.getByText("Anonymous browser cache task"),
   ).toHaveCount(0);
+});
+
+test("cold-start shell projects a task and two append-only feedback commands", async ({
+  context,
+  page,
+}) => {
+  const { today } = await prepareOnlineSnapshots(page);
+  await seedAnonymousSnapshots(page, { withPending: true });
+  await context.setOffline(true);
+  await page.close();
+
+  const coldStart = await openOfflineColdStart(context, "/");
+  await expect(coldStart.getByText("3 条仅保存在本机")).toBeVisible();
+  await expect(
+    coldStart.getByText("身体反馈尚未完成安全判断，请联网前按保守原则处理。"),
+  ).toBeVisible();
+  await expect(coldStart.getByText("已完成")).toBeVisible();
+  await expect(coldStart.getByText("已缓存 3 次反馈。")).toBeVisible();
+
+  await coldStart.getByRole("button", { name: "日历" }).click();
+  await expect(
+    coldStart.getByRole("button", { name: `${today}，1 项任务` }),
+  ).toBeVisible();
+  await expect(coldStart.getByText("3 条仅保存在本机")).toBeVisible();
 });
 
 test("corrupt today, month, and day snapshots never render as real zero data", async ({

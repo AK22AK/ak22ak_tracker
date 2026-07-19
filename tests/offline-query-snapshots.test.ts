@@ -107,6 +107,7 @@ describe("private offline query snapshots (P2a)", () => {
       "metadata",
       "pendingCommands",
       "querySnapshots",
+      "safetyPolicies",
     ]);
     expect(await upgraded.querySnapshots.count()).toBe(0);
   });
@@ -210,13 +211,24 @@ describe("private offline query snapshots (P2a)", () => {
       sourceVersion: "anonymous",
     });
     await db.pendingCommands.put({
-      id: "anonymous-command",
+      id: "019c0000-0000-7000-8000-000000000099",
       githubUserId: "10001",
       trackerKey: "knee-rehab",
       createdAt: "2026-07-21T03:00:00.000Z",
+      occurredAt: "2026-07-21T03:00:00.000Z",
+      localDate: "2026-07-21",
+      occurredTimeZone: "Asia/Shanghai",
+      occurredUtcOffsetMinutes: 480,
+      schemaVersion: 1,
+      attemptCount: 0,
+      nextAttemptAt: "2026-07-21T03:00:00.000Z",
+      lastAttemptAt: null,
+      lastErrorCode: null,
+      status: "local_only",
+      sourceVersion: null,
       kind: "reserved",
       payload: {},
-    });
+    } as never);
 
     await prepareOfflineIdentity(db, "10002");
     expect(await db.querySnapshots.count()).toBe(0);

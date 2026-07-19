@@ -14,6 +14,11 @@ import {
   type OfflineTodaySnapshot,
 } from "@/offline/snapshot-contracts";
 import { useQuerySnapshot } from "@/offline/use-query-snapshot";
+import { useOfflineCommands } from "@/offline/offline-command-context";
+import { projectTodayPendingCommands } from "@/offline/command-projection";
+import { saveSafetyPolicy } from "@/offline/safety-policies";
+import { offlineDatabase } from "@/offline/store";
+import { usePrivateOfflineIdentity } from "@/offline/private-offline-context";
 
 import { DashboardShell } from "./dashboard-shell";
 
@@ -33,6 +38,8 @@ function todayLabel(localDate: string) {
 
 export function TodayClient() {
   const queryClient = useQueryClient();
+  const githubUserId = usePrivateOfflineIdentity();
+  const { commands, replayNow } = useOfflineCommands();
   const localDate = localDateInTimeZone(new Date(), planningTimeZone);
   const queryKey = trackerQueryKeys.today(trackerKey, localDate);
   const query = useQuery({
@@ -68,9 +75,31 @@ export function TodayClient() {
       `plan:${query.data.plan?.version ?? "none"};policy:${query.data.safetyPolicy.version}:${query.data.safetyPolicy.hash}`,
       query.dataUpdatedAt,
     );
-  }, [persistSnapshot, query.data, query.dataUpdatedAt, queryClient]);
+    if (githubUserId) {
+      const savedAt = new Date(query.dataUpdatedAt).toISOString();
+      void saveSafetyPolicy(offlineDatabase, {
+        githubUserId,
+        trackerKey,
+        policy: query.data.safetyPolicy,
+        savedAt,
+        expiresAt: new Date(
+          query.dataUpdatedAt + 30 * 24 * 60 * 60 * 1_000,
+        ).toISOString(),
+      });
+    }
+  }, [
+    githubUserId,
+    persistSnapshot,
+    query.data,
+    query.dataUpdatedAt,
+    queryClient,
+  ]);
 
-  const aggregate = query.data ?? snapshotData?.data;
+  const baseAggregate = query.data ?? snapshotData?.data;
+  const projected = baseAggregate
+    ? projectTodayPendingCommands(baseAggregate, commands)
+    : null;
+  const aggregate = projected?.data ?? null;
   const readOnlyOffline =
     !query.data && snapshotData !== null && snapshotData !== undefined;
 
@@ -170,6 +199,8 @@ export function TodayClient() {
       readOnlyOffline={readOnlyOffline}
       offlineSavedAt={readOnlyOffline ? (snapshotData?.savedAt ?? null) : null}
       onRefresh={() => query.refetch()}
+      onRetryPending={replayNow}
+      pendingSummary={projected?.pending ?? null}
       onExecutionChanged={() => query.refetch()}
       onTaskUpdated={handleTaskUpdated}
       onExternalTrainingUpdated={handleExternalTrainingUpdated}

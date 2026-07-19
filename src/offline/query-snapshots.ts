@@ -8,7 +8,7 @@ import {
   offlineTodaySnapshotSchema,
 } from "./snapshot-contracts";
 import {
-  PRIVATE_OFFLINE_SCHEMA_VERSION,
+  PRIVATE_OFFLINE_SNAPSHOT_SCHEMA_VERSION,
   type QuerySnapshotKind,
   type QuerySnapshotRow,
   type TrackerOfflineDatabase,
@@ -49,11 +49,13 @@ export async function prepareOfflineIdentity(
     database.metadata,
     database.querySnapshots,
     database.pendingCommands,
+    database.safetyPolicies,
     async () => {
       const current = await database.metadata.get("active-identity");
       if (current && current.value !== githubUserId) {
         await database.querySnapshots.clear();
         await database.pendingCommands.clear();
+        await database.safetyPolicies.clear();
         await database.metadata.clear();
       }
       await database.metadata.put({
@@ -73,11 +75,13 @@ export async function clearOfflinePrivateData(
     database.metadata,
     database.querySnapshots,
     database.pendingCommands,
+    database.safetyPolicies,
     async () => {
       await Promise.all([
         database.metadata.clear(),
         database.querySnapshots.clear(),
         database.pendingCommands.clear(),
+        database.safetyPolicies.clear(),
       ]);
     },
   );
@@ -94,7 +98,7 @@ export async function saveQuerySnapshot<T>(
   await database.querySnapshots.put({
     ...input,
     id: snapshotId(input),
-    schemaVersion: PRIVATE_OFFLINE_SCHEMA_VERSION,
+    schemaVersion: PRIVATE_OFFLINE_SNAPSHOT_SCHEMA_VERSION,
     data,
   });
 }
@@ -115,7 +119,7 @@ export async function readQuerySnapshot(
   if (!row) return null;
   if (
     row.githubUserId !== input.githubUserId ||
-    row.schemaVersion !== PRIVATE_OFFLINE_SCHEMA_VERSION ||
+    row.schemaVersion !== PRIVATE_OFFLINE_SNAPSHOT_SCHEMA_VERSION ||
     Date.parse(row.expiresAt) <= (input.now ?? new Date()).getTime()
   ) {
     await database.querySnapshots.delete(id);

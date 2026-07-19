@@ -278,6 +278,16 @@ h1 {
   background: #fff;
 }
 
+.calendar-day .local-pending-marker {
+  color: var(--attention);
+  font-size: 0.58rem;
+  font-weight: 800;
+}
+
+.calendar-day.selected .local-pending-marker {
+  color: #fff;
+}
+
 .calendar-empty-cell {
   min-height: 44px;
 }

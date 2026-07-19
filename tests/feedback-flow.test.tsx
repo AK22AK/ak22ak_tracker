@@ -9,22 +9,52 @@ import {
   render,
   screen,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { trackerQueryKeys } from "@/client/query-keys";
 import { FeedbackFlowClient } from "@/components/feedback-flow";
 import { TodayClient } from "@/components/today-client";
 import type { TodayAggregate } from "@/domain/api-contracts";
+import { safetyPolicyReference } from "@/domain/safety-policy";
 
 const navigation = vi.hoisted(() => ({
   back: vi.fn(),
   push: vi.fn(),
+}));
+const commandHarness = vi.hoisted(() => ({
+  commands: [] as unknown[],
+  confirmedCommandIds: [] as string[],
+  enqueue: vi.fn(),
+  replayNow: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => navigation,
 }));
 vi.mock("next-auth/react", () => ({ signOut: vi.fn() }));
+vi.mock("@/offline/private-offline-context", () => ({
+  usePrivateOfflineIdentity: () => "10001",
+}));
+vi.mock("@/offline/offline-command-context", () => ({
+  useOfflineCommands: () => ({
+    commands: commandHarness.commands,
+    confirmedCommandIds: commandHarness.confirmedCommandIds,
+    ready: true,
+    enqueue: commandHarness.enqueue,
+    replayNow: commandHarness.replayNow,
+  }),
+}));
+vi.mock("@/offline/use-query-snapshot", () => ({
+  useQuerySnapshot: () => ({
+    data: null,
+    isPending: false,
+    persist: vi.fn(),
+  }),
+}));
+vi.mock("@/offline/safety-policies", () => ({
+  readSafetyPolicy: vi.fn(async () => null),
+  saveSafetyPolicy: vi.fn(async () => undefined),
+}));
 vi.mock("@/domain/planning-time", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("@/domain/planning-time")>();
@@ -128,20 +158,34 @@ function savedResult(safetyLevel: "green" | "yellow" | "red") {
   };
 }
 
-function renderFlow(fetchMock: ReturnType<typeof vi.fn>) {
+function renderFlowView(fetchMock: ReturnType<typeof vi.fn>) {
   vi.stubGlobal("fetch", fetchMock);
   vi.stubGlobal("crypto", {
     randomUUID: () => "019c0000-0000-7000-8000-000000000204",
   });
+  commandHarness.enqueue.mockImplementation(async (input) => ({
+    ...input,
+    schemaVersion: 1,
+    attemptCount: 0,
+    nextAttemptAt: input.createdAt,
+    lastAttemptAt: null,
+    lastErrorCode: null,
+    status: "local_only",
+    sourceVersion: input.sourceVersion ?? null,
+  }));
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  render(
+  const view = render(
     <QueryClientProvider client={queryClient}>
       <FeedbackFlowClient presentation="page" />
     </QueryClientProvider>,
   );
-  return queryClient;
+  return { queryClient, view };
+}
+
+function renderFlow(fetchMock: ReturnType<typeof vi.fn>) {
+  return renderFlowView(fetchMock).queryClient;
 }
 
 function renderOverlay(fetchMock: ReturnType<typeof vi.fn>) {
@@ -149,6 +193,16 @@ function renderOverlay(fetchMock: ReturnType<typeof vi.fn>) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  commandHarness.enqueue.mockImplementation(async (input) => ({
+    ...input,
+    schemaVersion: 1,
+    attemptCount: 0,
+    nextAttemptAt: input.createdAt,
+    lastAttemptAt: null,
+    lastErrorCode: null,
+    status: "local_only",
+    sourceVersion: input.sourceVersion ?? null,
+  }));
   render(
     <div className="protected-app-shell" data-testid="underlying-shell">
       <Link href="/feedback" autoFocus>
@@ -172,10 +226,29 @@ function providerFetch(safetyLevel: "green" | "yellow" | "red") {
 }
 
 describe("feedback full-screen flow", () => {
+  beforeEach(() => {
+    commandHarness.commands = [];
+    commandHarness.confirmedCommandIds = [];
+    commandHarness.enqueue.mockImplementation(async (input) => ({
+      ...input,
+      schemaVersion: 1,
+      attemptCount: 0,
+      nextAttemptAt: input.createdAt,
+      lastAttemptAt: null,
+      lastErrorCode: null,
+      status: "local_only",
+      sourceVersion: input.sourceVersion ?? null,
+    }));
+  });
+
   afterEach(() => {
     cleanup();
     navigation.back.mockReset();
     navigation.push.mockReset();
+    commandHarness.enqueue.mockReset();
+    commandHarness.replayNow.mockReset();
+    commandHarness.commands = [];
+    commandHarness.confirmedCommandIds = [];
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
@@ -204,11 +277,11 @@ describe("feedback full-screen flow", () => {
         );
       }
 
-      expect(screen.getByText(`当前输入预判：${label}`)).toBeTruthy();
+      expect(screen.getByText(`本机预判：${label}`)).toBeTruthy();
       fireEvent.click(screen.getByRole("button", { name: "保存反馈" }));
 
       expect(
-        await screen.findByRole("heading", { name: "反馈已保存" }),
+        await screen.findByRole("heading", { name: "反馈已保存在本机" }),
       ).toBeTruthy();
       expect(screen.getByRole("heading", { name: label })).toBeTruthy();
       expect(screen.getByRole("button", { name: "返回今日" })).toBeTruthy();
@@ -217,18 +290,62 @@ describe("feedback full-screen flow", () => {
     },
   );
 
-  it("keeps every field and the command id when a failed submission is retried", async () => {
-    let postCount = 0;
-    const fetchMock = vi.fn(
-      async (_input: RequestInfo | URL, init?: RequestInit) => {
-        if (init?.method !== "POST") return jsonResponse(aggregate());
-        postCount += 1;
-        return postCount === 1
-          ? jsonResponse({}, 503)
-          : jsonResponse(savedResult("red"));
+  it("replaces the local result with the canonical server confirmation", async () => {
+    const { queryClient, view } = renderFlowView(providerFetch("green"));
+    await screen.findByRole("heading", { name: "记录身体反馈" });
+    fireEvent.click(screen.getByRole("button", { name: "保存反馈" }));
+    await screen.findByRole("heading", { name: "反馈已保存在本机" });
+    const command = commandHarness.enqueue.mock.calls[0]?.[0];
+    expect(command).toBeDefined();
+    const canonical = aggregate();
+    canonical.day.feedbackCount = 1;
+    canonical.day.feedbacks = [
+      {
+        id: command.id,
+        occurredAt: command.occurredAt,
+        timing: command.payload.checkIn.timing,
+        leftPain: 0,
+        rightPain: 0,
+        swelling: "none",
+        safetyLevel: "green",
+        safetyPolicy: safetyPolicyReference(canonical.safetyPolicy),
+        note: "",
       },
+    ];
+    queryClient.setQueryData(
+      trackerQueryKeys.today("knee-rehab", "2026-07-19"),
+      canonical,
     );
+    commandHarness.confirmedCommandIds = [command.id];
+
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <FeedbackFlowClient presentation="page" />
+      </QueryClientProvider>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "反馈已同步" }),
+    ).toBeTruthy();
+    expect(screen.getByText("服务端确认")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "绿灯" })).toBeTruthy();
+  });
+
+  it("keeps every field and the command id when a failed submission is retried", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(aggregate()));
     renderFlow(fetchMock);
+    commandHarness.enqueue
+      .mockRejectedValueOnce(new Error("anonymous local write failure"))
+      .mockImplementationOnce(async (input) => ({
+        ...input,
+        schemaVersion: 1,
+        attemptCount: 0,
+        nextAttemptAt: input.createdAt,
+        lastAttemptAt: null,
+        lastErrorCode: null,
+        status: "local_only",
+        sourceVersion: input.sourceVersion ?? null,
+      }));
 
     await screen.findByRole("heading", { name: "记录身体反馈" });
     fireEvent.change(screen.getByLabelText("左膝疼痛（0–10）"), {
@@ -251,26 +368,21 @@ describe("feedback full-screen flow", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "保存反馈" }));
-    expect(
-      await screen.findByText("尚未保存，请检查网络后重试。"),
-    ).toBeTruthy();
+    expect(await screen.findByText("尚未保存到本机，请重试。")).toBeTruthy();
     expect(
       (screen.getByLabelText("主观补充") as HTMLTextAreaElement).value,
     ).toBe("匿名测试草稿");
 
     fireEvent.click(screen.getByRole("button", { name: "重试保存" }));
     expect(
-      await screen.findByRole("heading", { name: "反馈已保存" }),
+      await screen.findByRole("heading", { name: "反馈已保存在本机" }),
     ).toBeTruthy();
 
-    const posts = fetchMock.mock.calls.filter(
-      ([, init]) => init?.method === "POST",
-    );
-    expect(posts).toHaveLength(2);
-    const firstBody = JSON.parse(String(posts[0]?.[1]?.body));
-    const secondBody = JSON.parse(String(posts[1]?.[1]?.body));
-    expect(firstBody.commandId).toBe(secondBody.commandId);
-    expect(firstBody).toMatchObject({
+    expect(commandHarness.enqueue).toHaveBeenCalledTimes(2);
+    const firstCommand = commandHarness.enqueue.mock.calls[0]?.[0];
+    const secondCommand = commandHarness.enqueue.mock.calls[1]?.[0];
+    expect(firstCommand.id).toBe(secondCommand.id);
+    expect(firstCommand.payload.checkIn).toMatchObject({
       leftPain: 3,
       rightPain: 4,
       swelling: "obvious",
@@ -283,30 +395,36 @@ describe("feedback full-screen flow", () => {
   });
 
   it("prevents a slow double submission", async () => {
-    let resolvePost!: (response: Response) => void;
-    const postResponse = new Promise<Response>((resolve) => {
-      resolvePost = resolve;
+    let resolveEnqueue!: (value: unknown) => void;
+    const enqueueResult = new Promise((resolve) => {
+      resolveEnqueue = resolve;
     });
-    const fetchMock = vi.fn(
-      async (_input: RequestInfo | URL, init?: RequestInit) =>
-        init?.method === "POST" ? postResponse : jsonResponse(aggregate()),
-    );
+    const fetchMock = vi.fn(async () => jsonResponse(aggregate()));
     renderFlow(fetchMock);
+    commandHarness.enqueue.mockImplementationOnce(() => enqueueResult);
 
     await screen.findByRole("heading", { name: "记录身体反馈" });
     const submit = screen.getByRole("button", { name: "保存反馈" });
     fireEvent.click(submit);
     fireEvent.click(submit);
 
-    expect(
-      fetchMock.mock.calls.filter(([, init]) => init?.method === "POST"),
-    ).toHaveLength(1);
+    expect(commandHarness.enqueue.mock.calls).toHaveLength(1);
     await act(async () => {
-      resolvePost(jsonResponse(savedResult("green")));
-      await postResponse;
+      const input = commandHarness.enqueue.mock.calls[0]?.[0];
+      resolveEnqueue({
+        ...input,
+        schemaVersion: 1,
+        attemptCount: 0,
+        nextAttemptAt: input.createdAt,
+        lastAttemptAt: null,
+        lastErrorCode: null,
+        status: "local_only",
+        sourceVersion: null,
+      });
+      await enqueueResult;
     });
     expect(
-      await screen.findByRole("heading", { name: "反馈已保存" }),
+      await screen.findByRole("heading", { name: "反馈已保存在本机" }),
     ).toBeTruthy();
   });
 
@@ -345,7 +463,7 @@ describe("feedback full-screen flow", () => {
       target: { value: "5" },
     });
     fireEvent.click(screen.getByRole("button", { name: "保存反馈" }));
-    await screen.findByRole("heading", { name: "反馈已保存" });
+    await screen.findByRole("heading", { name: "反馈已保存在本机" });
 
     const cached = queryClient.getQueryData<TodayAggregate>(
       trackerQueryKeys.today("knee-rehab", "2026-07-19"),
@@ -431,7 +549,7 @@ describe("feedback full-screen flow", () => {
       }),
     );
     fireEvent.click(screen.getByRole("button", { name: "保存反馈" }));
-    await screen.findByRole("heading", { name: "反馈已保存" });
+    await screen.findByRole("heading", { name: "反馈已保存在本机" });
 
     expect(queryClient.getQueryData<TodayAggregate>(todayKey)).toMatchObject({
       execution: {
@@ -524,10 +642,12 @@ describe("feedback full-screen flow", () => {
     await screen.findByRole("heading", { name: "记录身体反馈" });
     fireEvent.click(screen.getByRole("button", { name: "保存反馈" }));
     const resultHeading = await screen.findByRole("heading", {
-      name: "反馈已保存",
+      name: "反馈已保存在本机",
     });
 
-    expect(screen.getByRole("dialog", { name: "反馈已保存" })).toBeTruthy();
+    expect(
+      screen.getByRole("dialog", { name: "反馈已保存在本机" }),
+    ).toBeTruthy();
     expect(document.activeElement).toBe(resultHeading);
     expect(shell.hasAttribute("inert")).toBe(true);
     expect(shell.getAttribute("aria-hidden")).toBe("true");
@@ -550,7 +670,7 @@ describe("feedback full-screen flow", () => {
     ).toBe("后台刷新前的匿名草稿");
 
     fireEvent.click(screen.getByRole("button", { name: "保存反馈" }));
-    await screen.findByRole("heading", { name: "反馈已保存" });
+    await screen.findByRole("heading", { name: "反馈已保存在本机" });
     fireEvent.click(screen.getByRole("button", { name: "继续添加反馈" }));
 
     expect(

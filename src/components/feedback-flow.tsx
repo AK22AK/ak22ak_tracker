@@ -6,24 +6,31 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { trackerQueryKeys } from "@/client/query-keys";
 import { fetchTodayAggregate } from "@/client/tracker-api";
+import type { TodayAggregate } from "@/domain/api-contracts";
 import {
   createOrReuseClientCommand,
   type PendingClientCommand,
 } from "@/domain/client-command";
-import type { TodayAggregate } from "@/domain/api-contracts";
 import { localDateInTimeZone } from "@/domain/planning-time";
 import {
   safetyPolicyReference,
   type SafetyLevel,
+  type TrackerSafetyPolicy,
 } from "@/domain/safety-policy";
 import {
   evaluateKneeCheckIn,
   kneeCheckInInputSchema,
-  kneeCheckInSaveResultSchema,
   type KneeCheckInInput,
 } from "@/modules/knee-rehab/check-in";
 
 import { StatusPill } from "./ui/primitives";
+import { useOfflineCommands } from "@/offline/offline-command-context";
+import { usePrivateOfflineIdentity } from "@/offline/private-offline-context";
+import { useQuerySnapshot } from "@/offline/use-query-snapshot";
+import type { OfflineTodaySnapshot } from "@/offline/snapshot-contracts";
+import { readSafetyPolicy, saveSafetyPolicy } from "@/offline/safety-policies";
+import { offlineDatabase } from "@/offline/store";
+import { projectTodayPendingCommands } from "@/offline/command-projection";
 
 const trackerKey = "knee-rehab";
 const planningTimeZone = "Asia/Shanghai";
@@ -63,49 +70,6 @@ function safetyTone(level: SafetyLevel) {
   return "success" as const;
 }
 
-function updateTodayFeedback(
-  current: TodayAggregate | undefined,
-  draft: KneeCheckInInput,
-  occurredAt: string,
-  result: ReturnType<typeof kneeCheckInSaveResultSchema.parse>,
-): TodayAggregate | undefined {
-  if (!current) return current;
-  if (current.day.feedbacks.some((feedback) => feedback.id === result.id)) {
-    return current;
-  }
-  const blocksActiveContext =
-    result.safetyLevel === "red" &&
-    current.execution.context?.status === "active";
-  return {
-    ...current,
-    day: {
-      ...current.day,
-      feedbackCount: current.day.feedbackCount + 1,
-      feedbacks: [
-        ...current.day.feedbacks,
-        {
-          id: result.id,
-          occurredAt,
-          timing: draft.timing,
-          leftPain: draft.leftPain,
-          rightPain: draft.rightPain,
-          swelling: draft.swelling,
-          safetyLevel: result.safetyLevel,
-          safetyPolicy: result.safetyPolicy,
-          note: draft.note,
-        },
-      ],
-    },
-    execution: blocksActiveContext
-      ? {
-          ...current.execution,
-          alternatives: [],
-          safety: { blocked: true, reason: "red_feedback" as const },
-        }
-      : current.execution,
-  };
-}
-
 export function FeedbackFlowClient({
   presentation,
 }: {
@@ -113,6 +77,8 @@ export function FeedbackFlowClient({
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const githubUserId = usePrivateOfflineIdentity();
+  const { commands, confirmedCommandIds, enqueue } = useOfflineCommands();
   const localDate = localDateInTimeZone(new Date(), planningTimeZone);
   const todayQueryKey = trackerQueryKeys.today(trackerKey, localDate);
   const query = useQuery({
@@ -120,12 +86,25 @@ export function FeedbackFlowClient({
     queryFn: ({ signal }) => fetchTodayAggregate(trackerKey, localDate, signal),
     staleTime: 60_000,
   });
+  const {
+    data: snapshotData,
+    isPending: snapshotPending,
+    persist: persistSnapshot,
+  } = useQuerySnapshot<OfflineTodaySnapshot>({
+    trackerKey,
+    kind: "today",
+    scope: localDate,
+  });
   const [draft, setDraft] = useState<KneeCheckInInput>(emptyDraft);
   const [saving, setSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
-  const [result, setResult] = useState<ReturnType<
-    typeof kneeCheckInSaveResultSchema.parse
-  > | null>(null);
+  const [result, setResult] = useState<{
+    id: string;
+    safetyLevel: SafetyLevel | null;
+    safetyPolicy: ReturnType<typeof safetyPolicyReference> | null;
+  } | null>(null);
+  const [offlinePolicy, setOfflinePolicy] =
+    useState<TrackerSafetyPolicy | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const resultHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const pendingCommand = useRef<PendingClientCommand | null>(null);
@@ -165,6 +144,41 @@ export function FeedbackFlowClient({
     resultHeadingRef.current?.focus();
   }, [presentation, result]);
 
+  useEffect(() => {
+    if (!query.data || !githubUserId) return;
+    const savedAt = new Date(query.dataUpdatedAt).toISOString();
+    void persistSnapshot(
+      {
+        tracker: query.data.tracker,
+        targetDate: query.data.targetDate,
+        plan: query.data.plan,
+        day: query.data.day,
+        safetyPolicy: safetyPolicyReference(query.data.safetyPolicy),
+        execution: query.data.execution,
+      },
+      `plan:${query.data.plan?.version ?? "none"};policy:${query.data.safetyPolicy.version}:${query.data.safetyPolicy.hash}`,
+      query.dataUpdatedAt,
+    );
+    void saveSafetyPolicy(offlineDatabase, {
+      githubUserId,
+      trackerKey,
+      policy: query.data.safetyPolicy,
+      savedAt,
+      expiresAt: new Date(
+        query.dataUpdatedAt + 30 * 24 * 60 * 60 * 1_000,
+      ).toISOString(),
+    });
+  }, [githubUserId, persistSnapshot, query.data, query.dataUpdatedAt]);
+
+  useEffect(() => {
+    if (query.data || !snapshotData?.data || !githubUserId) return;
+    void readSafetyPolicy(offlineDatabase, {
+      githubUserId,
+      trackerKey,
+      reference: snapshotData.data.safetyPolicy,
+    }).then(setOfflinePolicy);
+  }, [githubUserId, query.data, snapshotData]);
+
   const returnToday = () => {
     if (presentation === "overlay") {
       router.back();
@@ -173,7 +187,12 @@ export function FeedbackFlowClient({
     router.push("/", { scroll: false });
   };
 
-  if (query.isPending) {
+  const aggregate = query.data ?? snapshotData?.data;
+
+  if (
+    !aggregate &&
+    (snapshotPending || (query.isPending && query.fetchStatus !== "paused"))
+  ) {
     return (
       <div
         ref={overlayRef}
@@ -195,7 +214,7 @@ export function FeedbackFlowClient({
     );
   }
 
-  if (query.isError) {
+  if (!aggregate) {
     return (
       <div
         ref={overlayRef}
@@ -235,8 +254,21 @@ export function FeedbackFlowClient({
     );
   }
 
-  const policy = query.data.safetyPolicy;
-  const clientSafetyLevel = evaluateKneeCheckIn(draft, policy.rules);
+  const policy = query.data?.safetyPolicy ?? offlinePolicy;
+  const clientSafetyLevel = policy
+    ? evaluateKneeCheckIn(draft, policy.rules)
+    : null;
+  const resultCommand = result
+    ? commands.find((command) => command.id === result.id)
+    : null;
+  const resultConfirmed = result
+    ? (confirmedCommandIds?.includes(result.id) ?? false)
+    : false;
+  const canonicalFeedback = resultConfirmed
+    ? query.data?.day.feedbacks.find((feedback) => feedback.id === result?.id)
+    : null;
+  const displayedSafetyLevel =
+    canonicalFeedback?.safetyLevel ?? result?.safetyLevel ?? null;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -251,37 +283,31 @@ export function FeedbackFlowClient({
         payload,
       );
       pendingCommand.current = command;
-      const response = await fetch("/api/check-ins", {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
+      if (!githubUserId) throw new Error("offline_identity_unavailable");
+      const queued = await enqueue({
+        id: command.metadata.commandId,
+        githubUserId,
+        trackerKey,
+        kind: "symptom_check_in",
+        createdAt: command.metadata.occurredAt,
+        occurredAt: command.metadata.occurredAt,
+        localDate,
+        occurredTimeZone: command.metadata.occurredTimeZone,
+        occurredUtcOffsetMinutes: command.metadata.occurredUtcOffsetMinutes,
+        payload: {
+          checkIn: payload,
+          clientSafetyPolicy: policy ? safetyPolicyReference(policy) : null,
+          localSafetyLevel: clientSafetyLevel,
         },
-        body: JSON.stringify({
-          ...payload,
-          ...command.metadata,
-          clientSafetyPolicy: safetyPolicyReference(policy),
-        }),
       });
-      if (!response.ok) throw new Error("check_in_failed");
-      const saved = kneeCheckInSaveResultSchema.parse(await response.json());
       queryClient.setQueryData<TodayAggregate>(todayQueryKey, (current) =>
-        updateTodayFeedback(
-          current,
-          payload,
-          command.metadata.occurredAt,
-          saved,
-        ),
+        current ? projectTodayPendingCommands(current, [queued]).data : current,
       );
-      void queryClient.invalidateQueries({ queryKey: todayQueryKey });
-      void queryClient.invalidateQueries({
-        queryKey: trackerQueryKeys.day(trackerKey, localDate),
+      setResult({
+        id: command.metadata.commandId,
+        safetyLevel: clientSafetyLevel,
+        safetyPolicy: policy ? safetyPolicyReference(policy) : null,
       });
-      void queryClient.invalidateQueries({
-        queryKey: trackerQueryKeys.calendar(trackerKey, localDate.slice(0, 7)),
-      });
-      pendingCommand.current = null;
-      setResult(saved);
     } catch {
       setSaveFailed(true);
     } finally {
@@ -313,28 +339,47 @@ export function FeedbackFlowClient({
       <main className="feedback-flow-page">
         {result ? (
           <section
-            className={`feedback-result-card ${result.safetyLevel}`}
+            className={`feedback-result-card ${displayedSafetyLevel ?? "pending"}`}
             aria-live="polite"
           >
             <p className="eyebrow">身体反馈</p>
             <h1 id="feedback-result-title" ref={resultHeadingRef} tabIndex={-1}>
-              反馈已保存
+              {resultConfirmed ? "反馈已同步" : "反馈已保存在本机"}
             </h1>
-            <StatusPill
-              tone={safetyTone(result.safetyLevel)}
-              icon={result.safetyLevel === "green" ? "✓" : "!"}
-            >
-              服务端已确认
-            </StatusPill>
+            {displayedSafetyLevel ? (
+              <StatusPill
+                tone={safetyTone(displayedSafetyLevel)}
+                icon={displayedSafetyLevel === "green" ? "✓" : "!"}
+              >
+                {resultConfirmed ? "服务端确认" : "本机预判"}
+              </StatusPill>
+            ) : (
+              <StatusPill tone="attention" icon="!">
+                等待服务端安全判断
+              </StatusPill>
+            )}
             <div className="feedback-result-level">
-              <h2>{safetyLabel(result.safetyLevel)}</h2>
-              <p>{safetyGuidance(result.safetyLevel)}</p>
-            </div>
-            {result.clientPolicyOutdated ? (
-              <p className="feedback-policy-note">
-                安全规则在提交期间已更新，本结果采用服务端最新规则。
+              <h2>
+                {displayedSafetyLevel
+                  ? safetyLabel(displayedSafetyLevel)
+                  : "暂不判断安全级别"}
+              </h2>
+              <p>
+                {displayedSafetyLevel
+                  ? safetyGuidance(displayedSafetyLevel)
+                  : "本机没有与当前版本匹配的安全规则。请先停止升级训练，联网后获取服务端权威判断。"}
               </p>
-            ) : null}
+            </div>
+            <p className="feedback-policy-note">
+              {resultConfirmed
+                ? "服务端已按实际发生时刻重新校验安全策略。"
+                : resultCommand?.status === "syncing"
+                  ? "当前记录正在同步；服务端结果将作为最终判断。"
+                  : resultCommand?.status === "waiting_auth" ||
+                      resultCommand?.status === "needs_attention"
+                    ? "当前记录仍在本机，需要联网后处理。原始反馈不会被自动丢弃。"
+                    : "当前记录尚未由服务端确认；联网后会自动同步。"}
+            </p>
             <div className="feedback-result-actions">
               <button
                 className="primary-button"
@@ -535,19 +580,28 @@ export function FeedbackFlowClient({
               </section>
 
               <section
-                className={`feedback-safety-preview ${clientSafetyLevel}`}
+                className={`feedback-safety-preview ${clientSafetyLevel ?? "pending"}`}
                 aria-live="polite"
               >
-                <StatusPill tone={safetyTone(clientSafetyLevel)}>
-                  当前输入预判：{safetyLabel(clientSafetyLevel)}
-                </StatusPill>
-                <p>提交后由服务端按实际生效的私人安全策略给出权威结果。</p>
+                {clientSafetyLevel ? (
+                  <>
+                    <StatusPill tone={safetyTone(clientSafetyLevel)}>
+                      本机预判：{safetyLabel(clientSafetyLevel)}
+                    </StatusPill>
+                    <p>联网后由服务端按实际生效规则给出权威结果。</p>
+                  </>
+                ) : (
+                  <>
+                    <StatusPill tone="attention">等待安全规则</StatusPill>
+                    <p>仍可保存原始反馈；联网前不会显示未经依据的绿灯。</p>
+                  </>
+                )}
               </section>
 
               {saveFailed ? (
                 <div className="feedback-save-error" role="alert">
-                  <strong>尚未保存，请检查网络后重试。</strong>
-                  <span>表单内容仍保留在当前页面；关闭页面前请先重试。</span>
+                  <strong>尚未保存到本机，请重试。</strong>
+                  <span>表单内容仍保留在当前页面。</span>
                 </div>
               ) : null}
 

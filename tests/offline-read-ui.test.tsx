@@ -109,7 +109,7 @@ function renderPrivate(children: React.ReactNode, githubUserId = "10001") {
   );
 }
 
-describe("P2a offline read-only UI", () => {
+describe("P2 offline snapshot UI", () => {
   beforeEach(async () => {
     onlineManager.setOnline(true);
     await clearOfflinePrivateData(offlineDatabase);
@@ -139,7 +139,7 @@ describe("P2a offline read-only UI", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
     renderPrivate(<TodayClient />);
 
-    expect(await screen.findByText("离线缓存 · 仅供查看")).toBeTruthy();
+    expect(await screen.findByText("离线缓存")).toBeTruthy();
     expect(screen.getByText("Anonymous offline task")).toBeTruthy();
     expect(
       (
@@ -147,9 +147,8 @@ describe("P2a offline read-only UI", () => {
           name: "Anonymous offline task",
         }) as HTMLInputElement
       ).disabled,
-    ).toBe(true);
-    expect(screen.queryByRole("link", { name: "添加反馈" })).toBeNull();
-    expect(screen.getByText("联网后添加反馈")).toBeTruthy();
+    ).toBe(false);
+    expect(screen.getByRole("link", { name: "添加反馈" })).toBeTruthy();
   });
 
   it("never restores another GitHub identity's snapshot", async () => {

@@ -3,6 +3,14 @@
 
   const SCHEMA_VERSION = 2;
   const snapshotKinds = new Set(["today", "calendar-month", "day"]);
+  const commandKinds = new Set(["task_update", "symptom_check_in"]);
+  const commandStatuses = new Set([
+    "local_only",
+    "syncing",
+    "retryable",
+    "waiting_auth",
+    "needs_attention",
+  ]);
   const taskStates = new Set(["planned", "completed", "skipped"]);
   const dayStates = new Set(["missing", "not_started", "ready"]);
   const feedbackTimings = new Set([
@@ -53,6 +61,10 @@
 
   function hasOwn(value, key) {
     return Object.prototype.hasOwnProperty.call(value, key);
+  }
+
+  function hasOnlyKeys(value, keys) {
+    return Object.keys(value).every((key) => keys.includes(key));
   }
 
   function isNonEmptyString(value, max = Number.POSITIVE_INFINITY) {
@@ -471,10 +483,125 @@
     return validDayData(row.data, row.trackerKey, row.scope);
   }
 
+  function validCheckIn(value) {
+    const checkIn = objectValue(value);
+    return Boolean(
+      checkIn &&
+      hasOnlyKeys(checkIn, [
+        "timing",
+        "leftPain",
+        "rightPain",
+        "swelling",
+        "stiffness",
+        "mechanicalSymptoms",
+        "weightBearingIssue",
+        "localizedBonePain",
+        "nightOrRestPain",
+        "note",
+      ]) &&
+      feedbackTimings.has(checkIn.timing) &&
+      Number.isInteger(checkIn.leftPain) &&
+      checkIn.leftPain >= 0 &&
+      checkIn.leftPain <= 10 &&
+      Number.isInteger(checkIn.rightPain) &&
+      checkIn.rightPain >= 0 &&
+      checkIn.rightPain <= 10 &&
+      swellingLevels.has(checkIn.swelling) &&
+      typeof checkIn.stiffness === "boolean" &&
+      typeof checkIn.mechanicalSymptoms === "boolean" &&
+      typeof checkIn.weightBearingIssue === "boolean" &&
+      typeof checkIn.localizedBonePain === "boolean" &&
+      typeof checkIn.nightOrRestPain === "boolean" &&
+      typeof checkIn.note === "string" &&
+      checkIn.note.length <= 2_000,
+    );
+  }
+
+  function validPendingCommand(value, identity) {
+    const command = objectValue(value);
+    if (
+      !command ||
+      !hasOnlyKeys(command, [
+        "id",
+        "schemaVersion",
+        "githubUserId",
+        "trackerKey",
+        "kind",
+        "createdAt",
+        "occurredAt",
+        "localDate",
+        "occurredTimeZone",
+        "occurredUtcOffsetMinutes",
+        "attemptCount",
+        "nextAttemptAt",
+        "lastAttemptAt",
+        "lastErrorCode",
+        "status",
+        "sourceVersion",
+        "payload",
+      ]) ||
+      command.schemaVersion !== 1 ||
+      command.githubUserId !== identity ||
+      !/^\d+$/.test(identity) ||
+      !isUuid(command.id) ||
+      !isTrackerKey(command.trackerKey) ||
+      !commandKinds.has(command.kind) ||
+      !isInstant(command.createdAt) ||
+      !isInstant(command.occurredAt) ||
+      !isLocalDate(command.localDate) ||
+      !isNonEmptyString(command.occurredTimeZone, 100) ||
+      !Number.isInteger(command.occurredUtcOffsetMinutes) ||
+      command.occurredUtcOffsetMinutes < -840 ||
+      command.occurredUtcOffsetMinutes > 840 ||
+      !isNonNegativeInteger(command.attemptCount) ||
+      !isInstant(command.nextAttemptAt) ||
+      !(command.lastAttemptAt === null || isInstant(command.lastAttemptAt)) ||
+      !isNullableString(command.lastErrorCode, 120) ||
+      !commandStatuses.has(command.status) ||
+      !isNullableString(command.sourceVersion, 500)
+    ) {
+      return false;
+    }
+    const payload = objectValue(command.payload);
+    if (!payload) return false;
+    if (command.kind === "task_update") {
+      return Boolean(
+        hasOnlyKeys(payload, [
+          "taskId",
+          "status",
+          "actual",
+          "note",
+          "baseStatus",
+          "planVersion",
+        ]) &&
+        isUuid(payload.taskId) &&
+        taskStates.has(payload.status) &&
+        validTaskActual(payload.actual) &&
+        isNullableString(payload.note, 2_000) &&
+        taskStates.has(payload.baseStatus) &&
+        (payload.planVersion === null ||
+          isPositiveInteger(payload.planVersion)),
+      );
+    }
+    return Boolean(
+      hasOnlyKeys(payload, [
+        "checkIn",
+        "clientSafetyPolicy",
+        "localSafetyLevel",
+      ]) &&
+      validCheckIn(payload.checkIn) &&
+      (payload.clientSafetyPolicy === null ||
+        validSafetyPolicyReference(payload.clientSafetyPolicy)) &&
+      (payload.localSafetyLevel === null ||
+        safetyLevels.has(payload.localSafetyLevel)),
+    );
+  }
+
   globalThis.AKTrackerOfflineContract = Object.freeze({
     validSnapshotRow,
     validTodayData,
     validCalendarData,
     validDayData,
+    validPendingCommand,
   });
 })();

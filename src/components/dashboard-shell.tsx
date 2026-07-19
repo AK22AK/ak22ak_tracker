@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   createOrReuseClientCommand,
@@ -15,6 +15,9 @@ import type { TaskActual } from "@/domain/schemas";
 import type { DashboardTask, TodayDashboard } from "@/server/dashboard";
 import type { ExecutionContextToday } from "@/domain/execution-context";
 import { useNetworkState } from "@/client/use-network-state";
+import { useOfflineCommands } from "@/offline/offline-command-context";
+import type { PendingProjectionSummary } from "@/offline/command-projection";
+import { usePrivateOfflineIdentity } from "@/offline/private-offline-context";
 
 import { SignOutButton } from "./sign-out-button";
 import { ExternalTrainingSection } from "./external-training-section";
@@ -164,7 +167,9 @@ function TaskCard({
   tasks,
   onUpdated,
   onExternalTrainingUpdated,
-  readOnlyOffline,
+  localDate,
+  planVersion,
+  externalWritesDisabled,
 }: {
   task: DashboardTask;
   records: ExternalTrainingRecord[];
@@ -174,8 +179,13 @@ function TaskCard({
     recordId: string,
     association: ExternalRecordAssociation,
   ) => void;
-  readOnlyOffline: boolean;
+  localDate: string;
+  planVersion: number | null;
+  externalWritesDisabled: boolean;
 }) {
+  const githubUserId = usePrivateOfflineIdentity();
+  const { commands, confirmedCommandIds, enqueue, ready } =
+    useOfflineCommands();
   const [note, setNote] = useState(task.subjectiveNote ?? "");
   const [actual, setActual] = useState(() => initialTaskActual(task));
   const [expanded, setExpanded] = useState(false);
@@ -184,6 +194,34 @@ function TaskCard({
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveFailed, setSaveFailed] = useState(false);
   const pendingCommand = useRef<PendingClientCommand | null>(null);
+
+  useEffect(() => {
+    const commandId = pendingCommand.current?.metadata.commandId;
+    if (!commandId) return;
+    if (confirmedCommandIds?.includes(commandId)) {
+      pendingCommand.current = null;
+      setSaveFailed(false);
+      setSaveMessage(
+        task.status === "completed" ? "已同步并完成" : "已同步到服务器",
+      );
+      return;
+    }
+    const command = commands.find((item) => item.id === commandId);
+    if (!command) return;
+    if (
+      command.status === "waiting_auth" ||
+      command.status === "needs_attention"
+    ) {
+      setSaveFailed(true);
+      setSaveMessage("本机记录需要处理；请联网并使用上方重试入口");
+    } else if (command.status === "syncing") {
+      setSaveFailed(false);
+      setSaveMessage("已保存在本机，正在同步");
+    } else if (command.status === "retryable") {
+      setSaveFailed(false);
+      setSaveMessage("仅保存在本机，等待自动重试");
+    }
+  }, [commands, confirmedCommandIds, task.status]);
 
   async function save(status: DashboardTask["status"], nextNote = note) {
     setSaving(true);
@@ -200,26 +238,40 @@ function TaskCard({
         payload,
       );
       pendingCommand.current = command;
-      const response = await fetch(`/api/tasks/${task.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...payload,
-          ...command.metadata,
-        }),
+      if (!githubUserId) throw new Error("offline_identity_unavailable");
+      await enqueue({
+        id: command.metadata.commandId,
+        githubUserId,
+        trackerKey: "knee-rehab",
+        kind: "task_update",
+        createdAt: command.metadata.occurredAt,
+        occurredAt: command.metadata.occurredAt,
+        localDate,
+        occurredTimeZone: command.metadata.occurredTimeZone,
+        occurredUtcOffsetMinutes: command.metadata.occurredUtcOffsetMinutes,
+        payload: {
+          taskId: task.id,
+          status,
+          actual,
+          note: nextNote || null,
+          baseStatus: task.status,
+          planVersion,
+        },
       });
-      if (!response.ok) throw new Error("task_update_failed");
-      pendingCommand.current = null;
       onUpdated({
         ...task,
         status,
         actual,
         subjectiveNote: nextNote || null,
       });
-      setSaveMessage(status === "completed" ? "已保存并完成" : "记录已保存");
+      setSaveMessage(
+        navigator.onLine
+          ? "已保存在本机，正在同步"
+          : "仅保存在本机，联网后自动同步",
+      );
     } catch {
       setSaveFailed(true);
-      setSaveMessage("保存失败，请检查网络后重试");
+      setSaveMessage("本机保存失败，请重试；本次修改尚未保存");
     } finally {
       setSaving(false);
     }
@@ -240,7 +292,7 @@ function TaskCard({
             type="checkbox"
             aria-label={task.title}
             checked={task.status === "completed"}
-            disabled={saving || readOnlyOffline}
+            disabled={saving || !ready}
             onChange={(event) =>
               save(event.target.checked ? "completed" : "planned")
             }
@@ -284,7 +336,7 @@ function TaskCard({
               tasks={tasks}
               heading="已同步训练"
               onUpdated={onExternalTrainingUpdated}
-              readOnly={readOnlyOffline}
+              readOnly={externalWritesDisabled}
             />
           ) : null}
 
@@ -313,7 +365,7 @@ function TaskCard({
                             <input
                               type="checkbox"
                               checked={exercise.completed}
-                              disabled={saving || readOnlyOffline}
+                              disabled={saving || !ready}
                               onChange={(event) =>
                                 setActual((current) => ({
                                   ...current,
@@ -334,7 +386,7 @@ function TaskCard({
                           <input
                             value={exercise.actual}
                             maxLength={500}
-                            disabled={saving || readOnlyOffline}
+                            disabled={saving || !ready}
                             aria-label={`${exercise.name}实际重量组次`}
                             placeholder="例如 40 kg，2×10"
                             onChange={(event) =>
@@ -364,7 +416,7 @@ function TaskCard({
                             max="1440"
                             step="1"
                             value={actual.durationMinutes ?? ""}
-                            disabled={saving || readOnlyOffline}
+                            disabled={saving || !ready}
                             onChange={(event) =>
                               setActual((current) => ({
                                 ...current,
@@ -383,7 +435,7 @@ function TaskCard({
                             max="1000"
                             step="0.01"
                             value={actual.distanceKm ?? ""}
-                            disabled={saving || readOnlyOffline}
+                            disabled={saving || !ready}
                             onChange={(event) =>
                               setActual((current) => ({
                                 ...current,
@@ -398,7 +450,7 @@ function TaskCard({
                         <input
                           value={actual.summary}
                           maxLength={2000}
-                          disabled={saving || readOnlyOffline}
+                          disabled={saving || !ready}
                           placeholder="例如跑 2 分钟、走 1 分钟，共 6 轮"
                           onChange={(event) =>
                             setActual((current) => ({
@@ -416,7 +468,7 @@ function TaskCard({
                       <input
                         value={actual.summary}
                         maxLength={2000}
-                        disabled={saving || readOnlyOffline}
+                        disabled={saving || !ready}
                         placeholder="记录实际完成的内容"
                         onChange={(event) =>
                           setActual((current) => ({
@@ -440,7 +492,7 @@ function TaskCard({
                 <button
                   className="primary-button"
                   type="button"
-                  disabled={saving || readOnlyOffline}
+                  disabled={saving || !ready}
                   onClick={() => save(task.status)}
                 >
                   {saving ? "保存中…" : "保存训练记录"}
@@ -453,7 +505,7 @@ function TaskCard({
             <button
               className="text-button"
               type="button"
-              disabled={saving || readOnlyOffline}
+              disabled={saving || !ready}
               onClick={() =>
                 save(task.status === "skipped" ? "planned" : "skipped")
               }
@@ -533,6 +585,8 @@ export function DashboardShell({
   onExternalTrainingUpdated,
   readOnlyOffline = false,
   offlineSavedAt = null,
+  pendingSummary = null,
+  onRetryPending,
 }: {
   today: string;
   localDate: string;
@@ -548,6 +602,8 @@ export function DashboardShell({
   ) => void;
   readOnlyOffline?: boolean;
   offlineSavedAt?: string | null;
+  pendingSummary?: PendingProjectionSummary | null;
+  onRetryPending: () => Promise<void>;
 }) {
   const online = useNetworkState();
   const writesDisabled = readOnlyOffline || !online;
@@ -635,9 +691,7 @@ export function DashboardShell({
 
       {writesDisabled ? (
         <section className="offline-cache-notice" role="status">
-          <strong>
-            {readOnlyOffline ? "离线缓存 · 仅供查看" : "当前离线 · 仅供查看"}
-          </strong>
+          <strong>{readOnlyOffline ? "离线缓存" : "当前离线"}</strong>
           <span>
             最近更新：
             {offlineSavedAt
@@ -649,7 +703,35 @@ export function DashboardShell({
                 }).format(new Date(offlineSavedAt))
               : "未知"}
           </span>
-          <small>离线提交尚未开放，请联网后操作。</small>
+          <small>任务和身体反馈可先保存到本机；其他操作需联网。</small>
+        </section>
+      ) : null}
+
+      {pendingSummary &&
+      pendingSummary.localOnly +
+        pendingSummary.syncing +
+        pendingSummary.needsAttention >
+        0 ? (
+        <section className="offline-command-status" role="status">
+          <strong>
+            {pendingSummary.needsAttention > 0
+              ? `${pendingSummary.needsAttention} 条需要处理`
+              : pendingSummary.syncing > 0
+                ? `${pendingSummary.syncing} 条正在同步`
+                : `${pendingSummary.localOnly} 条仅保存在本机`}
+          </strong>
+          {pendingSummary.unclassifiedFeedback > 0 ? (
+            <span>身体反馈尚未完成安全判断，请先按保守原则处理。</span>
+          ) : null}
+          {online ? (
+            <button
+              className="text-button"
+              type="button"
+              onClick={() => void onRetryPending()}
+            >
+              立即重试
+            </button>
+          ) : null}
         </section>
       ) : null}
 
@@ -759,7 +841,9 @@ export function DashboardShell({
                   tasks={tasks}
                   onUpdated={onTaskUpdated}
                   onExternalTrainingUpdated={onExternalTrainingUpdated}
-                  readOnlyOffline={writesDisabled}
+                  localDate={localDate}
+                  planVersion={planVersion}
+                  externalWritesDisabled={writesDisabled}
                 />
               );
             })}
@@ -798,15 +882,9 @@ export function DashboardShell({
         <p className="feedback-supporting-copy">
           可提交训练前后、次日反应或突发情况；每天至少记录一次。
         </p>
-        {writesDisabled ? (
-          <span className="secondary-button" aria-disabled="true">
-            联网后{feedbackCount > 0 ? "再次反馈" : "添加反馈"}
-          </span>
-        ) : (
-          <Link className="secondary-button" href="/feedback" scroll={false}>
-            {feedbackCount > 0 ? "再次反馈" : "添加反馈"}
-          </Link>
-        )}
+        <Link className="secondary-button" href="/feedback" scroll={false}>
+          {feedbackCount > 0 ? "再次反馈" : "添加反馈"}
+        </Link>
       </SurfaceCard>
 
       <SurfaceCard className="pending-sources-card" aria-label="待处理来源">

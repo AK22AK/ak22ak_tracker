@@ -12,13 +12,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { LocalDataCard } from "@/components/local-data-card";
 import { clearCurrentUserClientState } from "@/offline/clear-private-client-state";
 
+const commandHarness = vi.hoisted(() => ({ commands: [] as unknown[] }));
+
 vi.mock("@/offline/clear-private-client-state", () => ({
   clearCurrentUserClientState: vi.fn(),
+}));
+vi.mock("@/offline/offline-command-context", () => ({
+  useOfflineCommands: () => ({ commands: commandHarness.commands }),
 }));
 
 describe("local private data controls (P0-08/P2a)", () => {
   afterEach(() => {
     cleanup();
+    commandHarness.commands = [];
     vi.clearAllMocks();
   });
 
@@ -32,5 +38,20 @@ describe("local private data controls (P0-08/P2a)", () => {
       expect(clearCurrentUserClientState).toHaveBeenCalledOnce(),
     );
     expect(await screen.findByText("本机私人缓存已清除")).toBeTruthy();
+  });
+
+  it("requires explicit confirmation before discarding pending commands", async () => {
+    commandHarness.commands = [{ id: "anonymous-command" }];
+    vi.mocked(clearCurrentUserClientState).mockResolvedValue(undefined);
+    render(<LocalDataCard />);
+
+    fireEvent.click(screen.getByRole("button", { name: "清除本机数据" }));
+    expect(clearCurrentUserClientState).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("1 条未完成同步");
+
+    fireEvent.click(screen.getByRole("button", { name: "确认丢弃并清除" }));
+    await waitFor(() =>
+      expect(clearCurrentUserClientState).toHaveBeenCalledOnce(),
+    );
   });
 });

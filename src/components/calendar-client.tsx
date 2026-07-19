@@ -21,12 +21,18 @@ import type {
 } from "@/offline/snapshot-contracts";
 import { useQuerySnapshot } from "@/offline/use-query-snapshot";
 import { useEffect } from "react";
+import { useOfflineCommands } from "@/offline/offline-command-context";
+import {
+  projectCalendarPendingCommands,
+  projectDayPendingCommands,
+} from "@/offline/command-projection";
 
 const trackerKey = "knee-rehab";
 const planningTimeZone = "Asia/Shanghai";
 
 export function CalendarClient({ initialDate }: { initialDate?: string }) {
   const queryClient = useQueryClient();
+  const { commands } = useOfflineCommands();
   const today = localDateInTimeZone(new Date(), planningTimeZone);
   const startingDate = isLocalDate(initialDate) ? initialDate : today;
   const [selectedDate, setSelectedDate] = useState(startingDate);
@@ -79,8 +85,14 @@ export function CalendarClient({ initialDate }: { initialDate?: string }) {
     );
   }, [dayQuery.data, dayQuery.dataUpdatedAt, persistDaySnapshot]);
 
-  const monthData = monthQuery.data ?? monthSnapshotData?.data;
-  const dayData = dayQuery.data ?? daySnapshotData?.data;
+  const monthBase = monthQuery.data ?? monthSnapshotData?.data;
+  const dayBase = dayQuery.data ?? daySnapshotData?.data;
+  const monthData = monthBase
+    ? projectCalendarPendingCommands(monthBase, commands)
+    : null;
+  const dayData = dayBase
+    ? projectDayPendingCommands(dayBase, commands).data
+    : null;
   const readOnlyOffline =
     (!monthQuery.data && !!monthSnapshotData) ||
     (!dayQuery.data && !!daySnapshotData);

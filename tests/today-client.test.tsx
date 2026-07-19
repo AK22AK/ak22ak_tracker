@@ -10,13 +10,39 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { trackerQueryKeys } from "@/client/query-keys";
 import { TodayClient } from "@/components/today-client";
 import type { TodayAggregate } from "@/domain/api-contracts";
 
+const commandHarness = vi.hoisted(() => ({
+  enqueue: vi.fn(),
+  replayNow: vi.fn(),
+}));
+
 vi.mock("next-auth/react", () => ({ signOut: vi.fn() }));
+vi.mock("@/offline/private-offline-context", () => ({
+  usePrivateOfflineIdentity: () => "10001",
+}));
+vi.mock("@/offline/offline-command-context", () => ({
+  useOfflineCommands: () => ({
+    commands: [],
+    ready: true,
+    enqueue: commandHarness.enqueue,
+    replayNow: commandHarness.replayNow,
+  }),
+}));
+vi.mock("@/offline/use-query-snapshot", () => ({
+  useQuerySnapshot: () => ({
+    data: null,
+    isPending: false,
+    persist: vi.fn(),
+  }),
+}));
+vi.mock("@/offline/safety-policies", () => ({
+  saveSafetyPolicy: vi.fn(async () => undefined),
+}));
 vi.mock("@/domain/planning-time", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("@/domain/planning-time")>();
@@ -108,10 +134,32 @@ function aggregate(
 }
 
 describe("today background refresh", () => {
+  beforeEach(() => {
+    commandHarness.enqueue.mockImplementation(
+      async (
+        input: { createdAt: string; sourceVersion?: string | null } & Record<
+          string,
+          unknown
+        >,
+      ) => ({
+        ...input,
+        schemaVersion: 1,
+        attemptCount: 0,
+        nextAttemptAt: input.createdAt,
+        lastAttemptAt: null,
+        lastErrorCode: null,
+        status: "local_only",
+        sourceVersion: input.sourceVersion ?? null,
+      }),
+    );
+  });
+
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    commandHarness.enqueue.mockReset();
+    commandHarness.replayNow.mockReset();
   });
 
   it("describes online capability without claiming that data is synced", async () => {
@@ -162,12 +210,8 @@ describe("today background refresh", () => {
   });
 
   it("keeps a failed save message with its task while the network is available", async () => {
-    const fetchMock = vi.fn(
-      async (_input: RequestInfo | URL, init?: RequestInit) =>
-        init?.method === "PATCH"
-          ? jsonResponse({}, 500)
-          : jsonResponse(aggregate("planned", 0)),
-    );
+    commandHarness.enqueue.mockRejectedValueOnce(new Error("indexeddb failed"));
+    const fetchMock = vi.fn(async () => jsonResponse(aggregate("planned", 0)));
     vi.stubGlobal("fetch", fetchMock);
 
     render(
@@ -188,7 +232,7 @@ describe("today background refresh", () => {
     );
 
     expect(
-      await within(task).findByText("保存失败，请检查网络后重试"),
+      await within(task).findByText("本机保存失败，请重试；本次修改尚未保存"),
     ).toBeTruthy();
     expect(screen.getByText("当前在线")).toBeTruthy();
     expect(screen.queryByText("已同步到云端")).toBeNull();
@@ -398,12 +442,7 @@ describe("today background refresh", () => {
   });
 
   it("keeps the today hierarchy stable and separates task expansion from completion", async () => {
-    const fetchMock = vi.fn(
-      async (_input: RequestInfo | URL, init?: RequestInit) => {
-        if (init?.method === "PATCH") return jsonResponse({});
-        return jsonResponse(aggregate("planned", 0));
-      },
-    );
+    const fetchMock = vi.fn(async () => jsonResponse(aggregate("planned", 0)));
     vi.stubGlobal("fetch", fetchMock);
 
     render(
@@ -442,18 +481,14 @@ describe("today background refresh", () => {
 
     expect(checkbox.checked).toBe(false);
     expect(screen.getByText("计划处方")).toBeTruthy();
-    expect(
-      fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH"),
-    ).toBe(false);
+    expect(commandHarness.enqueue).not.toHaveBeenCalled();
 
     fireEvent.click(
       screen.getByRole("button", { name: "收起 Anonymous task" }),
     );
     fireEvent.click(checkbox);
     await waitFor(() =>
-      expect(
-        fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH"),
-      ).toBe(true),
+      expect(commandHarness.enqueue).toHaveBeenCalledTimes(1),
     );
     expect(screen.queryByText("计划处方")).toBeNull();
   });

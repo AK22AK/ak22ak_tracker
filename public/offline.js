@@ -21,6 +21,7 @@
     identity: null,
     trackerKey: null,
     rows: [],
+    commands: [],
     view: location.pathname.startsWith("/calendar") ? "calendar" : "today",
     selectedDate: null,
     month: null,
@@ -80,13 +81,13 @@
 
   async function readPrivateSnapshots() {
     const database = await openExistingDatabase();
-    if (!database) return { identity: null, rows: [] };
+    if (!database) return { identity: null, rows: [], commands: [] };
     try {
       if (
         !database.objectStoreNames.contains("metadata") ||
         !database.objectStoreNames.contains("querySnapshots")
       ) {
-        return { identity: null, rows: [] };
+        return { identity: null, rows: [], commands: [] };
       }
       const metadata = database
         .transaction("metadata", "readonly")
@@ -96,7 +97,7 @@
       );
       const identity = stringValue(objectValue(activeIdentity)?.value);
       if (!identity || !/^\d+$/.test(identity)) {
-        return { identity: null, rows: [] };
+        return { identity: null, rows: [], commands: [] };
       }
       const snapshots = database
         .transaction("querySnapshots", "readonly")
@@ -104,14 +105,27 @@
       const allRows = snapshots.indexNames.contains("githubUserId")
         ? await requestResult(snapshots.index("githubUserId").getAll(identity))
         : await requestResult(snapshots.getAll());
+      let commands = [];
+      if (database.objectStoreNames.contains("pendingCommands")) {
+        const store = database
+          .transaction("pendingCommands", "readonly")
+          .objectStore("pendingCommands");
+        const values = await requestResult(store.getAll());
+        commands = Array.isArray(values)
+          ? values.filter((value) =>
+              snapshotContract?.validPendingCommand(value, identity),
+            )
+          : [];
+      }
       return {
         identity,
         rows: Array.isArray(allRows)
           ? allRows.filter((row) => validSnapshotRow(row, identity))
           : [],
+        commands,
       };
     } catch {
-      return { identity: null, rows: [] };
+      return { identity: null, rows: [], commands: [] };
     } finally {
       database.close();
     }
@@ -190,12 +204,93 @@
           return null;
         }
         return {
+          id: stringValue(value.id),
           title,
           status,
           prescription: objectValue(value.prescription) ?? {},
         };
       })
       .filter(Boolean);
+  }
+
+  function relevantCommands(date) {
+    return state.commands
+      .filter(
+        (command) =>
+          command.trackerKey === state.trackerKey && command.localDate === date,
+      )
+      .sort(
+        (left, right) =>
+          left.createdAt.localeCompare(right.createdAt) ||
+          left.id.localeCompare(right.id),
+      );
+  }
+
+  function projectDay(day, date) {
+    const projected = structuredClone(day);
+    for (const command of relevantCommands(date)) {
+      if (command.kind === "task_update") {
+        const task = projected.tasks.find(
+          (item) => item.id === command.payload.taskId,
+        );
+        if (task) {
+          task.status = command.payload.status;
+          task.actual = command.payload.actual;
+          task.subjectiveNote = command.payload.note;
+        }
+        continue;
+      }
+      if (projected.feedbacks.some((item) => item.id === command.id)) continue;
+      projected.feedbackCount += 1;
+      if (command.payload.localSafetyLevel) {
+        projected.feedbacks.push({
+          id: command.id,
+          occurredAt: command.occurredAt,
+          timing: command.payload.checkIn.timing,
+          leftPain: command.payload.checkIn.leftPain,
+          rightPain: command.payload.checkIn.rightPain,
+          swelling: command.payload.checkIn.swelling,
+          safetyLevel: command.payload.localSafetyLevel,
+          ...(command.payload.clientSafetyPolicy
+            ? { safetyPolicy: command.payload.clientSafetyPolicy }
+            : {}),
+          note: command.payload.checkIn.note,
+        });
+      }
+    }
+    return projected;
+  }
+
+  function renderPendingStatus(date) {
+    const commands = relevantCommands(date);
+    if (commands.length === 0) return null;
+    const attention = commands.filter((item) =>
+      ["waiting_auth", "needs_attention"].includes(item.status),
+    ).length;
+    const syncing = commands.filter((item) => item.status === "syncing").length;
+    const unclassified = commands.filter(
+      (item) =>
+        item.kind === "symptom_check_in" &&
+        item.payload.localSafetyLevel === null,
+    ).length;
+    const section = element("section", "surface-card pending-local-card");
+    section.append(
+      element(
+        "strong",
+        "",
+        attention > 0
+          ? `${attention} 条本机记录需要联网处理`
+          : syncing > 0
+            ? `${syncing} 条本机记录正在同步`
+            : `${commands.length} 条仅保存在本机`,
+      ),
+    );
+    if (unclassified > 0) {
+      section.append(
+        element("p", "", "身体反馈尚未完成安全判断，请联网前按保守原则处理。"),
+      );
+    }
+    return section;
   }
 
   function taskDose(task) {
@@ -321,8 +416,14 @@
     if (numberValue(plan?.version)) {
       heading.append(badge(`计划 v${plan.version}`));
     }
-    planSection.append(heading, renderTaskList(data.day));
-    replaceContent(planSection, renderFeedbackSummary(data.day));
+    const projectedDay = projectDay(data.day, today);
+    planSection.append(heading, renderTaskList(projectedDay));
+    const pending = renderPendingStatus(today);
+    replaceContent(
+      ...(pending ? [pending] : []),
+      planSection,
+      renderFeedbackSummary(projectedDay),
+    );
   }
 
   function monthCells(month) {
@@ -359,7 +460,13 @@
       section.append(element("p", "", "这一天没有有效的本机详情缓存。"));
       return section;
     }
-    section.append(renderTaskList(data.day), renderFeedbackSummary(data.day));
+    const projectedDay = projectDay(data.day, date);
+    const pending = renderPendingStatus(date);
+    if (pending) section.append(pending);
+    section.append(
+      renderTaskList(projectedDay),
+      renderFeedbackSummary(projectedDay),
+    );
     return section;
   }
 
@@ -415,6 +522,26 @@
         if (isLocalDate(summary?.date)) summaries.set(summary.date, summary);
       }
     }
+    const monthCommands = state.commands.filter(
+      (command) =>
+        command.trackerKey === state.trackerKey &&
+        command.localDate.slice(0, 7) === state.month,
+    );
+    for (const command of monthCommands) {
+      let summary = summaries.get(command.localDate);
+      if (!summary) {
+        summary = {
+          date: command.localDate,
+          taskCount: 0,
+          completedCount: 0,
+          skippedCount: 0,
+          feedbackCount: 0,
+          localPendingCount: 0,
+        };
+        summaries.set(command.localDate, summary);
+      }
+      summary.localPendingCount = (summary.localPendingCount ?? 0) + 1;
+    }
     const grid = element("div", "calendar-grid");
     for (const date of monthCells(state.month)) {
       if (!date) {
@@ -424,14 +551,17 @@
       const summary = summaries.get(date);
       const button = element(
         "button",
-        `calendar-day${summary ? " has-data" : ""}${date === state.selectedDate ? " selected" : ""}`,
+        `calendar-day${summary ? " has-data" : ""}${summary?.localPendingCount ? " local-pending" : ""}${date === state.selectedDate ? " selected" : ""}`,
         Number(date.slice(-2)),
       );
       button.type = "button";
       button.setAttribute(
         "aria-label",
-        `${date}${summary ? `，${numberValue(summary.taskCount) ?? 0} 项任务` : "，无缓存摘要"}`,
+        `${date}${summary ? `，${numberValue(summary.taskCount) ?? 0} 项任务${summary.localPendingCount ? `，${summary.localPendingCount} 条本机待同步` : ""}` : "，无缓存摘要"}`,
       );
+      if (summary?.localPendingCount) {
+        button.append(element("span", "local-pending-marker", "本"));
+      }
       button.setAttribute(
         "aria-pressed",
         date === state.selectedDate ? "true" : "false",
@@ -461,6 +591,7 @@
     const result = await readPrivateSnapshots();
     state.identity = result.identity;
     state.rows = result.rows;
+    state.commands = result.commands;
     state.trackerKey = chooseTrackerKey(result.rows, today);
     state.month = today.slice(0, 7);
     state.selectedDate = today;
