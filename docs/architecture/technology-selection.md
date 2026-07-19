@@ -23,7 +23,7 @@ AK Tracker 第一版是单用户、手机优先的私人追踪应用。技术选
 | 部署           | Vercel                                                  | HTTPS、Next.js Functions、静态资源、每日 Cron | 已完成部署和 GitHub OAuth 回调；个人第一版运维成本低               |
 | 主数据库       | Neon PostgreSQL                                         | 计划、任务、事件、版本、同步状态、outbox      | 支持事务、约束、关联查询和恢复；不依赖 Vercel 本地文件系统         |
 | 数据访问       | Drizzle ORM + Neon serverless driver                    | Schema、migration、类型化查询                 | 数据模型与 SQL 保持可见；适合 PostgreSQL 和 serverless 环境        |
-| 身份           | GitHub OAuth + NextAuth + login 白名单                  | 只允许指定 GitHub 账号进入                    | 不自建密码体系；公开网址仍保持数据私有                             |
+| 身份           | GitHub OAuth + NextAuth + 数字 ID 白名单                | 只允许指定 GitHub 账号进入                    | 不自建密码体系；公开网址仍保持数据私有                             |
 | 输入校验       | Zod                                                     | HTTP 输入、领域文档、AI 输出和镜像 Schema     | 客户端、服务端和数据导出共用结构；可导出 JSON Schema               |
 | 客户端远端状态 | TanStack Query                                          | 查询缓存、取消、刷新、乐观更新、精确失效      | 日期和 Tab 不再等待整页服务端渲染；可验证慢网与迟到响应            |
 | 本机持久化     | Dexie / IndexedDB                                       | 私人查询白名单、离线命令队列、重放状态        | 适合结构化敏感数据；不使用 localStorage 保存康复记录               |
@@ -31,6 +31,7 @@ AK Tracker 第一版是单用户、手机优先的私人追踪应用。技术选
 | 私有数据镜像   | GitHub 私仓 + Octokit Contents API                      | 可读 JSON、版本追踪、供其他 AI 读取           | 只更新目标文件，不克隆笔记仓库；不承担在线数据库职责               |
 | AI             | DeepSeek OpenAI-compatible 接口 + `PlanAdvisor` Adapter | 生成结构化调整建议                            | 复用现有按量 API；模型只建议，不持有写权限，Provider 可替换        |
 | Garmin         | `GarminClient` Adapter + 独立同步作业                   | 活动、基础睡眠、同步游标和导入                | 非官方接口风险隔离；保留官方接口和 FIT/CSV 替代路径                |
+| 训记           | 训练数据 REST Adapter + 按日期同步作业                  | 力量训练明细、来源版本和人工关联              | 复用既有训练记录避免重复录入；只读能力隔离写接口和无关数据         |
 | 单元与契约测试 | Vitest                                                  | 领域规则、Module Interface、故障注入          | 运行快，适合每次提交                                               |
 | 交互测试       | Testing Library + Vitest                                | 表单、本地状态、慢网、迟到响应                | 验证用户可见行为，不依赖实现细节                                   |
 | 浏览器测试     | Playwright                                              | 核心旅程、离线、缓存、移动视口                | 覆盖完整 PWA 数据流；iPhone 特有行为仍需真机验收                   |
@@ -46,6 +47,7 @@ AK Tracker 第一版是单用户、手机优先的私人追踪应用。技术选
 - IndexedDB、Service Worker、离线重放和冲突：[离线流程](offline.md)
 - DeepSeek Proposal、校验、确认和计划版本：[AI 计划调整](ai-plan-adjustment.md)
 - Garmin Provider、同步范围和失败处理：[Garmin 集成](../operations/garmin.md)
+- 训记训练读取、按日期同步和关联规则：[数据与同步](data-and-sync.md)
 - 当前未决项、部署 Spike 和实施顺序：[项目计划](../project-plan.md)
 
 ## 明确未选择的方案
@@ -59,6 +61,7 @@ AK Tracker 第一版是单用户、手机优先的私人追踪应用。技术选
 | 让 AI 直接操作数据库或 GitHub     | 无法可靠校验、确认、审计和回滚高风险计划变更                          |
 | 正式链路依赖 Mac mini 中转 Garmin | 手机应用会受一台本地机器在线状态影响；Mac mini 只可用于迁移或开发辅助 |
 | 把全部健康数据同步进项目          | 增加隐私和复杂度；只保留康复相关活动、步行与基础睡眠背景              |
+| 读取训记全部数据或执行写回        | 只需要力量训练明细；饮食、身体、官方计划和训练写回均超出当前职责      |
 
 ## 关联决策
 
@@ -74,3 +77,5 @@ AK Tracker 第一版是单用户、手机优先的私人追踪应用。技术选
 - [ADR-0004：客户端应用壳与服务端状态缓存](../adr/0004-client-app-shell-and-server-state-cache.md)
 - [ADR-0005：临时执行条件使用覆盖层](../adr/0005-execution-context-overlays.md)
 - [ADR-0006：外部集成不得阻塞核心闭环](../adr/0006-integrations-cannot-block-core-loop.md)
+- [ADR-0007：Tracker 使用固定计划时区](../adr/0007-fixed-planning-time-zone.md)
+- [ADR-0008：训练数据按来源融合并由使用者确认](../adr/0008-training-source-fusion.md)

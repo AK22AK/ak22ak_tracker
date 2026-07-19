@@ -4,7 +4,7 @@
 
 ## 决策
 
-Garmin、DeepSeek、GitHub 镜像、Web Push 和定时任务均通过隔离适配器、状态表或
+Garmin、训记、DeepSeek、GitHub 镜像、Web Push 和定时任务均通过隔离适配器、状态表或
 outbox 接入。任一外部服务失败时，今日计划、训练记录、身体反馈和确定性安全规则
 仍可读取和写入。
 

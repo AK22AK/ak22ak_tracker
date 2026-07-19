@@ -12,7 +12,7 @@
 以下内容不得提交：
 
 - 诊断、影像/检查、医嘱、真实康复计划、反馈和训练历史；
-- Garmin、GitHub、DeepSeek、Neon 或 OAuth 凭证；
+- Garmin、训记、GitHub、DeepSeek、Neon 或 OAuth 凭证；
 - Cookie、Token、Session、私人仓库内容或本机绝对路径；
 - 从原始笔记复制的可识别内容。
 
@@ -37,8 +37,16 @@ API 和变更入口都重复验证。OAuth App 的 client secret 只配置在 Ve
 - GitHub 使用只对私有数据仓库 Contents 有权限的 fine-grained token。
 - Garmin session/token 写入数据库前使用 AES-GCM 等认证加密；Base64 不是加密。
 - Garmin 密码不持久化；首次 Session 尽量在受信任本机生成后导入。
+- 训记 API Key 只允许从已认证设置页提交到服务端，使用通用集成加密主密钥认证加密
+  后写入数据库；保存后 API 只返回掩码、状态和更新时间，不返回密钥原值。
+- 集成凭证使用 AES-256-GCM、每次写入独立随机 nonce 和 provider 绑定的附加认证数据；
+  密文同时保存 `keyVersion`，主密钥由 Vercel Secret
+  `INTEGRATION_CREDENTIALS_ENCRYPTION_KEY` 提供，以便轮换时重新加密而不是明文导出。
+- 训记 Adapter 第一版只暴露训练读取能力，不调用写回、饮食、身体数据或官方计划
+  接口。Provider Key 即使技术上具备更宽权限，也不能扩大应用的代码能力边界。
 - 集成加密密钥、OAuth secret、数据库密码和 cron secret 定期轮换。
-- 日志只记录错误代码和关联 ID，不记录身体反馈原文或外部响应全文。
+- 日志只记录错误代码和关联 ID，不记录身体反馈原文、外部响应全文、Authorization
+  请求头或 API Key。
 
 ## 应用边界
 

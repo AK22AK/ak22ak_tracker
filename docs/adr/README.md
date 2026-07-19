@@ -7,3 +7,4 @@
 - [ADR-0005：临时执行条件使用覆盖层](0005-execution-context-overlays.md)
 - [ADR-0006：外部集成不得阻塞核心闭环](0006-integrations-cannot-block-core-loop.md)
 - [ADR-0007：Tracker 使用固定计划时区](0007-fixed-planning-time-zone.md)
+- [ADR-0008：训练数据按来源融合并由使用者确认](0008-training-source-fusion.md)

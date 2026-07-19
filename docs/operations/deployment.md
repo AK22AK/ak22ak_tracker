@@ -16,6 +16,7 @@
 | GitHub 数据私仓 | PostgreSQL 的结构化异步镜像            | 版本化 JSON 与 Schema 快照       |
 | DeepSeek        | 受约束的计划调整建议                   | 不持有本系统数据写权限           |
 | Garmin Provider | 活动、基础睡眠和步数输入               | 由 Adapter 读取后写入 PostgreSQL |
+| 训记            | 力量训练动作、组次与重量输入           | 只读 Adapter 写入 PostgreSQL     |
 
 正式地址为 `https://ak22ak-tracker.vercel.app`。Vercel Function 应与 Neon 部署在
 同一区域；区域变更必须先以生产追踪确认数据库往返是主要瓶颈，再进行对比和迁移。
@@ -34,6 +35,8 @@ GitHub、构建日志、浏览器或数据镜像。
 | 数据镜像     | 只允许目标私仓 Contents 权限的 fine-grained token  |
 | DeepSeek     | Base URL、API Key、模型、超时和最大输出长度        |
 | Garmin       | 认证加密密钥及加密后的 Provider Session/Token      |
+| 训记         | 数据库中认证加密的 API Key，不使用公开环境变量明文 |
+| 凭证加密     | `INTEGRATION_CREDENTIALS_ENCRYPTION_KEY`           |
 | 定时任务     | `CRON_SECRET`                                      |
 
 变更 Secret 时同步更新本地示例中的变量名，但不记录真实值。Token 轮换后必须验证旧值
@@ -54,7 +57,8 @@ migration（如需要），再通过 `pnpm safety-policy:import -- <private-poli
 5. 在 Vercel 导入公共代码仓库，配置应用身份、数据库和账号白名单变量。
 6. 部署应用，验证健康检查、未授权访问和允许账号登录。
 7. 选择 Tracker 开始日期，从原始笔记固定提交导入计划版本。
-8. 按需配置 GitHub 数据镜像、Garmin、DeepSeek 和 Cron；每项集成独立启用和验证。
+8. 按需配置 GitHub 数据镜像、Garmin、训记、DeepSeek 和 Cron；每项集成独立启用和
+   验证。训记由已登录使用者在设置页录入轮换后的 Key，服务端完成只读验证后加密保存。
 
 外部集成不作为首次登录、查看今日计划、记录训练和提交反馈的前置条件。
 
@@ -85,7 +89,7 @@ Schema 快照的顺序是：公共代码 Schema 与 migration 先完成，数据
 
 - Vercel Hobby Cron 最多每日执行一次，且可能在目标小时内漂移。
 - Vercel 不会替失败的 Cron 调用自动重试；任务自身必须持久化状态和下次重试时间。
-- 适合每日 Garmin 同步、GitHub outbox 消费和弱提醒，不用于分钟级精确调度。
+- 适合每日 Garmin/训记同步、GitHub outbox 消费和弱提醒，不用于分钟级精确调度。
 - 每个任务验证 `CRON_SECRET`，使用 provider 或任务类型级锁，并持有幂等键。
 - Cron 重复触发、超时后重跑和手动同步不能产生重复记录。
 - GitHub outbox 由业务写入后的响应后任务、应用启动、手动同步和每日 Cron 共同
@@ -109,6 +113,7 @@ Schema 快照的顺序是：公共代码 Schema 与 migration 先完成，数据
 
 - GitHub outbox：待处理数量、最老任务年龄、最近成功和权限错误。
 - Garmin：最近尝试、最近成功、同步游标、认证失效和 429/5xx。
+- 训记：最近尝试、最近成功、按日期同步状态、认证失效、限流和来源变更待复核数。
 - AI：排队/运行/失败数量、超时、限流、余额和结构校验失败。
 - PWA：新版本发布后旧客户端资源错误和关键前端异常。
 
@@ -122,6 +127,7 @@ Vercel Runtime Logs 保留时间有限。需要重试、审计和用户可见的
 | Neon 不可用     | 展示缓存；新记录保留在本机待同步   | 数据库状态、连接和区域；恢复后幂等重放      |
 | GitHub 镜像失败 | 数据库写入仍成功；显示镜像延迟     | outbox 错误、Token 权限、SHA 冲突和重试     |
 | Garmin 失效     | 核心流程正常；显示弱提醒或重新授权 | Provider 状态、Token、退避或文件导入        |
+| 训记失效        | 保留计划和手工兜底；显示弱提醒     | Key 状态、日期缓存、限流、更新凭证或重试    |
 | DeepSeek 失败   | 原始反馈保留；建议任务可稍后重试   | 分析作业错误、限流、余额、超时和 Schema     |
 | OAuth 配置错误  | 无法进入受保护页面                 | 回调 URL、应用 Secret、正式域名和账号白名单 |
 | PWA 版本不一致  | 提示刷新；保留未同步本机数据       | Service Worker 版本、静态资源和部署 ID      |
@@ -149,7 +155,7 @@ Vercel Runtime Logs 保留时间有限。需要重试、审计和用户可见的
 
 - 疑似泄露时先吊销或轮换对应 Secret，再恢复服务。
 - 检查日志、Git 历史和数据仓库是否出现敏感值；必要时清理历史并重新生成凭证。
-- Garmin、GitHub、DeepSeek、OAuth 和数据库凭证分别处理，不因为一个集成泄露而
+- Garmin、训记、GitHub、DeepSeek、OAuth 和数据库凭证分别处理，不因为一个集成泄露而
   暴露其他服务权限。
 
 ## 相关文档
