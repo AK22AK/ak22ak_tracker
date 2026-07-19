@@ -53,14 +53,14 @@ export function TodayClient() {
 
   if (query.isPending) {
     return (
-      <main className="app-shell page-frame" aria-busy="true">
-        <header className="topbar">
+      <main className="app-shell page-frame today-page" aria-busy="true">
+        <header className="today-header">
           <div>
             <p className="eyebrow">AK Tracker</p>
             <h1>{todayLabel(localDate)}</h1>
           </div>
         </header>
-        <section className="hero-card page-section-loading" role="status">
+        <section className="surface-card page-section-loading" role="status">
           正在加载今日计划…
         </section>
       </main>
@@ -69,10 +69,15 @@ export function TodayClient() {
 
   if (query.isError) {
     return (
-      <main className="app-shell page-frame">
-        <section className="feedback-card" role="alert">
+      <main className="app-shell page-frame today-page">
+        <section className="surface-card today-error-card" role="alert">
           <h1>今日数据暂时无法加载</h1>
-          <button type="button" onClick={() => void query.refetch()}>
+          <p>你的任务和草稿不会因此改变，可以稍后重试。</p>
+          <button
+            className="primary-button"
+            type="button"
+            onClick={() => void query.refetch()}
+          >
             重试
           </button>
         </section>

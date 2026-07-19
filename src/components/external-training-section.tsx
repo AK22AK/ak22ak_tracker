@@ -270,18 +270,20 @@ export function ExternalTrainingSection({
   trackerKey,
   records,
   tasks,
+  heading = "当天训练记录",
   onUpdated,
 }: {
   trackerKey: string;
   records: ExternalTrainingRecord[];
   tasks: DashboardTask[];
+  heading?: string;
   onUpdated: (recordId: string, association: ExternalRecordAssociation) => void;
 }) {
   if (records.length === 0) return null;
   return (
     <section className="external-training-section" aria-label="训记训练记录">
       <div className="external-section-title">
-        <h2>当天训练记录</h2>
+        <h2>{heading}</h2>
         <span>{records.length} 条</span>
       </div>
       {records.map((record) => (

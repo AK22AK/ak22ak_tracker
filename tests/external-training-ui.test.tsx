@@ -11,6 +11,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TodayClient } from "@/components/today-client";
+import type { TodayAggregate } from "@/domain/api-contracts";
 
 vi.mock("next-auth/react", () => ({ signOut: vi.fn() }));
 vi.mock("@/domain/planning-time", async (importOriginal) => {
@@ -32,7 +33,7 @@ function jsonResponse(value: unknown, status = 200) {
   });
 }
 
-function todayAggregate() {
+function todayAggregate(): TodayAggregate {
   return {
     tracker: {
       key: "knee-rehab",
@@ -210,7 +211,14 @@ describe("external training association UI", () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText("Anonymous session")).toBeTruthy();
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "展开 Anonymous strength task",
+      }),
+    );
+    expect(
+      screen.getByRole("heading", { name: "Anonymous session" }),
+    ).toBeTruthy();
     expect(screen.getByText(/未完成 · 10 lb · 8 次 · 6 RPE/)).toBeTruthy();
     expect(screen.queryByText(/10 kg/)).toBeNull();
     expect(screen.getByText(/已完成 · 自重 · 45 秒/)).toBeTruthy();
@@ -219,6 +227,9 @@ describe("external training association UI", () => {
     ).toBeTruthy();
     expect(screen.getByText("难度：困难")).toBeTruthy();
 
+    fireEvent.click(
+      screen.getByRole("button", { name: "没有同步记录？手工记录" }),
+    );
     fireEvent.change(screen.getByLabelText("实际训练与主观感受"), {
       target: { value: "未提交任务草稿" },
     });
@@ -262,5 +273,46 @@ describe("external training association UI", () => {
       fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH"),
     ).toBe(false);
     await waitFor(() => expect(screen.getByText(/已关联/)).toBeTruthy());
+  });
+
+  it("shows a reviewed link as needing confirmation without completing the task", async () => {
+    const data = todayAggregate();
+    const record = data.day.externalTrainingRecords[0]!;
+    record.association = {
+      status: "confirmed",
+      taskId,
+      sourceVersion: 1,
+      needsReview: true,
+    };
+    record.suggestion = null;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(data)));
+
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({
+            defaultOptions: { queries: { retry: false } },
+          })
+        }
+      >
+        <TodayClient />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "展开 Anonymous strength task",
+      }),
+    );
+
+    expect(screen.getByText(/已关联/)).toBeTruthy();
+    expect(screen.getByText("训记内容已更新，请重新确认关联。")).toBeTruthy();
+    expect(
+      (
+        screen.getByRole("checkbox", {
+          name: "Anonymous strength task",
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(false);
   });
 });
