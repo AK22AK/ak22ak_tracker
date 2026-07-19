@@ -317,6 +317,45 @@ describe("today background refresh", () => {
     ).toBe("Draft survives context refresh");
   });
 
+  it.each([
+    ["travel", "active", "出差维持模式"],
+    ["equipment_limited", "active", "器械受限模式"],
+    ["travel", "upcoming", "正常模式 · 已安排出差"],
+  ] as const)(
+    "shows the %s %s execution mode honestly",
+    async (kind, status, expectedMode) => {
+      const data = aggregate("planned", 0);
+      data.execution = {
+        context: {
+          id: "019c0000-0000-7000-8000-000000000030",
+          kind,
+          startDate: status === "active" ? "2026-07-19" : "2026-07-20",
+          endDate: "2026-07-24",
+          status,
+        },
+        day: null,
+        alternatives: [],
+        safety: { blocked: false, reason: null },
+      };
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(data)));
+
+      render(
+        <QueryClientProvider
+          client={
+            new QueryClient({ defaultOptions: { queries: { retry: false } } })
+          }
+        >
+          <TodayClient />
+        </QueryClientProvider>,
+      );
+
+      expect(await screen.findByText(expectedMode)).toBeTruthy();
+      if (status === "active") {
+        expect(screen.queryByText("正常模式")).toBeNull();
+      }
+    },
+  );
+
   it("keeps the today hierarchy stable and separates task expansion from completion", async () => {
     const fetchMock = vi.fn(
       async (_input: RequestInfo | URL, init?: RequestInit) => {

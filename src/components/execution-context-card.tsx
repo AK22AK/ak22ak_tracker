@@ -55,19 +55,26 @@ function safetyReason(reason: ExecutionContextToday["safety"]["reason"]) {
   return "当前状态不适合使用普通出差降级方案";
 }
 
-export function ExecutionContextCard({
-  trackerKey,
-  localDate,
-  planVersion,
-  execution,
-  onChanged,
-}: {
+type ExecutionContextCardProps = {
   trackerKey: string;
   localDate: string;
   planVersion: number | null;
   execution: ExecutionContextToday;
   onChanged: () => Promise<unknown>;
-}) {
+};
+
+export function ExecutionContextCard(props: ExecutionContextCardProps) {
+  const stateKey = `${props.execution.context?.id ?? "none"}:${props.localDate}`;
+  return <ExecutionContextCardState key={stateKey} {...props} />;
+}
+
+function ExecutionContextCardState({
+  trackerKey,
+  localDate,
+  planVersion,
+  execution,
+  onChanged,
+}: ExecutionContextCardProps) {
   const [createOpen, setCreateOpen] = useState(false);
   const [contextKind, setContextKind] = useState<
     "travel" | "equipment_limited"

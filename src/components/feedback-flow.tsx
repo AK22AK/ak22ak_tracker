@@ -68,11 +68,14 @@ function updateTodayFeedback(
   draft: KneeCheckInInput,
   occurredAt: string,
   result: ReturnType<typeof kneeCheckInSaveResultSchema.parse>,
-) {
+): TodayAggregate | undefined {
   if (!current) return current;
   if (current.day.feedbacks.some((feedback) => feedback.id === result.id)) {
     return current;
   }
+  const blocksActiveContext =
+    result.safetyLevel === "red" &&
+    current.execution.context?.status === "active";
   return {
     ...current,
     day: {
@@ -93,6 +96,13 @@ function updateTodayFeedback(
         },
       ],
     },
+    execution: blocksActiveContext
+      ? {
+          ...current.execution,
+          alternatives: [],
+          safety: { blocked: true, reason: "red_feedback" as const },
+        }
+      : current.execution,
   };
 }
 
@@ -263,6 +273,7 @@ export function FeedbackFlowClient({
           saved,
         ),
       );
+      void queryClient.invalidateQueries({ queryKey: todayQueryKey });
       void queryClient.invalidateQueries({
         queryKey: trackerQueryKeys.day(trackerKey, localDate),
       });

@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { trackerQueryKeys } from "@/client/query-keys";
 import { FeedbackFlowClient } from "@/components/feedback-flow";
+import { TodayClient } from "@/components/today-client";
 import type { TodayAggregate } from "@/domain/api-contracts";
 
 const navigation = vi.hoisted(() => ({
@@ -23,6 +24,7 @@ const navigation = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({
   useRouter: () => navigation,
 }));
+vi.mock("next-auth/react", () => ({ signOut: vi.fn() }));
 vi.mock("@/domain/planning-time", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("@/domain/planning-time")>();
@@ -309,7 +311,33 @@ describe("feedback full-screen flow", () => {
   });
 
   it("updates the today summary before returning to the preserved page", async () => {
-    const fetchMock = providerFetch("yellow");
+    let saved = false;
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === "POST") {
+          saved = true;
+          return jsonResponse(savedResult("yellow"));
+        }
+        const current = aggregate();
+        if (saved) {
+          current.day.feedbackCount = 1;
+          current.day.feedbacks = [
+            {
+              id: savedResult("yellow").id,
+              occurredAt: "2026-07-19T10:00:00.000Z",
+              timing: "post_training",
+              leftPain: 0,
+              rightPain: 5,
+              swelling: "none",
+              safetyLevel: "yellow",
+              safetyPolicy: savedResult("yellow").safetyPolicy,
+              note: "",
+            },
+          ];
+        }
+        return jsonResponse(current);
+      },
+    );
     const queryClient = renderFlow(fetchMock);
 
     await screen.findByRole("heading", { name: "记录身体反馈" });
@@ -327,6 +355,107 @@ describe("feedback full-screen flow", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "返回今日" }));
     expect(navigation.push).toHaveBeenCalledWith("/", { scroll: false });
+  });
+
+  it("blocks active travel alternatives immediately after a red feedback while preserving the task", async () => {
+    const today = aggregate();
+    today.day.tasks = [
+      {
+        id: "019c0000-0000-7000-8000-000000000211",
+        title: "Anonymous task",
+        category: "general",
+        prescription: { summary: "Anonymous prescription" },
+        status: "planned",
+        actual: null,
+        subjectiveNote: "Unsaved task state is owned by Today",
+      },
+    ];
+    today.execution = {
+      context: {
+        id: "019c0000-0000-7000-8000-000000000212",
+        kind: "travel",
+        startDate: "2026-07-19",
+        endDate: "2026-07-24",
+        status: "active",
+      },
+      day: null,
+      alternatives: [
+        {
+          id: "019c0000-0000-7000-8000-000000000213",
+          optionKey: "anonymous-option",
+          version: 1,
+          kind: "alternative",
+          title: "Anonymous private option",
+          summary: "Anonymous summary",
+          estimatedMinutes: { min: 10, max: 20 },
+          steps: ["Anonymous step"],
+        },
+      ],
+      safety: { blocked: false, reason: null },
+    };
+    const authoritative = structuredClone(today);
+    authoritative.execution = {
+      ...authoritative.execution,
+      alternatives: [],
+      safety: { blocked: true, reason: "red_feedback" },
+    };
+    let resolveAuthoritative!: () => void;
+    const authoritativeReady = new Promise<void>((resolve) => {
+      resolveAuthoritative = resolve;
+    });
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === "POST") return jsonResponse(savedResult("red"));
+        await authoritativeReady;
+        return jsonResponse(authoritative);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", {
+      randomUUID: () => "019c0000-0000-7000-8000-000000000214",
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const todayKey = trackerQueryKeys.today("knee-rehab", "2026-07-19");
+    queryClient.setQueryData(todayKey, today);
+    const flow = render(
+      <QueryClientProvider client={queryClient}>
+        <FeedbackFlowClient presentation="page" />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", {
+        name: "卡锁、伸不直或打软腿",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "保存反馈" }));
+    await screen.findByRole("heading", { name: "反馈已保存" });
+
+    expect(queryClient.getQueryData<TodayAggregate>(todayKey)).toMatchObject({
+      execution: {
+        alternatives: [],
+        safety: { blocked: true, reason: "red_feedback" },
+      },
+    });
+    flow.unmount();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TodayClient />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("停止并重新评估")).toBeTruthy();
+    expect(screen.queryByRole("radio")).toBeNull();
+    const task = screen.getByRole("checkbox", { name: "Anonymous task" });
+    expect((task as HTMLInputElement).checked).toBe(false);
+
+    await act(async () => {
+      resolveAuthoritative();
+      await authoritativeReady;
+    });
+    expect(await screen.findByText("停止并重新评估")).toBeTruthy();
   });
 
   it("closes the intercepted flow with browser history so Today stays mounted", async () => {

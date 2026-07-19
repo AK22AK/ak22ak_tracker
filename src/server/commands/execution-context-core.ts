@@ -279,6 +279,13 @@ export async function executeCreateExecutionContextCommand(
       },
     } as const;
   }
+  const currentPlanDate = localDateInTimeZone(
+    now.toISOString(),
+    tracker.planningTimeZone,
+  );
+  if (input.endDate < currentPlanDate) {
+    throw new ExecutionContextRangeError("execution_context_fully_past");
+  }
   if (
     await store.findOverlappingContext(
       tracker.id,

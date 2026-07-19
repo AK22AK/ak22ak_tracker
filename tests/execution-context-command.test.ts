@@ -4,6 +4,7 @@ import type { TrackerEvent } from "@/domain/schemas";
 import {
   ExecutionAlternativeVersionConflictError,
   ExecutionContextOverlapError,
+  ExecutionContextRangeError,
   ExecutionContextSafetyBlockedError,
   executeCreateExecutionContextCommand,
   executeEndExecutionContextCommand,
@@ -107,7 +108,32 @@ function createMemoryStore() {
   };
 }
 
+const commandNow = new Date("2026-07-19T15:00:00.000Z");
+
+function createContextCommand(
+  store: ExecutionContextCommandStore,
+  input: Parameters<typeof executeCreateExecutionContextCommand>[1],
+) {
+  return executeCreateExecutionContextCommand(store, input, commandNow);
+}
+
 describe("execution context commands", () => {
+  it("rejects a context whose full range is before the current Shanghai plan date", async () => {
+    const { store } = createMemoryStore();
+
+    await expect(
+      createContextCommand(store, {
+        ...metadata("019c0000-0000-7000-8000-000000000009"),
+        trackerKey: "anonymous-tracker",
+        contextId,
+        kind: "travel",
+        startDate: "2026-07-10",
+        endDate: "2026-07-18",
+      }),
+    ).rejects.toBeInstanceOf(ExecutionContextRangeError);
+    expect(store.commitAtomically).not.toHaveBeenCalled();
+  });
+
   it("creates a dated context atomically and replays the same command without touching a plan", async () => {
     const { store, contexts } = createMemoryStore();
     const input = {
@@ -119,8 +145,8 @@ describe("execution context commands", () => {
       endDate: "2026-07-24",
     };
 
-    const first = await executeCreateExecutionContextCommand(store, input);
-    const replay = await executeCreateExecutionContextCommand(store, input);
+    const first = await createContextCommand(store, input);
+    const replay = await createContextCommand(store, input);
 
     expect(first).toMatchObject({
       replayed: false,
@@ -144,7 +170,7 @@ describe("execution context commands", () => {
 
   it("rejects overlapping open contexts", async () => {
     const { store } = createMemoryStore();
-    await executeCreateExecutionContextCommand(store, {
+    await createContextCommand(store, {
       ...metadata("019c0000-0000-7000-8000-000000000011"),
       trackerKey: "anonymous-tracker",
       contextId,
@@ -154,7 +180,7 @@ describe("execution context commands", () => {
     });
 
     await expect(
-      executeCreateExecutionContextCommand(store, {
+      createContextCommand(store, {
         ...metadata("019c0000-0000-7000-8000-000000000012"),
         trackerKey: "anonymous-tracker",
         contextId: "019c0000-0000-7000-8000-000000000099",
@@ -167,7 +193,7 @@ describe("execution context commands", () => {
 
   it("stores different private alternatives for different plan dates while keeping Shanghai as the plan date", async () => {
     const { store, decisions } = createMemoryStore();
-    await executeCreateExecutionContextCommand(store, {
+    await createContextCommand(store, {
       ...metadata("019c0000-0000-7000-8000-000000000013"),
       trackerKey: "anonymous-tracker",
       contextId,
@@ -222,7 +248,7 @@ describe("execution context commands", () => {
 
   it("replays a saved day canonically even if a red signal appears later, and rejects a device-derived wrong plan date", async () => {
     const { store, setRedDate } = createMemoryStore();
-    await executeCreateExecutionContextCommand(store, {
+    await createContextCommand(store, {
       ...metadata("019c0000-0000-7000-8000-000000000030"),
       trackerKey: "anonymous-tracker",
       contextId,
@@ -270,7 +296,7 @@ describe("execution context commands", () => {
 
   it("rejects stale alternatives and blocks normal downgrade for red, illness and acute states", async () => {
     const { store, setRedDate } = createMemoryStore();
-    await executeCreateExecutionContextCommand(store, {
+    await createContextCommand(store, {
       ...metadata("019c0000-0000-7000-8000-000000000016"),
       trackerKey: "anonymous-tracker",
       contextId,
@@ -326,7 +352,7 @@ describe("execution context commands", () => {
 
   it("ends a context with an auditable idempotent command", async () => {
     const { store, contexts } = createMemoryStore();
-    await executeCreateExecutionContextCommand(store, {
+    await createContextCommand(store, {
       ...metadata("019c0000-0000-7000-8000-000000000021"),
       trackerKey: "anonymous-tracker",
       contextId,

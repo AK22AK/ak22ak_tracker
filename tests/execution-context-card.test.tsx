@@ -242,4 +242,86 @@ describe("execution context card", () => {
     expect(second.commandId).toBe(first.commandId);
     expect(second.conditions.note).toBe("Anonymous draft");
   });
+
+  it("keeps a draft for the same logical day but resets it for a new context or plan date", () => {
+    const view = render(
+      <ExecutionContextCard
+        trackerKey="anonymous-tracker"
+        localDate="2026-07-19"
+        planVersion={3}
+        execution={activeExecution()}
+        onChanged={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("当天条件补充"), {
+      target: { value: "Old context draft" },
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: "稳定椅子" }));
+    fireEvent.click(
+      screen.getByRole("radio", { name: /Anonymous private option/ }),
+    );
+
+    view.rerender(
+      <ExecutionContextCard
+        trackerKey="anonymous-tracker"
+        localDate="2026-07-19"
+        planVersion={3}
+        execution={activeExecution()}
+        onChanged={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+    expect(
+      (screen.getByLabelText("当天条件补充") as HTMLTextAreaElement).value,
+    ).toBe("Old context draft");
+
+    view.rerender(
+      <ExecutionContextCard
+        trackerKey="anonymous-tracker"
+        localDate="2026-07-19"
+        planVersion={3}
+        execution={activeExecution({
+          context: {
+            ...activeExecution().context!,
+            id: "019c0000-0000-7000-8000-000000000099",
+          },
+        })}
+        onChanged={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+    expect(
+      (screen.getByLabelText("当天条件补充") as HTMLTextAreaElement).value,
+    ).toBe("");
+    expect(
+      (screen.getByRole("checkbox", { name: "稳定椅子" }) as HTMLInputElement)
+        .checked,
+    ).toBe(false);
+    expect(
+      (
+        screen.getByRole("radio", {
+          name: /Anonymous private option/,
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(false);
+
+    fireEvent.change(screen.getByLabelText("当天条件补充"), {
+      target: { value: "New context draft" },
+    });
+    view.rerender(
+      <ExecutionContextCard
+        trackerKey="anonymous-tracker"
+        localDate="2026-07-20"
+        planVersion={3}
+        execution={activeExecution({
+          context: {
+            ...activeExecution().context!,
+            id: "019c0000-0000-7000-8000-000000000099",
+          },
+        })}
+        onChanged={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+    expect(
+      (screen.getByLabelText("当天条件补充") as HTMLTextAreaElement).value,
+    ).toBe("");
+  });
 });

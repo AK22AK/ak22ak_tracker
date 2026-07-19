@@ -507,6 +507,17 @@ function safetyGuidance(level: "green" | "yellow" | "red") {
   return "当前反馈支持维持计划；升级仍需连续满足计划条件。";
 }
 
+function executionModeLabel(execution: ExecutionContextToday) {
+  const context = execution.context;
+  if (!context) return "正常模式";
+  if (context.status === "upcoming") {
+    return context.kind === "travel"
+      ? "正常模式 · 已安排出差"
+      : "正常模式 · 已安排器械受限";
+  }
+  return context.kind === "travel" ? "出差维持模式" : "器械受限模式";
+}
+
 export function DashboardShell({
   today,
   localDate,
@@ -606,7 +617,7 @@ export function DashboardShell({
                 : "康复计划待设置"}
             </span>
             <span aria-hidden="true">·</span>
-            <span>正常模式</span>
+            <span>{executionModeLabel(execution)}</span>
           </div>
           <StatusPill
             tone={online ? "neutral" : "attention"}

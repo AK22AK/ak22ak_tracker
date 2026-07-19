@@ -120,10 +120,18 @@ integration("P1b S06 execution context atomic integration", () => {
       occurredUtcOffsetMinutes: 120,
     };
     await expect(
-      executeCreateExecutionContextCommand(store, createInput),
+      executeCreateExecutionContextCommand(
+        store,
+        createInput,
+        new Date("2026-07-19T15:00:00.000Z"),
+      ),
     ).resolves.toMatchObject({ replayed: false });
     await expect(
-      executeCreateExecutionContextCommand(store, createInput),
+      executeCreateExecutionContextCommand(
+        store,
+        createInput,
+        new Date("2026-07-19T15:00:00.000Z"),
+      ),
     ).resolves.toMatchObject({ replayed: true });
 
     await expect(
