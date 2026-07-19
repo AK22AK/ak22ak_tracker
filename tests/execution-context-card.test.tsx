@@ -9,7 +9,10 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ExecutionContextCard } from "@/components/execution-context-card";
+import {
+  ExecutionContextCard,
+  ExecutionPauseCard,
+} from "@/components/execution-context-card";
 import type { ExecutionContextToday } from "@/domain/execution-context";
 
 const contextId = "019c0000-0000-7000-8000-000000000001";
@@ -323,5 +326,128 @@ describe("execution context card", () => {
     expect(
       (screen.getByLabelText("当天条件补充") as HTMLTextAreaElement).value,
     ).toBe("");
+  });
+
+  it("starts a pause independently and renders pending assessment after it ends", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      response({
+        commandId: "019c0000-0000-7000-8000-000000000080",
+        replayed: false,
+        pause: {
+          id: "019c0000-0000-7000-8000-000000000081",
+          reason: "illness",
+          note: "Anonymous note",
+          startedOn: "2026-07-19",
+          endedOn: null,
+          status: "active",
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", {
+      randomUUID: () => "019c0000-0000-7000-8000-000000000081",
+    });
+    const onChanged = vi.fn().mockResolvedValue(undefined);
+    const view = render(
+      <ExecutionPauseCard
+        trackerKey="anonymous-tracker"
+        execution={activeExecution()}
+        onChanged={onChanged}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "因身体情况暂停今天训练" }),
+    );
+    fireEvent.change(screen.getByLabelText("补充说明（可选）"), {
+      target: { value: "Anonymous note" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "开始暂停" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/pauses");
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)),
+    ).toMatchObject({
+      reason: "illness",
+      note: "Anonymous note",
+    });
+
+    view.rerender(
+      <ExecutionPauseCard
+        trackerKey="anonymous-tracker"
+        execution={{
+          ...activeExecution(),
+          pause: {
+            id: "019c0000-0000-7000-8000-000000000081",
+            reason: "illness",
+            note: "Anonymous note",
+            startedOn: "2026-07-19",
+            endedOn: "2026-07-19",
+            status: "pending_resume_assessment",
+          },
+          alternatives: [],
+          safety: { blocked: true, reason: "pause" },
+        }}
+        onChanged={onChanged}
+      />,
+    );
+    expect(screen.getByText("待接续评估")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "结束暂停" })).toBeNull();
+  });
+
+  it("keeps the private pause draft and command id when saving is retried", async () => {
+    let attempt = 0;
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        void input;
+        void init;
+        attempt += 1;
+        return attempt === 1
+          ? response({}, 503)
+          : response({
+              commandId: "019c0000-0000-7000-8000-000000000090",
+              replayed: false,
+              pause: {
+                id: "019c0000-0000-7000-8000-000000000091",
+                reason: "other",
+                note: "Anonymous retry draft",
+                startedOn: "2026-07-19",
+                endedOn: null,
+                status: "active",
+              },
+            });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", {
+      randomUUID: () => "019c0000-0000-7000-8000-000000000091",
+    });
+    render(
+      <ExecutionPauseCard
+        trackerKey="anonymous-tracker"
+        execution={activeExecution()}
+        onChanged={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "因身体情况暂停今天训练" }),
+    );
+    fireEvent.change(screen.getByLabelText("暂停原因"), {
+      target: { value: "other" },
+    });
+    fireEvent.change(screen.getByLabelText("补充说明（可选）"), {
+      target: { value: "Anonymous retry draft" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "开始暂停" }));
+    expect(await screen.findByText("暂停尚未保存，请重试")).toBeTruthy();
+    expect(
+      (screen.getByLabelText("补充说明（可选）") as HTMLTextAreaElement).value,
+    ).toBe("Anonymous retry draft");
+    fireEvent.click(screen.getByRole("button", { name: "开始暂停" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const first = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    const second = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+    expect(second.commandId).toBe(first.commandId);
+    expect(second.pauseId).toBe(first.pauseId);
   });
 });

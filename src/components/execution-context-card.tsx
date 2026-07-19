@@ -5,7 +5,9 @@ import { useRef, useState } from "react";
 import {
   createExecutionContext,
   endExecutionContext,
+  endExecutionPause,
   setExecutionDay,
+  startExecutionPause,
 } from "@/client/tracker-api";
 import {
   createOrReuseClientCommand,
@@ -44,6 +46,18 @@ type PendingCreate = {
   contextId: string;
 };
 
+type PendingPause = {
+  command: PendingClientCommand;
+  pauseId: string;
+};
+
+const pauseReasonLabels = {
+  illness: "生病或全身不适",
+  acute_symptom: "急性反应",
+  red_feedback: "红灯反馈",
+  other: "其他明确原因",
+} as const;
+
 function contextKindLabel(kind: "travel" | "equipment_limited") {
   return kind === "travel" ? "出差维持" : "器械受限";
 }
@@ -52,7 +66,170 @@ function safetyReason(reason: ExecutionContextToday["safety"]["reason"]) {
   if (reason === "red_feedback") return "今天已有红灯反馈";
   if (reason === "illness") return "当前记录为生病状态";
   if (reason === "acute_symptom") return "当前记录为急性症状";
+  if (reason === "pause") return "当前处于暂停或待接续评估状态";
   return "当前状态不适合使用普通出差降级方案";
+}
+
+export function ExecutionPauseCard({
+  trackerKey,
+  execution,
+  onChanged,
+}: {
+  trackerKey: string;
+  execution: ExecutionContextToday;
+  onChanged: () => Promise<unknown>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] =
+    useState<keyof typeof pauseReasonLabels>("illness");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const pendingStart = useRef<PendingPause | null>(null);
+  const pendingEnd = useRef<PendingClientCommand | null>(null);
+  const pause = execution.pause;
+
+  async function startPause() {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const payload = { reason, note: note || undefined };
+      const command = createOrReuseClientCommand(
+        pendingStart.current?.command ?? null,
+        payload,
+      );
+      if (command !== pendingStart.current?.command) {
+        pendingStart.current = { command, pauseId: crypto.randomUUID() };
+      }
+      const pending = pendingStart.current!;
+      await startExecutionPause(trackerKey, {
+        ...payload,
+        ...pending.command.metadata,
+        pauseId: pending.pauseId,
+      });
+      pendingStart.current = null;
+      setOpen(false);
+      setMessage("暂停已记录，基础计划和任务状态保持不变");
+      await onChanged();
+    } catch {
+      setMessage("暂停尚未保存，请重试");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function finishPause() {
+    if (!pause) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      const payload = { pauseId: pause.id };
+      const command = createOrReuseClientCommand(pendingEnd.current, payload);
+      pendingEnd.current = command;
+      await endExecutionPause(trackerKey, { ...payload, ...command.metadata });
+      pendingEnd.current = null;
+      setMessage("暂停已结束，下一步需要接续评估");
+      await onChanged();
+    } catch {
+      setMessage("结束暂停尚未保存，请重试");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (pause) {
+    const pending = pause.status === "pending_resume_assessment";
+    return (
+      <SurfaceCard className="execution-pause-card" aria-label="暂停状态">
+        <SectionHeading
+          eyebrow="训练状态"
+          title={pending ? "待接续评估" : "今天暂停训练"}
+          aside={
+            <StatusPill tone={pending ? "attention" : "danger"}>
+              {pending ? "不要自动进阶" : "暂停中"}
+            </StatusPill>
+          }
+        />
+        <p>{pauseReasonLabels[pause.reason]}</p>
+        {pause.note ? (
+          <p className="execution-supporting-copy">{pause.note}</p>
+        ) : null}
+        <p className="execution-supporting-copy">
+          基础计划仍然保留，今天的任务不会自动标记为完成或跳过。
+        </p>
+        {!pending ? (
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={saving}
+            onClick={() => void finishPause()}
+          >
+            {saving ? "保存中…" : "结束暂停"}
+          </button>
+        ) : null}
+        {message ? <p role="status">{message}</p> : null}
+      </SurfaceCard>
+    );
+  }
+
+  return (
+    <SurfaceCard className="execution-pause-card" aria-label="暂停状态">
+      {!open ? (
+        <button
+          className="text-button"
+          type="button"
+          onClick={() => setOpen(true)}
+        >
+          因身体情况暂停今天训练
+        </button>
+      ) : (
+        <div className="execution-context-form">
+          <label>
+            暂停原因
+            <select
+              value={reason}
+              onChange={(event) =>
+                setReason(event.target.value as keyof typeof pauseReasonLabels)
+              }
+            >
+              {Object.entries(pauseReasonLabels).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            补充说明（可选）
+            <textarea
+              value={note}
+              maxLength={500}
+              onChange={(event) => setNote(event.target.value)}
+            />
+          </label>
+          <div className="execution-form-actions">
+            <button
+              className="primary-button"
+              type="button"
+              disabled={saving}
+              onClick={() => void startPause()}
+            >
+              {saving ? "保存中…" : "开始暂停"}
+            </button>
+            <button
+              className="text-button"
+              type="button"
+              disabled={saving}
+              onClick={() => setOpen(false)}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+      {message ? <p role="status">{message}</p> : null}
+    </SurfaceCard>
+  );
 }
 
 type ExecutionContextCardProps = {

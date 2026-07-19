@@ -12,6 +12,7 @@ import {
   executionAlternativeVersions,
   executionContexts,
   executionDayDecisions,
+  executionPauses,
 } from "@/server/db/schema";
 
 import type { ExecutionContextAggregateStore } from "./aggregate-core";
@@ -30,6 +31,29 @@ export function createNeonExecutionContextAggregateStore(
   };
 
   return {
+    async findRelevantPause(targetDate) {
+      const [row] = await database
+        .select({
+          id: executionPauses.id,
+          reason: executionPauses.reason,
+          note: executionPauses.note,
+          startedOn: executionPauses.startedOn,
+          endedOn: executionPauses.endedOn,
+        })
+        .from(executionPauses)
+        .where(
+          and(
+            eq(executionPauses.trackerId, trackerId),
+            lte(executionPauses.startedOn, targetDate),
+          ),
+        )
+        .orderBy(
+          desc(executionPauses.startedOn),
+          desc(executionPauses.createdAt),
+        )
+        .limit(1);
+      return row ?? null;
+    },
     async findRelevantContext(targetDate) {
       const [active] = await database
         .select(selectContext)

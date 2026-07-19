@@ -39,6 +39,12 @@ export const executionHealthStatusSchema = z.enum([
   "illness",
   "acute_symptom",
 ]);
+export const executionPauseReasonSchema = z.enum([
+  "illness",
+  "acute_symptom",
+  "red_feedback",
+  "other",
+]);
 
 export const executionDayConditionsSchema = z.object({
   availableMinutes: z.number().int().min(0).max(240),
@@ -104,6 +110,27 @@ export const setExecutionDayCommandSchema = clientCommandMetadataSchema.extend({
   selection: executionAlternativeReferenceSchema.nullable(),
 });
 
+export const startExecutionPauseCommandSchema =
+  clientCommandMetadataSchema.extend({
+    pauseId: z.uuid(),
+    reason: executionPauseReasonSchema,
+    note: z.string().max(500).optional(),
+  });
+
+export const endExecutionPauseCommandSchema =
+  clientCommandMetadataSchema.extend({
+    pauseId: z.uuid(),
+  });
+
+export const executionPauseDtoSchema = z.object({
+  id: z.uuid(),
+  reason: executionPauseReasonSchema,
+  note: z.string().max(500).nullable(),
+  startedOn: localDateSchema,
+  endedOn: localDateSchema.nullable(),
+  status: z.enum(["active", "pending_resume_assessment"]),
+});
+
 export const executionAlternativeDtoSchema = executionAlternativeDocumentSchema
   .pick({
     id: true,
@@ -133,12 +160,15 @@ export const executionDayDecisionDtoSchema = z.object({
 });
 
 export const executionContextTodaySchema = z.object({
+  pause: executionPauseDtoSchema.nullable().optional(),
   context: executionContextSummarySchema.nullable(),
   day: executionDayDecisionDtoSchema.nullable(),
   alternatives: z.array(executionAlternativeDtoSchema),
   safety: z.object({
     blocked: z.boolean(),
-    reason: z.enum(["red_feedback", "illness", "acute_symptom"]).nullable(),
+    reason: z
+      .enum(["red_feedback", "illness", "acute_symptom", "pause"])
+      .nullable(),
   }),
 });
 
@@ -148,6 +178,7 @@ export const executionContextCommandResultSchema = z.object({
   context: executionContextSummarySchema.optional(),
   endedOn: localDateSchema.optional(),
   day: executionDayDecisionDtoSchema.optional(),
+  pause: executionPauseDtoSchema.optional(),
 });
 
 export type ExecutionDayConditions = z.infer<
@@ -168,4 +199,10 @@ export type EndExecutionContextCommand = z.infer<
 >;
 export type SetExecutionDayCommand = z.infer<
   typeof setExecutionDayCommandSchema
+>;
+export type StartExecutionPauseCommand = z.infer<
+  typeof startExecutionPauseCommandSchema
+>;
+export type EndExecutionPauseCommand = z.infer<
+  typeof endExecutionPauseCommandSchema
 >;

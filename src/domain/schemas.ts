@@ -86,6 +86,8 @@ export const trackerEventSchema = z.object({
     "execution_context_started",
     "execution_context_ended",
     "execution_day_decision",
+    "execution_pause_started",
+    "execution_pause_ended",
   ]),
   occurredAt: instantSchema,
   recordedAt: instantSchema,

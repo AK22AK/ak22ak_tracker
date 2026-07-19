@@ -75,6 +75,7 @@ export const calendarDaySummarySchema = z.object({
   completedCount: z.number().int().nonnegative(),
   skippedCount: z.number().int().nonnegative(),
   feedbackCount: z.number().int().nonnegative(),
+  paused: z.boolean().optional(),
 });
 
 export const calendarAggregateSchema = z.object({

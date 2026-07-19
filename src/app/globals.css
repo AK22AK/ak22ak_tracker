@@ -1162,6 +1162,13 @@ h2 {
   line-height: 0.875rem;
 }
 
+.pause-marker {
+  color: var(--color-danger);
+  font-size: 0.5625rem;
+  font-weight: 800;
+  line-height: 0.875rem;
+}
+
 .calendar-legend {
   display: flex;
   flex-wrap: wrap;
@@ -1200,6 +1207,23 @@ h2 {
 .legend-symbol.feedback {
   background: var(--color-attention-soft);
   color: var(--color-attention);
+}
+
+.legend-symbol.paused {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.calendar-pause-notice {
+  margin-bottom: 0.875rem;
+  padding: 0.75rem;
+  border: 1px solid
+    color-mix(in srgb, var(--color-danger) 30%, var(--color-border));
+  border-radius: var(--radius-control);
+  background: var(--color-danger-soft);
+  color: var(--color-ink);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
 }
 
 .date-detail-card {
@@ -2576,6 +2600,16 @@ summary:focus-visible {
   gap: 1rem;
 }
 
+.execution-pause-card {
+  display: grid;
+  gap: 0.875rem;
+  border-color: color-mix(
+    in srgb,
+    var(--color-danger) 28%,
+    var(--color-border)
+  );
+}
+
 .execution-context-card.active {
   border-color: color-mix(in srgb, var(--color-brand) 30%, var(--color-border));
   background: linear-gradient(
@@ -2638,6 +2672,7 @@ summary:focus-visible {
 
 .execution-context-form input,
 .execution-context-form select,
+.execution-context-form textarea,
 .execution-day-form input[type="number"],
 .execution-day-form select,
 .execution-day-form textarea {
@@ -2652,6 +2687,12 @@ summary:focus-visible {
   font: inherit;
   font-size: 1rem;
   font-weight: 400;
+}
+
+.execution-context-form textarea {
+  min-height: 5.5rem;
+  line-height: 1.5rem;
+  resize: vertical;
 }
 
 .execution-day-form textarea {

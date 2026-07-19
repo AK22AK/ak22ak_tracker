@@ -64,6 +64,7 @@ function renderCalendarShell(
           completedCount: 1,
           skippedCount: 0,
           feedbackCount: 1,
+          paused: true,
         },
         {
           date: "2026-07-19",
@@ -106,8 +107,11 @@ describe("calendar visual semantics", () => {
     ).toBeTruthy();
     expect(
       screen.getByRole("button", {
-        name: /2026-07-18.*已选中.*历史.*全部完成.*1 次反馈/,
+        name: /2026-07-18.*已选中.*历史.*全部完成.*1 次反馈.*暂停日/,
       }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("当天为暂停日，基础计划保留，任务状态没有自动改变。"),
     ).toBeTruthy();
     expect(
       screen.getByRole("button", { name: /2026-07-19.*今天.*无任务/ }),

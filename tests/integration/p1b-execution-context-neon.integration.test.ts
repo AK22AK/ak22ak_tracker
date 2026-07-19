@@ -6,9 +6,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { schemaVersion } from "@/domain/schemas";
 import { createNeonExecutionContextCommandStore } from "@/server/commands/execution-context";
 import {
+  ExecutionContextSafetyBlockedError,
   executeCreateExecutionContextCommand,
   executeEndExecutionContextCommand,
+  executeEndExecutionPauseCommand,
   executeSetExecutionDayCommand,
+  executeStartExecutionPauseCommand,
 } from "@/server/commands/execution-context-core";
 import { getDatabase } from "@/server/db/client";
 import {
@@ -16,6 +19,7 @@ import {
   executionAlternativeVersions,
   executionContexts,
   executionDayDecisions,
+  executionPauses,
   githubSyncOutbox,
   planVersions,
   taskInstances,
@@ -33,6 +37,10 @@ integration("P1b S06 execution context atomic integration", () => {
   const contextId = randomUUID();
   const optionId = randomUUID();
   const commandIds = [
+    randomUUID(),
+    randomUUID(),
+    randomUUID(),
+    randomUUID(),
     randomUUID(),
     randomUUID(),
     randomUUID(),
@@ -273,5 +281,77 @@ integration("P1b S06 execution context atomic integration", () => {
     expect(outboxRows).toHaveLength(4);
     expect(task?.status).toBe("planned");
     expect(planRows).toHaveLength(1);
+  }, 30_000);
+
+  it("commits pause events atomically and blocks a same-day travel choice without changing the task", async () => {
+    const store = createNeonExecutionContextCommandStore();
+    const pauseContextId = randomUUID();
+    const pauseId = randomUUID();
+    await executeCreateExecutionContextCommand(
+      store,
+      {
+        commandId: commandIds[5]!,
+        trackerKey,
+        contextId: pauseContextId,
+        kind: "travel",
+        startDate: "2026-07-23",
+        endDate: "2026-07-25",
+        occurredAt: "2026-07-22T16:30:00.000Z",
+        occurredTimeZone: "Europe/Paris",
+        occurredUtcOffsetMinutes: 120,
+      },
+      new Date("2026-07-22T16:30:00.000Z"),
+    );
+    await executeStartExecutionPauseCommand(store, {
+      commandId: commandIds[6]!,
+      trackerKey,
+      pauseId,
+      reason: "illness",
+      note: "Anonymous private note",
+      occurredAt: "2026-07-22T16:30:00.000Z",
+      occurredTimeZone: "Europe/Paris",
+      occurredUtcOffsetMinutes: 120,
+    });
+    await expect(
+      executeSetExecutionDayCommand(store, {
+        commandId: commandIds[7]!,
+        trackerKey,
+        contextId: pauseContextId,
+        localDate: "2026-07-23",
+        conditions: {
+          availableMinutes: 10,
+          venue: "room",
+          equipment: ["chair"],
+          healthStatus: "normal",
+        },
+        selection: { optionId, optionVersion: 1 },
+        occurredAt: "2026-07-22T16:30:00.000Z",
+        occurredTimeZone: "Europe/Paris",
+        occurredUtcOffsetMinutes: 120,
+      }),
+    ).rejects.toBeInstanceOf(ExecutionContextSafetyBlockedError);
+    await executeEndExecutionPauseCommand(store, {
+      commandId: commandIds[8]!,
+      trackerKey,
+      pauseId,
+      occurredAt: "2026-07-23T16:30:00.000Z",
+      occurredTimeZone: "Europe/Paris",
+      occurredUtcOffsetMinutes: 120,
+    });
+
+    const [pause] = await getDatabase()
+      .select()
+      .from(executionPauses)
+      .where(eq(executionPauses.id, pauseId));
+    const [task] = await getDatabase()
+      .select({ status: taskInstances.status })
+      .from(taskInstances)
+      .where(eq(taskInstances.id, taskId));
+    expect(pause).toMatchObject({
+      startedOn: "2026-07-23",
+      endedOn: "2026-07-24",
+      reason: "illness",
+    });
+    expect(task?.status).toBe("planned");
   }, 30_000);
 });

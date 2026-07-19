@@ -17,7 +17,9 @@ import { sql } from "drizzle-orm";
 import type {
   ExecutionAlternativeDocument,
   ExecutionDayConditions,
+  executionPauseReasonSchema,
 } from "@/domain/execution-context";
+import type { z } from "zod";
 import type {
   ExternalRecord,
   PlanChangeProposal,
@@ -57,6 +59,7 @@ export const executionSafetyDisposition = pgEnum(
   "execution_safety_disposition",
   ["normal", "stop_reassess"],
 );
+type ExecutionPauseReason = z.infer<typeof executionPauseReasonSchema>;
 
 export const trackers = pgTable("trackers", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -234,6 +237,40 @@ export const executionDayDecisions = pgTable(
     index("execution_day_decisions_tracker_date_index").on(
       table.trackerId,
       table.localDate,
+    ),
+  ],
+);
+
+export const executionPauses = pgTable(
+  "execution_pauses",
+  {
+    id: uuid("id").primaryKey(),
+    trackerId: uuid("tracker_id")
+      .notNull()
+      .references(() => trackers.id, { onDelete: "cascade" }),
+    reason: text("reason").$type<ExecutionPauseReason>().notNull(),
+    note: text("note"),
+    startedOn: date("started_on").notNull(),
+    endedOn: date("ended_on"),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("execution_pauses_one_active_per_tracker_unique")
+      .on(table.trackerId)
+      .where(sql`${table.endedAt} IS NULL`),
+    index("execution_pauses_tracker_started_index").on(
+      table.trackerId,
+      table.startedOn,
+    ),
+    check(
+      "execution_pauses_end_check",
+      sql`${table.endedOn} IS NULL OR ${table.endedOn} >= ${table.startedOn}`,
     ),
   ],
 );

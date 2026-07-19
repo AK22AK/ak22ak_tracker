@@ -74,6 +74,7 @@ function dayAccessibleLabel(
   if (summary?.feedbackCount) {
     parts.push(`${summary.feedbackCount} 次反馈`);
   }
+  if (summary?.paused) parts.push("暂停日");
   return parts.join("，");
 }
 
@@ -211,6 +212,7 @@ function dayClass(
     date > today ? "future" : "past",
     summary?.taskCount ? "has-tasks" : "",
     summary?.feedbackCount ? "has-feedback" : "",
+    summary?.paused ? "paused" : "",
     summary?.completedCount === summary?.taskCount && summary?.taskCount
       ? "all-completed"
       : "",
@@ -364,6 +366,11 @@ export function CalendarShell({
                       ◆
                     </span>
                   )}
+                  {summary?.paused && (
+                    <span className="pause-marker" aria-hidden="true">
+                      暂
+                    </span>
+                  )}
                 </span>
               </button>
             );
@@ -387,6 +394,12 @@ export function CalendarShell({
               ◆
             </i>
             有反馈
+          </span>
+          <span>
+            <i className="legend-symbol paused" aria-hidden="true">
+              暂
+            </i>
+            暂停日
           </span>
         </div>
       </section>
@@ -430,6 +443,11 @@ export function CalendarShell({
             <CalendarDayUnavailable dashboard={dashboard} />
           ) : (
             <>
+              {summaries.get(selectedDate)?.paused ? (
+                <div className="calendar-pause-notice" role="status">
+                  当天为暂停日，基础计划保留，任务状态没有自动改变。
+                </div>
+              ) : null}
               <div className="calendar-day-overview" aria-label="当天概览">
                 <span>
                   <strong>{dashboard.tasks.length}</strong> 项任务

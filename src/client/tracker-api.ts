@@ -10,12 +10,16 @@ import {
 } from "@/domain/external-training";
 import {
   createExecutionContextCommandSchema,
+  endExecutionPauseCommandSchema,
   endExecutionContextCommandSchema,
   executionContextCommandResultSchema,
   setExecutionDayCommandSchema,
+  startExecutionPauseCommandSchema,
   type CreateExecutionContextCommand,
   type EndExecutionContextCommand,
+  type EndExecutionPauseCommand,
   type SetExecutionDayCommand,
+  type StartExecutionPauseCommand,
 } from "@/domain/execution-context";
 
 async function getJson(url: string, signal?: AbortSignal) {
@@ -136,6 +140,29 @@ export function setExecutionDay(
   return sendExecutionCommand(
     `/api/trackers/${encodeURIComponent(trackerKey)}/execution-contexts/${encodeURIComponent(command.contextId)}/days/${encodeURIComponent(command.localDate)}`,
     "PUT",
+    command,
+  );
+}
+
+export function startExecutionPause(
+  trackerKey: string,
+  input: StartExecutionPauseCommand,
+) {
+  return sendExecutionCommand(
+    `/api/trackers/${encodeURIComponent(trackerKey)}/pauses`,
+    "POST",
+    startExecutionPauseCommandSchema.parse(input),
+  );
+}
+
+export function endExecutionPause(
+  trackerKey: string,
+  input: EndExecutionPauseCommand,
+) {
+  const command = endExecutionPauseCommandSchema.parse(input);
+  return sendExecutionCommand(
+    `/api/trackers/${encodeURIComponent(trackerKey)}/pauses/${encodeURIComponent(command.pauseId)}/end`,
+    "POST",
     command,
   );
 }

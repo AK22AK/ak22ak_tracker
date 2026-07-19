@@ -17,7 +17,10 @@ import type { ExecutionContextToday } from "@/domain/execution-context";
 
 import { SignOutButton } from "./sign-out-button";
 import { ExternalTrainingSection } from "./external-training-section";
-import { ExecutionContextCard } from "./execution-context-card";
+import {
+  ExecutionContextCard,
+  ExecutionPauseCard,
+} from "./execution-context-card";
 import {
   SectionHeading,
   StatusPill,
@@ -508,6 +511,10 @@ function safetyGuidance(level: "green" | "yellow" | "red") {
 }
 
 function executionModeLabel(execution: ExecutionContextToday) {
+  if (execution.pause?.status === "active") return "暂停模式";
+  if (execution.pause?.status === "pending_resume_assessment") {
+    return "待接续评估";
+  }
   const context = execution.context;
   if (!context) return "正常模式";
   if (context.status === "upcoming") {
@@ -644,6 +651,12 @@ export function DashboardShell({
           <p>{safetyGuidance(currentSafety)}</p>
         </section>
       ) : null}
+
+      <ExecutionPauseCard
+        trackerKey="knee-rehab"
+        execution={execution}
+        onChanged={onExecutionChanged}
+      />
 
       <ExecutionContextCard
         trackerKey="knee-rehab"

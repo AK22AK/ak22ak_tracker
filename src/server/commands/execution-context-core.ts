@@ -9,9 +9,11 @@ import {
 import type {
   CreateExecutionContextCommand,
   EndExecutionContextCommand,
+  EndExecutionPauseCommand,
   ExecutionAlternativeReference,
   ExecutionDayConditions,
   SetExecutionDayCommand,
+  StartExecutionPauseCommand,
 } from "@/domain/execution-context";
 import { eventMirrorPath } from "@/server/mirror/path";
 
@@ -37,6 +39,30 @@ export type ExecutionCommandAlternative = {
   version: number;
   effectiveFrom: string;
 };
+
+export type ExecutionCommandPause = {
+  id: string;
+  trackerId: string;
+  reason: StartExecutionPauseCommand["reason"];
+  note: string | null;
+  startedOn: string;
+  endedOn: string | null;
+};
+
+function pauseProjection(
+  pause: ExecutionCommandPause,
+  status: "active" | "pending_resume_assessment",
+  endedOn = pause.endedOn,
+) {
+  return {
+    id: pause.id,
+    reason: pause.reason,
+    note: pause.note,
+    startedOn: pause.startedOn,
+    endedOn,
+    status,
+  } as const;
+}
 
 type PreparedBase = {
   trackerId: string;
@@ -68,6 +94,16 @@ export type PreparedExecutionContextCommand =
       selection: ExecutionAlternativeReference | null;
       safetyDisposition: "normal" | "stop_reassess";
       decidedAt: Date;
+    })
+  | (PreparedBase & {
+      type: "start_pause";
+      pause: ExecutionCommandPause;
+    })
+  | (PreparedBase & {
+      type: "end_pause";
+      pauseId: string;
+      endedOn: string;
+      endedAt: Date;
     });
 
 export type ExecutionContextCommandStore = {
@@ -88,6 +124,12 @@ export type ExecutionContextCommandStore = {
     targetDate: string,
   ): Promise<ExecutionCommandAlternative | null>;
   hasRedSafetySignal(trackerId: string, localDate: string): Promise<boolean>;
+  findActivePause(trackerId: string): Promise<ExecutionCommandPause | null>;
+  findPause(
+    trackerId: string,
+    pauseId: string,
+  ): Promise<ExecutionCommandPause | null>;
+  hasBlockingPause(trackerId: string, localDate: string): Promise<boolean>;
   commitAtomically(command: PreparedExecutionContextCommand): Promise<void>;
 };
 
@@ -137,6 +179,20 @@ export class ExecutionContextSafetyBlockedError extends Error {
   constructor() {
     super("execution_context_safety_blocked");
     this.name = "ExecutionContextSafetyBlockedError";
+  }
+}
+
+export class ExecutionPauseAlreadyActiveError extends Error {
+  constructor() {
+    super("execution_pause_already_active");
+    this.name = "ExecutionPauseAlreadyActiveError";
+  }
+}
+
+export class ExecutionPauseNotFoundError extends Error {
+  constructor() {
+    super("execution_pause_not_found");
+    this.name = "ExecutionPauseNotFoundError";
   }
 }
 
@@ -449,6 +505,9 @@ export async function executeSetExecutionDayCommand(
   ) {
     throw new ExecutionContextRangeError();
   }
+  if (await store.hasBlockingPause(tracker.id, input.localDate)) {
+    throw new ExecutionContextSafetyBlockedError();
+  }
   const redSignal = await store.hasRedSafetySignal(tracker.id, input.localDate);
   const safetyDisposition =
     redSignal || input.conditions.healthStatus !== "normal"
@@ -510,5 +569,138 @@ export async function executeSetExecutionDayCommand(
       selection: input.selection,
       safetyDisposition,
     },
+  } as const;
+}
+
+export async function executeStartExecutionPauseCommand(
+  store: ExecutionContextCommandStore,
+  input: StartExecutionPauseCommand & { trackerKey: string },
+  now = new Date(),
+) {
+  const tracker = await store.findTracker(input.trackerKey);
+  if (!tracker) throw new ExecutionTrackerNotFoundError();
+  const startedOn = localDateInTimeZone(
+    input.occurredAt,
+    tracker.planningTimeZone,
+  );
+  const payload = {
+    pauseId: input.pauseId,
+    reason: input.reason,
+    note: input.note ?? null,
+    startedOn,
+  };
+  const matches = (event: TrackerEvent) =>
+    commandMatches(
+      event,
+      input,
+      tracker.key,
+      "execution_pause_started",
+      payload,
+    );
+  const existing = await store.findEventByCommandId(input.commandId);
+  if (existing) {
+    if (!matches(existing)) throw new ExecutionContextCommandConflictError();
+    return {
+      commandId: input.commandId,
+      replayed: true,
+      pause: {
+        id: input.pauseId,
+        reason: input.reason,
+        note: input.note ?? null,
+        startedOn,
+        endedOn: null,
+        status: "active",
+      },
+    } as const;
+  }
+  if (await store.findActivePause(tracker.id)) {
+    throw new ExecutionPauseAlreadyActiveError();
+  }
+  const event = eventFor(
+    tracker,
+    input,
+    "execution_pause_started",
+    payload,
+    now,
+  );
+  const pause: ExecutionCommandPause = {
+    id: input.pauseId,
+    trackerId: tracker.id,
+    reason: input.reason,
+    note: input.note ?? null,
+    startedOn,
+    endedOn: null,
+  };
+  let replayed: boolean;
+  try {
+    replayed = await commitOrReplay(
+      store,
+      {
+        ...preparedBase(tracker.id, event),
+        type: "start_pause",
+        pause,
+      },
+      matches,
+    );
+  } catch (error) {
+    if (
+      error instanceof ExecutionContextCommandConflictError &&
+      (await store.findActivePause(tracker.id))
+    ) {
+      throw new ExecutionPauseAlreadyActiveError();
+    }
+    throw error;
+  }
+  return {
+    commandId: input.commandId,
+    replayed,
+    pause: pauseProjection(pause, "active"),
+  } as const;
+}
+
+export async function executeEndExecutionPauseCommand(
+  store: ExecutionContextCommandStore,
+  input: EndExecutionPauseCommand & { trackerKey: string },
+  now = new Date(),
+) {
+  const tracker = await store.findTracker(input.trackerKey);
+  if (!tracker) throw new ExecutionTrackerNotFoundError();
+  const endedOn = localDateInTimeZone(
+    input.occurredAt,
+    tracker.planningTimeZone,
+  );
+  const payload = { pauseId: input.pauseId, endedOn };
+  const matches = (event: TrackerEvent) =>
+    commandMatches(event, input, tracker.key, "execution_pause_ended", payload);
+  const existing = await store.findEventByCommandId(input.commandId);
+  if (existing) {
+    if (!matches(existing)) throw new ExecutionContextCommandConflictError();
+    const pause = await store.findPause(tracker.id, input.pauseId);
+    if (!pause) throw new ExecutionPauseNotFoundError();
+    return {
+      commandId: input.commandId,
+      replayed: true,
+      pause: pauseProjection(pause, "pending_resume_assessment", endedOn),
+    } as const;
+  }
+  const pause = await store.findPause(tracker.id, input.pauseId);
+  if (!pause || pause.endedOn !== null) throw new ExecutionPauseNotFoundError();
+  if (endedOn < pause.startedOn) throw new ExecutionContextRangeError();
+  const event = eventFor(tracker, input, "execution_pause_ended", payload, now);
+  const replayed = await commitOrReplay(
+    store,
+    {
+      ...preparedBase(tracker.id, event),
+      type: "end_pause",
+      pauseId: input.pauseId,
+      endedOn,
+      endedAt: new Date(input.occurredAt),
+    },
+    matches,
+  );
+  return {
+    commandId: input.commandId,
+    replayed,
+    pause: pauseProjection(pause, "pending_resume_assessment", endedOn),
   } as const;
 }

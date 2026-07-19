@@ -7,6 +7,7 @@ const optionId = "019c0000-0000-7000-8000-000000000002";
 
 function store(overrides: Record<string, unknown> = {}) {
   return {
+    findRelevantPause: vi.fn(async () => null),
     findRelevantContext: vi.fn(async () => ({
       id: contextId,
       kind: "travel" as const,
@@ -112,6 +113,29 @@ describe("execution context aggregate", () => {
     expect(illnessResult).toMatchObject({
       alternatives: [],
       safety: { blocked: true, reason: "illness" },
+    });
+  });
+
+  it("gives an active pause priority over a travel context and keeps alternatives hidden", async () => {
+    const result = await getExecutionContextToday(
+      store({
+        findRelevantPause: vi.fn(async () => ({
+          id: "019c0000-0000-7000-8000-000000000009",
+          reason: "illness",
+          note: "Anonymous private note",
+          startedOn: "2026-07-20",
+          endedOn: null,
+        })),
+      }),
+      "2026-07-20",
+      false,
+    );
+
+    expect(result).toMatchObject({
+      pause: { status: "active", reason: "illness" },
+      context: { id: contextId, status: "active" },
+      alternatives: [],
+      safety: { blocked: true, reason: "pause" },
     });
   });
 });

@@ -11,6 +11,7 @@ import {
   executionAlternativeVersions,
   executionContexts,
   executionDayDecisions,
+  executionPauses,
   githubSyncOutbox,
   trackers,
 } from "@/server/db/schema";
@@ -142,6 +143,62 @@ export function createNeonExecutionContextCommandStore(
       });
     },
 
+    async findActivePause(trackerId) {
+      const [row] = await database
+        .select({
+          id: executionPauses.id,
+          trackerId: executionPauses.trackerId,
+          reason: executionPauses.reason,
+          note: executionPauses.note,
+          startedOn: executionPauses.startedOn,
+          endedOn: executionPauses.endedOn,
+        })
+        .from(executionPauses)
+        .where(
+          and(
+            eq(executionPauses.trackerId, trackerId),
+            isNull(executionPauses.endedAt),
+          ),
+        )
+        .limit(1);
+      return row ?? null;
+    },
+
+    async findPause(trackerId, pauseId) {
+      const [row] = await database
+        .select({
+          id: executionPauses.id,
+          trackerId: executionPauses.trackerId,
+          reason: executionPauses.reason,
+          note: executionPauses.note,
+          startedOn: executionPauses.startedOn,
+          endedOn: executionPauses.endedOn,
+        })
+        .from(executionPauses)
+        .where(
+          and(
+            eq(executionPauses.id, pauseId),
+            eq(executionPauses.trackerId, trackerId),
+          ),
+        )
+        .limit(1);
+      return row ?? null;
+    },
+
+    async hasBlockingPause(trackerId, localDate) {
+      const [row] = await database
+        .select({ id: executionPauses.id })
+        .from(executionPauses)
+        .where(
+          and(
+            eq(executionPauses.trackerId, trackerId),
+            lte(executionPauses.startedOn, localDate),
+          ),
+        )
+        .limit(1);
+      return Boolean(row);
+    },
+
     async commitAtomically(command) {
       const eventInsert = database.insert(events).values({
         id: command.event.id,
@@ -184,6 +241,37 @@ export function createNeonExecutionContextCommandStore(
               updatedAt: new Date(),
             })
             .where(eq(executionContexts.id, command.contextId)),
+          eventInsert,
+          outboxInsert,
+        ]);
+        return;
+      }
+
+      if (command.type === "start_pause") {
+        await database.batch([
+          database.insert(executionPauses).values({
+            id: command.pause.id,
+            trackerId: command.trackerId,
+            reason: command.pause.reason,
+            note: command.pause.note,
+            startedOn: command.pause.startedOn,
+          }),
+          eventInsert,
+          outboxInsert,
+        ]);
+        return;
+      }
+
+      if (command.type === "end_pause") {
+        await database.batch([
+          database
+            .update(executionPauses)
+            .set({
+              endedOn: command.endedOn,
+              endedAt: command.endedAt,
+              updatedAt: new Date(),
+            })
+            .where(eq(executionPauses.id, command.pauseId)),
           eventInsert,
           outboxInsert,
         ]);

@@ -356,6 +356,47 @@ describe("today background refresh", () => {
     },
   );
 
+  it("shows pause mode above an active travel context without changing the task", async () => {
+    const data = aggregate("planned", 0);
+    data.execution = {
+      pause: {
+        id: "019c0000-0000-7000-8000-000000000040",
+        reason: "illness",
+        note: null,
+        startedOn: "2026-07-19",
+        endedOn: null,
+        status: "active",
+      },
+      context: {
+        id: "019c0000-0000-7000-8000-000000000041",
+        kind: "travel",
+        startDate: "2026-07-19",
+        endDate: "2026-07-24",
+        status: "active",
+      },
+      day: null,
+      alternatives: [],
+      safety: { blocked: true, reason: "pause" },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(data)));
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <TodayClient />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("暂停模式")).toBeTruthy();
+    expect(screen.getByText("今天暂停训练")).toBeTruthy();
+    expect(screen.queryByRole("radio")).toBeNull();
+    expect(
+      (
+        screen.getByRole("checkbox", {
+          name: "Anonymous task",
+        }) as HTMLInputElement
+      ).checked,
+    ).toBe(false);
+  });
+
   it("keeps the today hierarchy stable and separates task expansion from completion", async () => {
     const fetchMock = vi.fn(
       async (_input: RequestInfo | URL, init?: RequestInit) => {

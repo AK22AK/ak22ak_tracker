@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lte, or } from "drizzle-orm";
 
 import { monthBounds } from "@/domain/calendar";
 import { resolveEffectivePlanVersion } from "@/domain/plan-timeline";
@@ -9,7 +9,13 @@ import type { ExternalTrainingRecord } from "@/domain/external-training";
 import { kneeCheckInEventPayloadSchema } from "@/modules/knee-rehab/check-in";
 
 import { getDatabase } from "./db/client";
-import { events, planVersions, taskInstances, trackers } from "./db/schema";
+import {
+  events,
+  executionPauses,
+  planVersions,
+  taskInstances,
+  trackers,
+} from "./db/schema";
 
 export type DashboardTask = {
   id: string;
@@ -44,6 +50,7 @@ export type CalendarDaySummary = {
   completedCount: number;
   skippedCount: number;
   feedbackCount: number;
+  paused?: boolean;
 };
 
 export type TodayDashboard = {
@@ -284,17 +291,35 @@ export async function getCalendarMonthForTracker(
           ),
         )
     : [];
-  const feedbackRows = await database
-    .select({ date: events.localDate })
-    .from(events)
-    .where(
-      and(
-        eq(events.trackerId, tracker.id),
-        eq(events.kind, "symptom_check_in"),
-        gte(events.localDate, start),
-        lte(events.localDate, end),
+  const [feedbackRows, pauseRows] = await Promise.all([
+    database
+      .select({ date: events.localDate })
+      .from(events)
+      .where(
+        and(
+          eq(events.trackerId, tracker.id),
+          eq(events.kind, "symptom_check_in"),
+          gte(events.localDate, start),
+          lte(events.localDate, end),
+        ),
       ),
-    );
+    database
+      .select({
+        startedOn: executionPauses.startedOn,
+        endedOn: executionPauses.endedOn,
+      })
+      .from(executionPauses)
+      .where(
+        and(
+          eq(executionPauses.trackerId, tracker.id),
+          lte(executionPauses.startedOn, end),
+          or(
+            isNull(executionPauses.endedOn),
+            gte(executionPauses.endedOn, start),
+          ),
+        ),
+      ),
+  ]);
   const summaries = new Map<string, CalendarDaySummary>();
   const summaryFor = (date: string) => {
     const existing = summaries.get(date);
@@ -305,6 +330,7 @@ export async function getCalendarMonthForTracker(
       completedCount: 0,
       skippedCount: 0,
       feedbackCount: 0,
+      paused: false,
     };
     summaries.set(date, created);
     return created;
@@ -320,6 +346,15 @@ export async function getCalendarMonthForTracker(
   }
   for (const feedback of feedbackRows) {
     summaryFor(feedback.date).feedbackCount += 1;
+  }
+  for (const pause of pauseRows) {
+    const first = pause.startedOn > start ? pause.startedOn : start;
+    const last = pause.endedOn && pause.endedOn < end ? pause.endedOn : end;
+    const cursor = new Date(`${first}T00:00:00Z`);
+    while (cursor.toISOString().slice(0, 10) <= last) {
+      summaryFor(cursor.toISOString().slice(0, 10)).paused = true;
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
   }
 
   return [...summaries.values()].sort((left, right) =>

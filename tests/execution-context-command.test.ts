@@ -8,7 +8,9 @@ import {
   ExecutionContextSafetyBlockedError,
   executeCreateExecutionContextCommand,
   executeEndExecutionContextCommand,
+  executeEndExecutionPauseCommand,
   executeSetExecutionDayCommand,
+  executeStartExecutionPauseCommand,
   type ExecutionContextCommandStore,
   type PreparedExecutionContextCommand,
 } from "@/server/commands/execution-context-core";
@@ -47,6 +49,17 @@ function createMemoryStore() {
     [optionDId, { id: optionDId, version: 2, effectiveFrom: "2026-07-01" }],
   ]);
   const decisions = new Map<string, PreparedExecutionContextCommand>();
+  const pauses = new Map<
+    string,
+    {
+      id: string;
+      trackerId: string;
+      reason: "illness" | "acute_symptom" | "red_feedback" | "other";
+      note: string | null;
+      startedOn: string;
+      endedOn: string | null;
+    }
+  >();
   let redDate: string | null = null;
 
   const store: ExecutionContextCommandStore = {
@@ -81,6 +94,16 @@ function createMemoryStore() {
     hasRedSafetySignal: vi.fn(
       async (_trackerId, localDate) => redDate === localDate,
     ),
+    findActivePause: vi.fn(
+      async () =>
+        [...pauses.values()].find((pause) => pause.endedOn === null) ?? null,
+    ),
+    findPause: vi.fn(
+      async (_trackerId, pauseId) => pauses.get(pauseId) ?? null,
+    ),
+    hasBlockingPause: vi.fn(async (_trackerId, localDate) =>
+      [...pauses.values()].some((pause) => pause.startedOn <= localDate),
+    ),
     commitAtomically: vi.fn(async (prepared) => {
       if (prepared.type === "create") {
         contexts.set(prepared.context.id, prepared.context);
@@ -91,8 +114,14 @@ function createMemoryStore() {
             ...current,
             endedOn: prepared.endedOn,
           });
-      } else {
+      } else if (prepared.type === "set_day") {
         decisions.set(`${prepared.contextId}:${prepared.localDate}`, prepared);
+      } else if (prepared.type === "start_pause") {
+        pauses.set(prepared.pause.id, prepared.pause);
+      } else {
+        const pause = pauses.get(prepared.pauseId);
+        if (pause)
+          pauses.set(prepared.pauseId, { ...pause, endedOn: prepared.endedOn });
       }
       events.set(prepared.event.idempotencyKey, prepared.event);
     }),
@@ -102,6 +131,7 @@ function createMemoryStore() {
     store,
     contexts,
     decisions,
+    pauses,
     setRedDate(value: string | null) {
       redDate = value;
     },
@@ -375,5 +405,66 @@ describe("execution context commands", () => {
     expect(first).toMatchObject({ replayed: false, endedOn: "2026-07-21" });
     expect(replay).toMatchObject({ replayed: true, endedOn: "2026-07-21" });
     expect(contexts.get(contextId)?.endedOn).toBe("2026-07-21");
+  });
+
+  it("starts and ends a pause atomically without changing travel or task state", async () => {
+    const { store, pauses } = createMemoryStore();
+    const pauseId = "019c0000-0000-7000-8000-000000000040";
+    const start = {
+      ...metadata("019c0000-0000-7000-8000-000000000041"),
+      trackerKey: "anonymous-tracker",
+      pauseId,
+      reason: "illness" as const,
+      note: "Anonymous private note",
+    };
+    await createContextCommand(store, {
+      ...metadata("019c0000-0000-7000-8000-000000000043"),
+      trackerKey: "anonymous-tracker",
+      contextId,
+      kind: "travel",
+      startDate: "2026-07-20",
+      endDate: "2026-07-24",
+    });
+    await expect(
+      executeStartExecutionPauseCommand(store, start, commandNow),
+    ).resolves.toMatchObject({ replayed: false, pause: { status: "active" } });
+    await expect(
+      executeStartExecutionPauseCommand(store, start, commandNow),
+    ).resolves.toMatchObject({ replayed: true });
+    await expect(
+      executeSetExecutionDayCommand(store, {
+        ...metadata("019c0000-0000-7000-8000-000000000044"),
+        trackerKey: "anonymous-tracker",
+        contextId,
+        localDate: "2026-07-20",
+        conditions: {
+          availableMinutes: 10,
+          venue: "room",
+          equipment: ["chair"],
+          healthStatus: "normal",
+        },
+        selection: { optionId: optionAId, optionVersion: 1 },
+      }),
+    ).rejects.toBeInstanceOf(ExecutionContextSafetyBlockedError);
+
+    const end = {
+      ...metadata("019c0000-0000-7000-8000-000000000042"),
+      trackerKey: "anonymous-tracker",
+      pauseId,
+    };
+    await expect(
+      executeEndExecutionPauseCommand(store, end, commandNow),
+    ).resolves.toMatchObject({
+      replayed: false,
+      pause: { status: "pending_resume_assessment" },
+    });
+    await expect(
+      executeEndExecutionPauseCommand(store, end, commandNow),
+    ).resolves.toMatchObject({
+      replayed: true,
+      pause: { status: "pending_resume_assessment" },
+    });
+    expect(pauses.get(pauseId)?.endedOn).toBe("2026-07-20");
+    expect(store.commitAtomically).toHaveBeenCalledTimes(3);
   });
 });
