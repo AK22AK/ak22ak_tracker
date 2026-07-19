@@ -190,22 +190,25 @@ export async function syncProviderCatchUpBatch(input: {
       const errorCode = providerPublicErrorCode(error);
       days.push({ date, status: "failed", errorCode });
       states.set(date, { date, status: "failed" });
+      break;
     }
   }
 
-  const lastBatchDate = batchDates.at(-1) ?? null;
-  const nextCursor = lastBatchDate
-    ? (candidateDates.find(
-        (date) =>
-          date > lastBatchDate &&
-          (overlapRun || states.get(date)?.status !== "succeeded"),
-      ) ?? null)
-    : null;
-  const rangeStates = datesBetween(input.startedOn, input.today).map((date) =>
-    states.get(date),
+  const failedDay = days.find(
+    (day): day is Extract<ProviderCatchUpDayResult, { status: "failed" }> =>
+      day.status === "failed",
   );
-  const failedState = rangeStates.find((state) => state?.status === "failed");
-  const status = nextCursor ? "running" : failedState ? "failed" : "succeeded";
+  const lastProcessedDate = days.at(-1)?.date ?? null;
+  const nextCursor = failedDay
+    ? failedDay.date
+    : lastProcessedDate
+      ? (candidateDates.find(
+          (date) =>
+            date > lastProcessedDate &&
+            (overlapRun || states.get(date)?.status !== "succeeded"),
+        ) ?? null)
+      : null;
+  const status = failedDay ? "failed" : nextCursor ? "running" : "succeeded";
 
   await input.store.saveProgress({
     trackerId: input.trackerId,
@@ -213,7 +216,7 @@ export async function syncProviderCatchUpBatch(input: {
     attemptedAt: input.now,
     cursorDate: nextCursor,
     status,
-    lastErrorCode: failedState ? "date_sync_failed" : null,
+    lastErrorCode: failedDay?.errorCode ?? null,
   });
 
   const successes = days.filter(
@@ -222,9 +225,7 @@ export async function syncProviderCatchUpBatch(input: {
   );
   return {
     provider: input.provider,
-    batch: batchDates.length
-      ? { from: batchDates[0]!, to: batchDates.at(-1)! }
-      : null,
+    batch: days.length ? { from: days[0]!.date, to: days.at(-1)!.date } : null,
     targetDate: input.today,
     days,
     summary: {
@@ -235,7 +236,7 @@ export async function syncProviderCatchUpBatch(input: {
       unchanged: successes.reduce((sum, day) => sum + day.unchanged, 0),
     },
     nextCursor,
-    complete: nextCursor === null,
+    complete: !failedDay && nextCursor === null,
     lastSucceededDate: latestSucceededDate(states),
   };
 }

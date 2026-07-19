@@ -14,6 +14,23 @@ export type IntegrationCardDefinition = {
   description: string;
 };
 
+function syncFailureMessage(displayName: string, errorCode: string) {
+  if (errorCode === "authentication") {
+    return `${displayName}连接已失效，请更新 API Key 后重试。`;
+  }
+  if (errorCode === "rate_limited") {
+    return `${displayName}请求过于频繁，请稍后重试。`;
+  }
+  if (
+    errorCode === "timeout" ||
+    errorCode === "provider_unavailable" ||
+    errorCode === "invalid_response"
+  ) {
+    return `${displayName}暂时无法同步，请稍后重试。`;
+  }
+  return `${displayName}同步失败，请稍后重试。`;
+}
+
 export function IntegrationCard({
   trackerKey,
   definition,
@@ -69,6 +86,7 @@ export function IntegrationCard({
     let lastDate: string | null = null;
     let targetDate: string | null = null;
     let reachedTarget = false;
+    let failureCode: string | null = null;
     const seenCursors = new Set<string>();
     try {
       for (let batch = 0; batch < 64; batch += 1) {
@@ -93,14 +111,17 @@ export function IntegrationCard({
         const latestSuccess = [...result.days]
           .reverse()
           .find((day) => day.status === "succeeded");
+        const failedDay = result.days.find((day) => day.status === "failed");
         setStatus((current) => ({
           ...current,
           sync: {
-            status: result.complete
-              ? failed > 0
-                ? "failed"
-                : "succeeded"
-              : "running",
+            status: failedDay
+              ? "failed"
+              : result.complete
+                ? failed > 0
+                  ? "failed"
+                  : "succeeded"
+                : "running",
             lastAttemptAt: new Date().toISOString(),
             lastSucceededAt:
               latestSuccess?.status === "succeeded"
@@ -108,9 +129,13 @@ export function IntegrationCard({
                 : current.sync.lastSucceededAt,
             lastSucceededDate:
               result.lastSucceededDate ?? current.sync.lastSucceededDate,
-            lastErrorCode: failed > 0 ? "date_sync_failed" : null,
+            lastErrorCode: failedDay?.errorCode ?? null,
           },
         }));
+        if (failedDay) {
+          failureCode = failedDay.errorCode;
+          break;
+        }
         if (!result.nextCursor) {
           reachedTarget = true;
           break;
@@ -123,22 +148,22 @@ export function IntegrationCard({
           `正在继续同步 ${result.nextCursor} 至 ${result.targetDate}…`,
         );
       }
-      setStatus((current) => ({
-        ...current,
-        sync: {
-          ...current.sync,
-          status: reachedTarget
-            ? failed > 0
-              ? "failed"
-              : "succeeded"
-            : "running",
-        },
-      }));
-      setMessage(
-        reachedTarget
-          ? `追赶同步完成：成功 ${succeeded} 天，失败 ${failed} 天。`
-          : `本轮已处理：成功 ${succeeded} 天，失败 ${failed} 天；请继续同步。`,
-      );
+      if (failureCode) {
+        setMessage(syncFailureMessage(definition.displayName, failureCode));
+      } else {
+        setStatus((current) => ({
+          ...current,
+          sync: {
+            ...current.sync,
+            status: reachedTarget ? "succeeded" : "running",
+          },
+        }));
+        setMessage(
+          reachedTarget
+            ? `追赶同步完成：成功 ${succeeded} 天，失败 ${failed} 天。`
+            : `本轮已处理：成功 ${succeeded} 天，失败 ${failed} 天；请继续同步。`,
+        );
+      }
     } catch {
       setStatus((current) => ({
         ...current,

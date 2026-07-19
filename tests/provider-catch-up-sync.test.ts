@@ -183,7 +183,7 @@ describe("provider-neutral catch-up sync", () => {
     ]);
   });
 
-  it("continues after one date fails and preserves the failed day in the result", async () => {
+  it("stops at the first failed date and persists that date as the retry cursor", async () => {
     const store = createStore();
     const syncDate = vi.fn(async (date: string) => {
       if (date === "2026-07-01") {
@@ -205,15 +205,56 @@ describe("provider-neutral catch-up sync", () => {
       syncDate,
     });
 
-    expect(syncDate).toHaveBeenCalledTimes(2);
+    expect(syncDate).toHaveBeenCalledTimes(1);
     expect(result.days).toEqual([
       { date: "2026-07-01", status: "failed", errorCode: "rate_limited" },
-      expect.objectContaining({ date: "2026-07-02", status: "succeeded" }),
     ]);
-    expect(result.summary).toMatchObject({ succeeded: 1, failed: 1 });
-    expect(result.complete).toBe(true);
+    expect(result.summary).toMatchObject({ succeeded: 0, failed: 1 });
+    expect(result.nextCursor).toBe("2026-07-01");
+    expect(result.complete).toBe(false);
     expect(store.saveProgress).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "failed", cursorDate: null }),
+      expect.objectContaining({
+        status: "failed",
+        cursorDate: "2026-07-01",
+        lastErrorCode: "rate_limited",
+      }),
+    );
+  });
+
+  it("retries the failed cursor and continues only after that date succeeds", async () => {
+    const store = createStore({
+      cursorDate: "2026-07-01",
+      overallStatus: "failed",
+      states: [{ date: "2026-07-01", status: "failed" }],
+    });
+    const syncDate = vi.fn(async (date: string) => synced(date));
+
+    const result = await syncProviderCatchUpBatch({
+      trackerId,
+      provider: "xunji",
+      startedOn: "2026-07-01",
+      today: "2026-07-02",
+      now: new Date("2026-07-02T08:01:00.000Z"),
+      batchSize: 5,
+      store,
+      syncDate,
+    });
+
+    expect(syncDate.mock.calls.map(([date]) => date)).toEqual([
+      "2026-07-01",
+      "2026-07-02",
+    ]);
+    expect(result).toMatchObject({
+      nextCursor: null,
+      complete: true,
+      summary: { succeeded: 2, failed: 0 },
+    });
+    expect(store.saveProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "succeeded",
+        cursorDate: null,
+        lastErrorCode: null,
+      }),
     );
   });
 });

@@ -71,7 +71,7 @@ describe("provider-neutral integration card", () => {
     );
   });
 
-  it("continues bounded server batches without sending a client date or clearing the key draft", async () => {
+  it("stops client continuation on a failed batch without clearing the key draft", async () => {
     const configured = {
       ...disconnected,
       configured: true,
@@ -116,7 +116,7 @@ describe("provider-neutral integration card", () => {
     };
     const secondBatch = {
       provider: "xunji",
-      batch: { from: "2026-07-03", to: "2026-07-04" },
+      batch: { from: "2026-07-03", to: "2026-07-03" },
       targetDate: "2026-07-04",
       days: [
         {
@@ -124,27 +124,17 @@ describe("provider-neutral integration card", () => {
           status: "failed",
           errorCode: "rate_limited",
         },
-        {
-          date: "2026-07-04",
-          status: "succeeded",
-          cached: false,
-          created: 0,
-          changed: 0,
-          unchanged: 0,
-          recordCount: 0,
-          syncedAt: "2026-07-04T08:00:01.000Z",
-        },
       ],
       summary: {
-        succeeded: 1,
+        succeeded: 0,
         failed: 1,
         created: 0,
         changed: 0,
         unchanged: 0,
       },
-      nextCursor: null,
-      complete: true,
-      lastSucceededDate: "2026-07-04",
+      nextCursor: "2026-07-03",
+      complete: false,
+      lastSucceededDate: "2026-07-02",
     };
     const fetchMock = vi
       .fn()
@@ -179,8 +169,10 @@ describe("provider-neutral integration card", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     await waitFor(() =>
-      expect(screen.getByText(/成功 3 天，失败 1 天/)).toBeTruthy(),
+      expect(screen.getByText(/请求过于频繁，请稍后重试/)).toBeTruthy(),
     );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(keyInput.value).toBe("anonymous-draft-key");
     for (const [url, request] of fetchMock.mock.calls) {
       expect(url).toBe(
@@ -189,5 +181,58 @@ describe("provider-neutral integration card", () => {
       expect(request).toEqual(expect.objectContaining({ method: "POST" }));
       expect(request).not.toHaveProperty("body");
     }
+  });
+
+  it.each([
+    ["authentication", "连接已失效，请更新 API Key 后重试"],
+    ["timeout", "暂时无法同步，请稍后重试"],
+    ["provider_unavailable", "暂时无法同步，请稍后重试"],
+    ["invalid_response", "暂时无法同步，请稍后重试"],
+  ])("renders a safe actionable message for %s", async (errorCode, text) => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          provider: "xunji",
+          batch: { from: "2026-07-03", to: "2026-07-03" },
+          targetDate: "2026-07-04",
+          days: [{ date: "2026-07-03", status: "failed", errorCode }],
+          summary: {
+            succeeded: 0,
+            failed: 1,
+            created: 0,
+            changed: 0,
+            unchanged: 0,
+          },
+          nextCursor: "2026-07-03",
+          complete: false,
+          lastSucceededDate: "2026-07-02",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <IntegrationCard
+        trackerKey="anonymous-tracker"
+        definition={{
+          provider: "xunji",
+          displayName: "Anonymous Provider",
+          description: "Anonymous read-only training source",
+        }}
+        initialStatus={{
+          ...disconnected,
+          configured: true,
+          maskedKey: "••••••••",
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "追赶同步至今天" }));
+
+    await waitFor(() =>
+      expect(screen.getByText(new RegExp(text))).toBeTruthy(),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(document.body.textContent).not.toContain("provider failed");
   });
 });

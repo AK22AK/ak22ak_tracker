@@ -97,15 +97,14 @@ integration("P1a provider-neutral catch-up sync persistence", () => {
     });
     expect(resumed.days).toEqual([
       { date: "2026-07-03", status: "failed", errorCode: "rate_limited" },
-      expect.objectContaining({ date: "2026-07-04", status: "succeeded" }),
     ]);
     expect(resumed).toMatchObject({
-      nextCursor: null,
-      complete: true,
-      summary: { succeeded: 1, failed: 1 },
+      nextCursor: "2026-07-03",
+      complete: false,
+      summary: { succeeded: 0, failed: 1 },
     });
 
-    const states = await database
+    const failedStates = await database
       .select({
         date: integrationDateSyncState.localDate,
         status: integrationDateSyncState.status,
@@ -118,10 +117,11 @@ integration("P1a provider-neutral catch-up sync persistence", () => {
           eq(integrationDateSyncState.provider, "xunji"),
         ),
       );
-    const [overall] = await database
+    const [failedOverall] = await database
       .select({
         status: integrationSyncState.status,
         cursor: integrationSyncState.cursor,
+        errorCode: integrationSyncState.lastErrorCode,
       })
       .from(integrationSyncState)
       .where(
@@ -131,7 +131,7 @@ integration("P1a provider-neutral catch-up sync persistence", () => {
         ),
       );
 
-    expect(states).toEqual(
+    expect(failedStates).toEqual(
       expect.arrayContaining([
         { date: "2026-07-01", status: "succeeded", errorCode: null },
         { date: "2026-07-02", status: "succeeded", errorCode: null },
@@ -140,9 +140,75 @@ integration("P1a provider-neutral catch-up sync persistence", () => {
           status: "failed",
           errorCode: "rate_limited",
         },
+      ]),
+    );
+    expect(failedStates.some((state) => state.date === "2026-07-04")).toBe(
+      false,
+    );
+    expect(failedOverall).toEqual({
+      status: "failed",
+      cursor: { kind: "date_catch_up_v1", nextDate: "2026-07-03" },
+      errorCode: "rate_limited",
+    });
+
+    const recovered = await syncProviderCatchUpBatch({
+      trackerId,
+      provider: "xunji",
+      startedOn: "2026-07-01",
+      today: "2026-07-04",
+      now: new Date("2026-07-04T08:02:00.000Z"),
+      batchSize: 2,
+      store: catchUpStore,
+      syncDate: syncDate(),
+    });
+    expect(recovered.days).toEqual([
+      expect.objectContaining({ date: "2026-07-03", status: "succeeded" }),
+      expect.objectContaining({ date: "2026-07-04", status: "succeeded" }),
+    ]);
+    expect(recovered).toMatchObject({
+      nextCursor: null,
+      complete: true,
+      summary: { succeeded: 2, failed: 0 },
+    });
+
+    const finalStates = await database
+      .select({
+        date: integrationDateSyncState.localDate,
+        status: integrationDateSyncState.status,
+        errorCode: integrationDateSyncState.lastErrorCode,
+      })
+      .from(integrationDateSyncState)
+      .where(
+        and(
+          eq(integrationDateSyncState.trackerId, trackerId),
+          eq(integrationDateSyncState.provider, "xunji"),
+        ),
+      );
+    const [finalOverall] = await database
+      .select({
+        status: integrationSyncState.status,
+        cursor: integrationSyncState.cursor,
+        errorCode: integrationSyncState.lastErrorCode,
+      })
+      .from(integrationSyncState)
+      .where(
+        and(
+          eq(integrationSyncState.trackerId, trackerId),
+          eq(integrationSyncState.provider, "xunji"),
+        ),
+      );
+    expect(finalStates).toEqual(
+      expect.arrayContaining([
+        { date: "2026-07-01", status: "succeeded", errorCode: null },
+        { date: "2026-07-02", status: "succeeded", errorCode: null },
+        { date: "2026-07-03", status: "succeeded", errorCode: null },
         { date: "2026-07-04", status: "succeeded", errorCode: null },
       ]),
     );
-    expect(overall).toEqual({ status: "failed", cursor: null });
-  }, 20_000);
+    expect(finalOverall).toEqual({
+      status: "succeeded",
+      cursor: null,
+      errorCode: null,
+    });
+  }, 30_000);
 });
