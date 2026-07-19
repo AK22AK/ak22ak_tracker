@@ -465,15 +465,15 @@ function TaskCard({
               {task.status === "skipped" ? "恢复为待完成" : "今天跳过"}
             </button>
           </div>
-          {saveMessage ? (
-            <p
-              className={`task-save-message ${saveFailed ? "error" : "success"}`}
-              role="status"
-            >
-              {saveMessage}
-            </p>
-          ) : null}
         </div>
+      ) : null}
+      {saveMessage ? (
+        <p
+          className={`task-save-message ${saveFailed ? "error" : "success"}`}
+          role="status"
+        >
+          {saveMessage}
+        </p>
       ) : null}
     </article>
   );
@@ -758,7 +758,7 @@ export function DashboardShell({
             tone={online ? "neutral" : "attention"}
             icon={online ? "●" : "!"}
           >
-            {online ? "已同步到云端" : "当前离线"}
+            {online ? "当前在线" : "当前离线"}
           </StatusPill>
           <SignOutButton />
         </div>
@@ -935,7 +935,7 @@ export function DashboardShell({
       </SurfaceCard>
 
       <footer className="today-technical-status" aria-label="应用状态">
-        <span>{online ? "数据在线" : "离线使用缓存"}</span>
+        <span>{online ? "网络可用" : "当前离线"}</span>
         <span aria-hidden="true">·</span>
         <div>外部集成状态请在“设置”查看</div>
       </footer>

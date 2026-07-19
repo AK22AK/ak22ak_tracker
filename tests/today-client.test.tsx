@@ -34,9 +34,9 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function jsonResponse(value: unknown) {
+function jsonResponse(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), {
-    status: 200,
+    status,
     headers: { "Content-Type": "application/json" },
   });
 }
@@ -104,7 +104,88 @@ function aggregate(
 describe("today background refresh", () => {
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("describes online capability without claiming that data is synced", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse(aggregate("planned", 0))),
+    );
+
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({
+            defaultOptions: { queries: { retry: false } },
+          })
+        }
+      >
+        <TodayClient />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("当前在线")).toBeTruthy();
+    expect(screen.getByText("网络可用")).toBeTruthy();
+    expect(screen.queryByText("已同步到云端")).toBeNull();
+    expect(screen.queryByText(/全部已同步|待同步 0/)).toBeNull();
+  });
+
+  it("shows an explicit offline state", async () => {
+    vi.spyOn(window.navigator, "onLine", "get").mockReturnValue(false);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse(aggregate("planned", 0))),
+    );
+
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({
+            defaultOptions: { queries: { retry: false } },
+          })
+        }
+      >
+        <TodayClient />
+      </QueryClientProvider>,
+    );
+
+    expect((await screen.findAllByText("当前离线")).length).toBeGreaterThan(0);
+    expect(screen.queryByText("已同步到云端")).toBeNull();
+  });
+
+  it("keeps a failed save message with its task while the network is available", async () => {
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) =>
+        init?.method === "PATCH"
+          ? jsonResponse({}, 500)
+          : jsonResponse(aggregate("planned", 0)),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({
+            defaultOptions: { queries: { retry: false } },
+          })
+        }
+      >
+        <TodayClient />
+      </QueryClientProvider>,
+    );
+
+    const task = await screen.findByRole("article", { name: "Anonymous task" });
+    fireEvent.click(
+      within(task).getByRole("checkbox", { name: "Anonymous task" }),
+    );
+
+    expect(
+      await within(task).findByText("保存失败，请检查网络后重试"),
+    ).toBeTruthy();
+    expect(screen.getByText("当前在线")).toBeTruthy();
+    expect(screen.queryByText("已同步到云端")).toBeNull();
   });
 
   it("preserves task and feedback drafts after server data refreshes", async () => {
