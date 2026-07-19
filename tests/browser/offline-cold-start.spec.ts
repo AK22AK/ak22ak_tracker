@@ -461,12 +461,16 @@ test("cold-start shell persists ordered today task toggles before changing the U
   await page.close();
 
   const firstStart = await openOfflineColdStart(context, "/");
+  await expect(firstStart.getByText("仅保存在本机，联网后同步。")).toHaveCount(
+    0,
+  );
+  await expect(firstStart.getByText("离线修改会先保存到本机。")).toBeVisible();
   await firstStart.getByRole("button", { name: "确认完成" }).click();
   await expect(firstStart.getByText("1 条仅保存在本机")).toBeVisible();
   await expect(firstStart.getByText("已完成")).toBeVisible();
-  await expect(
-    firstStart.getByText("仅保存在本机，联网后同步。"),
-  ).toBeVisible();
+  await expect(firstStart.getByText("仅保存在本机，联网后同步。")).toHaveCount(
+    0,
+  );
   await firstStart.close();
 
   const secondStart = await openOfflineColdStart(context, "/");
@@ -587,6 +591,9 @@ test("cold-start shell never changes the task when write-ahead persistence fails
 
   await coldStart.getByRole("button", { name: "确认完成" }).click();
   await expect(coldStart.getByText("尚未保存，请重试。")).toBeVisible();
+  await expect(coldStart.getByText("仅保存在本机，联网后同步。")).toHaveCount(
+    0,
+  );
   await expect(coldStart.getByText("待完成")).toBeVisible();
   await expect(coldStart.getByText("已完成")).toHaveCount(0);
   await expect(coldStart.getByText(/条仅保存在本机/)).toHaveCount(0);

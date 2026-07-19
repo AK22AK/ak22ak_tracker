@@ -465,7 +465,7 @@
         const saveStatus = element(
           "p",
           "offline-task-save-status",
-          "仅保存在本机，联网后同步。",
+          "离线修改会先保存到本机。",
         );
         action.addEventListener("click", async () => {
           action.disabled = true;
