@@ -30,6 +30,25 @@ export const resumptionAssessmentStatusSchema = z.enum([
 ]);
 export const resumptionDecisionTypeSchema = z.enum(["keep_original", "shift"]);
 
+const resumptionPlanVersionPointerSchema = z.object({
+  id: z.uuid(),
+  version: z.number().int().positive(),
+  effectiveFrom: localDateSchema,
+});
+
+const resumptionShiftAvailabilitySchema = z.discriminatedUnion("allowed", [
+  z.object({
+    allowed: z.literal(true),
+    reason: z.null(),
+    blockingPlanVersion: z.null(),
+  }),
+  z.object({
+    allowed: z.literal(false),
+    reason: z.enum(["future_plan_version_exists", "timeline_snapshot_missing"]),
+    blockingPlanVersion: resumptionPlanVersionPointerSchema.nullable(),
+  }),
+]);
+
 export const resumptionTaskSnapshotSchema = z.object({
   taskInstanceId: z.uuid(),
   taskDefinitionId: taskDefinitionIdSchema,
@@ -39,7 +58,7 @@ export const resumptionTaskSnapshotSchema = z.object({
   status: z.enum(["planned", "completed", "skipped"]),
 });
 
-export const resumptionAssessmentSnapshotSchema = z.object({
+const resumptionAssessmentSnapshotLegacySchema = z.object({
   schemaVersion: z.literal(schemaVersion),
   id: z.uuid(),
   trackerKey: trackerKeySchema,
@@ -52,11 +71,7 @@ export const resumptionAssessmentSnapshotSchema = z.object({
     pausedDays: z.number().int().nonnegative(),
     restrictedDays: z.number().int().nonnegative(),
   }),
-  basePlanVersion: z.object({
-    id: z.uuid(),
-    version: z.number().int().positive(),
-    effectiveFrom: localDateSchema,
-  }),
+  basePlanVersion: resumptionPlanVersionPointerSchema,
   planningTimeZone: ianaTimeZoneSchema,
   createdAt: instantSchema,
   recommendedEffectiveFrom: localDateSchema,
@@ -74,6 +89,12 @@ export const resumptionAssessmentSnapshotSchema = z.object({
     )
     .max(500),
 });
+
+export const resumptionAssessmentSnapshotSchema =
+  resumptionAssessmentSnapshotLegacySchema.extend({
+    timelineHead: resumptionPlanVersionPointerSchema,
+    shiftAvailability: resumptionShiftAvailabilitySchema,
+  });
 
 export const resumptionAssessmentDtoSchema =
   resumptionAssessmentSnapshotSchema.extend({
@@ -121,6 +142,22 @@ export type ResumptionAssessmentDto = z.infer<
 export type ResumptionDecisionCommand = z.infer<
   typeof resumptionDecisionCommandSchema
 >;
+
+export function parseResumptionAssessmentSnapshot(value: unknown) {
+  const current = resumptionAssessmentSnapshotSchema.safeParse(value);
+  if (current.success) return current.data;
+
+  const legacy = resumptionAssessmentSnapshotLegacySchema.parse(value);
+  return resumptionAssessmentSnapshotSchema.parse({
+    ...legacy,
+    timelineHead: legacy.basePlanVersion,
+    shiftAvailability: {
+      allowed: false,
+      reason: "timeline_snapshot_missing",
+      blockingPlanVersion: null,
+    },
+  });
+}
 
 export function shiftLocalDate(localDate: string, days: number) {
   if (!isLocalDate(localDate) || !Number.isInteger(days)) {

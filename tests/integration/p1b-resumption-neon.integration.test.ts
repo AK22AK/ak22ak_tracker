@@ -12,7 +12,10 @@ import {
   executeStartExecutionPauseCommand,
 } from "@/server/commands/execution-context-core";
 import { createNeonResumptionDecisionStore } from "@/server/commands/resumption";
-import { executeResumptionDecisionCommand } from "@/server/commands/resumption-core";
+import {
+  executeResumptionDecisionCommand,
+  ResumptionAssessmentStateError,
+} from "@/server/commands/resumption-core";
 import { getDatabase } from "@/server/db/client";
 import {
   githubSyncOutbox,
@@ -22,6 +25,7 @@ import {
   taskInstances,
   trackers,
 } from "@/server/db/schema";
+import { buildResumptionAssessmentSnapshot } from "@/server/resumption/build-assessment";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 const integration = describe.skipIf(!testDatabaseUrl);
@@ -36,6 +40,10 @@ integration("P1b S07 resumption decisions atomic integration", () => {
   const contextAssessmentId = randomUUID();
   const pauseId = randomUUID();
   const pauseAssessmentId = randomUUID();
+  const timelineTrackerId = randomUUID();
+  const timelineTrackerKey = `anonymous-timeline-${randomUUID()}`;
+  const timelinePlanId = randomUUID();
+  const timelineTaskId = randomUUID();
 
   beforeAll(async () => {
     process.env.DATABASE_URL = testDatabaseUrl;
@@ -99,6 +107,46 @@ integration("P1b S07 resumption decisions atomic integration", () => {
         scheduledOn: "2026-07-27",
       },
     ]);
+    await database.insert(trackers).values({
+      id: timelineTrackerId,
+      key: timelineTrackerKey,
+      name: "Anonymous timeline tracker",
+      module: "anonymous",
+      startedOn: "2026-07-01",
+      planningTimeZone: "Asia/Shanghai",
+    });
+    await database.insert(planVersions).values({
+      id: timelinePlanId,
+      trackerId: timelineTrackerId,
+      version: 1,
+      effectiveFrom: "2026-07-01",
+      document: {
+        schemaVersion,
+        id: timelinePlanId,
+        trackerKey: timelineTrackerKey,
+        version: 1,
+        effectiveFrom: "2026-07-01",
+        createdAt: "2026-07-01T00:00:00.000Z",
+        createdBy: "import",
+        tasks: [
+          {
+            id: "anonymous-timeline-future",
+            title: "Anonymous timeline future task",
+            scheduledDate: "2026-07-27",
+            sortOrder: 0,
+            category: "general",
+            prescription: {},
+          },
+        ],
+      },
+    });
+    await database.insert(taskInstances).values({
+      id: timelineTaskId,
+      trackerId: timelineTrackerId,
+      planVersionId: timelinePlanId,
+      taskDefinitionId: "anonymous-timeline-future",
+      scheduledOn: "2026-07-27",
+    });
   });
 
   afterAll(async () => {
@@ -108,6 +156,12 @@ integration("P1b S07 resumption decisions atomic integration", () => {
       .delete(githubSyncOutbox)
       .where(like(githubSyncOutbox.targetPath, `trackers/${trackerKey}/%`));
     await database.delete(trackers).where(eq(trackers.id, trackerId));
+    await database
+      .delete(githubSyncOutbox)
+      .where(
+        like(githubSyncOutbox.targetPath, `trackers/${timelineTrackerKey}/%`),
+      );
+    await database.delete(trackers).where(eq(trackers.id, timelineTrackerId));
   });
 
   it("keeps the original plan for an ended execution context", async () => {
@@ -298,5 +352,140 @@ integration("P1b S07 resumption decisions atomic integration", () => {
     expect(oldFuture[0]).toEqual({ status: "planned", date: "2026-07-27" });
     expect(shiftedFuture).toEqual([{ status: "planned", date: "2026-07-29" }]);
     expect(planRows).toHaveLength(2);
+  }, 30_000);
+
+  it("expires old decisions after a future version is added and blocks shift on the replacement", async () => {
+    const database = getDatabase();
+    const keepAssessmentId = randomUUID();
+    const shiftAssessmentId = randomUUID();
+    const createdAt = new Date("2026-07-22T08:00:00.000Z");
+    const build = (id: string, triggerId: string) =>
+      buildResumptionAssessmentSnapshot(
+        {
+          id,
+          trackerId: timelineTrackerId,
+          trackerKey: timelineTrackerKey,
+          planningTimeZone: "Asia/Shanghai",
+          triggerType: "pause",
+          triggerId,
+          startDate: "2026-07-20",
+          endDate: "2026-07-22",
+          createdAt,
+        },
+        database,
+      );
+    const [keepSnapshot, shiftSnapshot] = await Promise.all([
+      build(keepAssessmentId, randomUUID()),
+      build(shiftAssessmentId, randomUUID()),
+    ]);
+    expect(keepSnapshot.shiftAvailability.allowed).toBe(true);
+    await database.insert(resumptionAssessments).values([
+      {
+        id: keepSnapshot.id,
+        trackerId: timelineTrackerId,
+        triggerType: keepSnapshot.trigger.type,
+        triggerId: keepSnapshot.trigger.id,
+        basePlanVersionId: keepSnapshot.basePlanVersion.id,
+        timelineHeadPlanVersionId: keepSnapshot.timelineHead.id,
+        planningTimeZone: keepSnapshot.planningTimeZone,
+        snapshot: keepSnapshot,
+      },
+      {
+        id: shiftSnapshot.id,
+        trackerId: timelineTrackerId,
+        triggerType: shiftSnapshot.trigger.type,
+        triggerId: shiftSnapshot.trigger.id,
+        basePlanVersionId: shiftSnapshot.basePlanVersion.id,
+        timelineHeadPlanVersionId: shiftSnapshot.timelineHead.id,
+        planningTimeZone: shiftSnapshot.planningTimeZone,
+        snapshot: shiftSnapshot,
+      },
+    ]);
+
+    const futurePlanId = randomUUID();
+    await database.insert(planVersions).values({
+      id: futurePlanId,
+      trackerId: timelineTrackerId,
+      version: 2,
+      effectiveFrom: "2026-08-01",
+      document: {
+        schemaVersion,
+        id: futurePlanId,
+        trackerKey: timelineTrackerKey,
+        version: 2,
+        effectiveFrom: "2026-08-01",
+        createdAt: "2026-07-22T08:01:00.000Z",
+        createdBy: "user",
+        tasks: [],
+      },
+    });
+
+    const keepReplacementId = randomUUID();
+    await expect(
+      executeResumptionDecisionCommand(
+        createNeonResumptionDecisionStore(database),
+        {
+          trackerKey: timelineTrackerKey,
+          commandId: randomUUID(),
+          assessmentId: keepAssessmentId,
+          basePlanVersionId: timelinePlanId,
+          replacementAssessmentId: keepReplacementId,
+          decision: "keep_original",
+          occurredAt: "2026-07-22T08:05:00.000Z",
+          occurredTimeZone: "Asia/Shanghai",
+          occurredUtcOffsetMinutes: 480,
+        },
+      ),
+    ).resolves.toMatchObject({ status: "expired" });
+
+    const shiftReplacementId = randomUUID();
+    await expect(
+      executeResumptionDecisionCommand(
+        createNeonResumptionDecisionStore(database),
+        {
+          trackerKey: timelineTrackerKey,
+          commandId: randomUUID(),
+          assessmentId: shiftAssessmentId,
+          basePlanVersionId: timelinePlanId,
+          replacementAssessmentId: shiftReplacementId,
+          decision: "shift",
+          effectiveFrom: "2026-07-23",
+          newPlanVersionId: randomUUID(),
+          occurredAt: "2026-07-22T08:06:00.000Z",
+          occurredTimeZone: "Asia/Shanghai",
+          occurredUtcOffsetMinutes: 480,
+        },
+      ),
+    ).resolves.toMatchObject({ status: "expired" });
+
+    const replacementRows = await database
+      .select({ snapshot: resumptionAssessments.snapshot })
+      .from(resumptionAssessments)
+      .where(eq(resumptionAssessments.id, shiftReplacementId));
+    expect(replacementRows[0]?.snapshot).toMatchObject({
+      timelineHead: { id: futurePlanId, version: 2 },
+      shiftAvailability: {
+        allowed: false,
+        reason: "future_plan_version_exists",
+      },
+    });
+    await expect(
+      executeResumptionDecisionCommand(
+        createNeonResumptionDecisionStore(database),
+        {
+          trackerKey: timelineTrackerKey,
+          commandId: randomUUID(),
+          assessmentId: shiftReplacementId,
+          basePlanVersionId: timelinePlanId,
+          replacementAssessmentId: randomUUID(),
+          decision: "shift",
+          effectiveFrom: "2026-07-23",
+          newPlanVersionId: randomUUID(),
+          occurredAt: "2026-07-22T08:07:00.000Z",
+          occurredTimeZone: "Asia/Shanghai",
+          occurredUtcOffsetMinutes: 480,
+        },
+      ),
+    ).rejects.toBeInstanceOf(ResumptionAssessmentStateError);
   }, 30_000);
 });

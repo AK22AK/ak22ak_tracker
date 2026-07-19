@@ -73,6 +73,7 @@ export type ResumptionDecisionStore = {
     trackerId: string,
     localDate: string,
   ): Promise<PlanVersion | null>;
+  findPlanTimelineHead(trackerId: string): Promise<PlanVersion | null>;
   nextPlanVersion(trackerId: string): Promise<number>;
   buildReplacementAssessment(
     existing: ResumptionAssessmentRecord,
@@ -101,6 +102,17 @@ export class ResumptionAssessmentStateError extends Error {
     super(message);
     this.name = "ResumptionAssessmentStateError";
   }
+}
+
+function samePlanVersionPointer(
+  plan: PlanVersion,
+  pointer: ResumptionAssessmentSnapshot["timelineHead"],
+) {
+  return (
+    plan.id === pointer.id &&
+    plan.version === pointer.version &&
+    plan.effectiveFrom === pointer.effectiveFrom
+  );
 }
 
 export class ResumptionCommandConflictError extends Error {
@@ -245,15 +257,21 @@ export async function executeResumptionDecisionCommand(
     throw new ResumptionAssessmentStateError("resumption_base_plan_conflict");
   }
 
-  const effectivePlan = await store.findEffectivePlanVersion(
-    tracker.id,
-    assessment.snapshot.recommendedEffectiveFrom,
-  );
-  if (!effectivePlan) {
+  const [effectivePlan, timelineHead] = await Promise.all([
+    store.findEffectivePlanVersion(
+      tracker.id,
+      assessment.snapshot.recommendedEffectiveFrom,
+    ),
+    store.findPlanTimelineHead(tracker.id),
+  ]);
+  if (!effectivePlan || !timelineHead) {
     throw new ResumptionAssessmentStateError("resumption_base_plan_not_found");
   }
 
-  if (effectivePlan.id !== assessment.snapshot.basePlanVersion.id) {
+  if (
+    effectivePlan.id !== assessment.snapshot.basePlanVersion.id ||
+    !samePlanVersionPointer(timelineHead, assessment.snapshot.timelineHead)
+  ) {
     const replacement = await store.buildReplacementAssessment(
       assessment,
       input.replacementAssessmentId,
@@ -332,6 +350,10 @@ export async function executeResumptionDecisionCommand(
     };
     const replayed = await commitOrReplay(store, prepared, input, tracker.key);
     return resultFromEvent(event, replayed);
+  }
+
+  if (!assessment.snapshot.shiftAvailability.allowed) {
+    throw new ResumptionAssessmentStateError("resumption_shift_not_available");
   }
 
   if (input.effectiveFrom !== assessment.snapshot.recommendedEffectiveFrom) {

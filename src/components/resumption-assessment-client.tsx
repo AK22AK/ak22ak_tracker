@@ -258,6 +258,7 @@ export function ResumptionAssessmentClient({
             type="radio"
             name="resumption-decision"
             value="shift"
+            disabled={!assessment.shiftAvailability.allowed}
             checked={decision === "shift"}
             onChange={() => setDecision("shift")}
           />
@@ -268,6 +269,15 @@ export function ResumptionAssessmentClient({
             </small>
           </span>
         </label>
+
+        {!assessment.shiftAvailability.allowed ? (
+          <p className="form-message attention" role="note">
+            {assessment.shiftAvailability.reason ===
+            "future_plan_version_exists"
+              ? "已有后续计划版本，暂时不能顺延；请先处理计划时间线。你仍可选择按原计划继续。"
+              : "这份较早的评估缺少完整计划时间线，不能安全顺延；你仍可选择按原计划继续。"}
+          </p>
+        ) : null}
 
         {decision === "shift" ? (
           <div className="resumption-diff" aria-label="顺延日期差异">

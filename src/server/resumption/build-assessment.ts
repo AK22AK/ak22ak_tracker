@@ -31,23 +31,38 @@ export async function buildResumptionAssessmentSnapshot(
   database: Database = getDatabase(),
 ): Promise<ResumptionAssessmentSnapshot> {
   const recommendedEffectiveFrom = shiftLocalDate(input.endDate, 1);
-  const [planRow] = await database
-    .select({
-      id: planVersions.id,
-      version: planVersions.version,
-      effectiveFrom: planVersions.effectiveFrom,
-      document: planVersions.document,
-    })
-    .from(planVersions)
-    .where(
-      and(
-        eq(planVersions.trackerId, input.trackerId),
-        lte(planVersions.effectiveFrom, recommendedEffectiveFrom),
-      ),
-    )
-    .orderBy(desc(planVersions.effectiveFrom), desc(planVersions.version))
-    .limit(1);
+  const [effectiveRows, timelineRows] = await Promise.all([
+    database
+      .select({
+        id: planVersions.id,
+        version: planVersions.version,
+        effectiveFrom: planVersions.effectiveFrom,
+        document: planVersions.document,
+      })
+      .from(planVersions)
+      .where(
+        and(
+          eq(planVersions.trackerId, input.trackerId),
+          lte(planVersions.effectiveFrom, recommendedEffectiveFrom),
+        ),
+      )
+      .orderBy(desc(planVersions.effectiveFrom), desc(planVersions.version))
+      .limit(1),
+    database
+      .select({
+        id: planVersions.id,
+        version: planVersions.version,
+        effectiveFrom: planVersions.effectiveFrom,
+      })
+      .from(planVersions)
+      .where(eq(planVersions.trackerId, input.trackerId))
+      .orderBy(desc(planVersions.version))
+      .limit(1),
+  ]);
+  const planRow = effectiveRows[0];
+  const timelineHead = timelineRows[0];
   if (!planRow) throw new Error("resumption_base_plan_not_found");
+  if (!timelineHead) throw new Error("resumption_plan_timeline_not_found");
   const plan = planVersionSchema.parse(planRow.document);
   const taskByDefinition = new Map(plan.tasks.map((task) => [task.id, task]));
 
@@ -130,6 +145,19 @@ export async function buildResumptionAssessmentSnapshot(
       version: planRow.version,
       effectiveFrom: planRow.effectiveFrom,
     },
+    timelineHead,
+    shiftAvailability:
+      timelineHead.id === planRow.id
+        ? {
+            allowed: true,
+            reason: null,
+            blockingPlanVersion: null,
+          }
+        : {
+            allowed: false,
+            reason: "future_plan_version_exists",
+            blockingPlanVersion: timelineHead,
+          },
     planningTimeZone: input.planningTimeZone,
     createdAt: input.createdAt.toISOString(),
     recommendedEffectiveFrom,

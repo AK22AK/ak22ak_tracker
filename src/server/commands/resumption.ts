@@ -3,7 +3,7 @@ import "server-only";
 import { and, desc, eq, lte } from "drizzle-orm";
 
 import {
-  resumptionAssessmentSnapshotSchema,
+  parseResumptionAssessmentSnapshot,
   type ResumptionAssessmentSnapshot,
 } from "@/domain/resumption";
 import { planVersionSchema, trackerEventSchema } from "@/domain/schemas";
@@ -106,7 +106,7 @@ export function createNeonResumptionDecisionStore(
         throw new Error("resumption_assessment_decision_invalid");
       }
       return {
-        snapshot: resumptionAssessmentSnapshotSchema.parse(row.snapshot),
+        snapshot: parseResumptionAssessmentSnapshot(row.snapshot),
         status,
         decision,
         decidedAt: row.decidedAt?.toISOString() ?? null,
@@ -139,6 +139,16 @@ export function createNeonResumptionDecisionStore(
           ),
         )
         .orderBy(desc(planVersions.effectiveFrom), desc(planVersions.version))
+        .limit(1);
+      return row ? planVersionSchema.parse(row.document) : null;
+    },
+
+    async findPlanTimelineHead(trackerId) {
+      const [row] = await database
+        .select({ document: planVersions.document })
+        .from(planVersions)
+        .where(eq(planVersions.trackerId, trackerId))
+        .orderBy(desc(planVersions.version))
         .limit(1);
       return row ? planVersionSchema.parse(row.document) : null;
     },
@@ -284,6 +294,7 @@ export function createNeonResumptionDecisionStore(
           triggerType: replacement.snapshot.trigger.type,
           triggerId: replacement.snapshot.trigger.id,
           basePlanVersionId: replacement.snapshot.basePlanVersion.id,
+          timelineHeadPlanVersionId: replacement.snapshot.timelineHead.id,
           planningTimeZone: replacement.snapshot.planningTimeZone,
           snapshot: replacement.snapshot,
         }),

@@ -287,6 +287,8 @@ export function createNeonExecutionContextCommandStore(
             triggerType: command.assessment.snapshot.trigger.type,
             triggerId: command.assessment.snapshot.trigger.id,
             basePlanVersionId: command.assessment.snapshot.basePlanVersion.id,
+            timelineHeadPlanVersionId:
+              command.assessment.snapshot.timelineHead.id,
             planningTimeZone: command.assessment.snapshot.planningTimeZone,
             snapshot: command.assessment.snapshot,
           }),
@@ -341,6 +343,8 @@ export function createNeonExecutionContextCommandStore(
             triggerType: command.assessment.snapshot.trigger.type,
             triggerId: command.assessment.snapshot.trigger.id,
             basePlanVersionId: command.assessment.snapshot.basePlanVersion.id,
+            timelineHeadPlanVersionId:
+              command.assessment.snapshot.timelineHead.id,
             planningTimeZone: command.assessment.snapshot.planningTimeZone,
             snapshot: command.assessment.snapshot,
           }),

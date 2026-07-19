@@ -3,6 +3,7 @@ import "server-only";
 import { and, eq } from "drizzle-orm";
 
 import {
+  parseResumptionAssessmentSnapshot,
   resumptionAssessmentDtoSchema,
   type ResumptionAssessmentDto,
 } from "@/domain/resumption";
@@ -32,8 +33,9 @@ export async function getResumptionAssessment(
     )
     .limit(1);
   if (!row) return null;
+  const snapshot = parseResumptionAssessmentSnapshot(row.snapshot);
   return resumptionAssessmentDtoSchema.parse({
-    ...row.snapshot,
+    ...snapshot,
     status: row.status,
     decision: row.decision,
     decidedAt: row.decidedAt?.toISOString() ?? null,

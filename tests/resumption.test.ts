@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildShiftedPlanVersion,
   inclusiveLocalDateCount,
+  parseResumptionAssessmentSnapshot,
   shiftLocalDate,
   type ResumptionAssessmentSnapshot,
 } from "@/domain/resumption";
@@ -61,6 +62,16 @@ const snapshot: ResumptionAssessmentSnapshot = {
     id: basePlan.id,
     version: basePlan.version,
     effectiveFrom: basePlan.effectiveFrom,
+  },
+  timelineHead: {
+    id: basePlan.id,
+    version: basePlan.version,
+    effectiveFrom: basePlan.effectiveFrom,
+  },
+  shiftAvailability: {
+    allowed: true,
+    reason: null,
+    blockingPlanVersion: null,
   },
   planningTimeZone: "Asia/Shanghai",
   createdAt: "2026-07-22T08:00:00.000Z",
@@ -122,5 +133,20 @@ describe("resumption plan helpers", () => {
       }),
     ]);
     expect(basePlan.tasks[1]?.scheduledDate).toBe("2026-07-23");
+  });
+
+  it("parses a legacy snapshot conservatively without enabling shift", () => {
+    const legacy: Record<string, unknown> = { ...snapshot };
+    delete legacy.timelineHead;
+    delete legacy.shiftAvailability;
+
+    expect(parseResumptionAssessmentSnapshot(legacy)).toMatchObject({
+      timelineHead: snapshot.basePlanVersion,
+      shiftAvailability: {
+        allowed: false,
+        reason: "timeline_snapshot_missing",
+        blockingPlanVersion: null,
+      },
+    });
   });
 });

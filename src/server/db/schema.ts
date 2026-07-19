@@ -288,6 +288,9 @@ export const resumptionAssessments = pgTable(
     basePlanVersionId: uuid("base_plan_version_id")
       .notNull()
       .references(() => planVersions.id, { onDelete: "restrict" }),
+    timelineHeadPlanVersionId: uuid("timeline_head_plan_version_id")
+      .notNull()
+      .references(() => planVersions.id, { onDelete: "restrict" }),
     planningTimeZone: text("planning_time_zone").notNull(),
     status: text("status").default("pending").notNull(),
     snapshot: jsonb("snapshot").$type<ResumptionAssessmentSnapshot>().notNull(),
@@ -310,6 +313,7 @@ export const resumptionAssessments = pgTable(
       table.triggerType,
       table.triggerId,
       table.basePlanVersionId,
+      table.timelineHeadPlanVersionId,
     ),
     index("resumption_assessments_tracker_status_index").on(
       table.trackerId,

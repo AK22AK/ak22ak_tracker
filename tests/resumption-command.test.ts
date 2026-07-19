@@ -51,6 +51,7 @@ const basePlan: PlanVersion = {
 function snapshot(
   id = assessmentId,
   base = basePlan,
+  timelineHead = base,
 ): ResumptionAssessmentSnapshot {
   return {
     schemaVersion,
@@ -70,6 +71,27 @@ function snapshot(
       version: base.version,
       effectiveFrom: base.effectiveFrom,
     },
+    timelineHead: {
+      id: timelineHead.id,
+      version: timelineHead.version,
+      effectiveFrom: timelineHead.effectiveFrom,
+    },
+    shiftAvailability:
+      timelineHead.id === base.id
+        ? {
+            allowed: true,
+            reason: null,
+            blockingPlanVersion: null,
+          }
+        : {
+            allowed: false,
+            reason: "future_plan_version_exists",
+            blockingPlanVersion: {
+              id: timelineHead.id,
+              version: timelineHead.version,
+              effectiveFrom: timelineHead.effectiveFrom,
+            },
+          },
     planningTimeZone: "Asia/Shanghai",
     createdAt: "2026-07-22T08:00:00.000Z",
     recommendedEffectiveFrom: "2026-07-23",
@@ -163,15 +185,26 @@ function createStore() {
     findEffectivePlanVersion: vi.fn(
       async () => plans.get(effectivePlanId) ?? null,
     ),
+    findPlanTimelineHead: vi.fn(
+      async () =>
+        [...plans.values()].sort(
+          (left, right) => right.version - left.version,
+        )[0] ?? null,
+    ),
     nextPlanVersion: vi.fn(
       async () =>
         Math.max(...[...plans.values()].map((plan) => plan.version)) + 1,
     ),
-    buildReplacementAssessment: vi.fn(async (existing, id, createdAt) => ({
-      ...snapshot(id, plans.get(effectivePlanId)!),
-      trigger: existing.snapshot.trigger,
-      createdAt: createdAt.toISOString(),
-    })),
+    buildReplacementAssessment: vi.fn(async (existing, id, createdAt) => {
+      const head = [...plans.values()].sort(
+        (left, right) => right.version - left.version,
+      )[0]!;
+      return {
+        ...snapshot(id, plans.get(effectivePlanId)!, head),
+        trigger: existing.snapshot.trigger,
+        createdAt: createdAt.toISOString(),
+      };
+    }),
     commitAtomically: vi.fn(async (prepared: PreparedResumptionCommand) => {
       if (failCommit) throw new Error("anonymous_commit_failure");
       if (prepared.type === "expire") {
@@ -210,6 +243,9 @@ function createStore() {
     setEffectivePlan(plan: PlanVersion) {
       plans.set(plan.id, plan);
       effectivePlanId = plan.id;
+    },
+    addFuturePlan(plan: PlanVersion) {
+      plans.set(plan.id, plan);
     },
     setFailCommit(value: boolean) {
       failCommit = value;
@@ -294,6 +330,87 @@ describe("resumption decisions", () => {
       assessments.get("019c0000-0000-7000-8000-000000000207")?.snapshot
         .basePlanVersion.id,
     ).toBe(newer.id);
+  });
+
+  it.each(["keep_original", "shift"] as const)(
+    "expires a stale %s assessment when a future timeline version was added",
+    async (decision) => {
+      const { store, assessments, addFuturePlan } = createStore();
+      const future = {
+        ...basePlan,
+        id: "019c0000-0000-7000-8000-000000000219",
+        version: 2,
+        effectiveFrom: "2026-08-01",
+      };
+      addFuturePlan(future);
+
+      const result = await executeResumptionDecisionCommand(store, {
+        ...command(decision),
+        trackerKey: "anonymous-tracker",
+      });
+
+      expect(result).toMatchObject({
+        status: "expired",
+        replacementAssessmentId: "019c0000-0000-7000-8000-000000000207",
+      });
+      expect(assessments.get(assessmentId)?.status).toBe("expired");
+      expect(
+        assessments.get("019c0000-0000-7000-8000-000000000207")?.snapshot,
+      ).toMatchObject({
+        timelineHead: { id: future.id, version: 2 },
+        shiftAvailability: {
+          allowed: false,
+          reason: "future_plan_version_exists",
+        },
+      });
+    },
+  );
+
+  it("rejects shift when a future timeline version already existed at assessment creation", async () => {
+    const { store, assessments, addFuturePlan } = createStore();
+    const future = {
+      ...basePlan,
+      id: "019c0000-0000-7000-8000-000000000220",
+      version: 2,
+      effectiveFrom: "2026-08-01",
+    };
+    addFuturePlan(future);
+    const current = assessments.get(assessmentId)!;
+    assessments.set(assessmentId, {
+      ...current,
+      snapshot: snapshot(assessmentId, basePlan, future),
+    });
+
+    await expect(
+      executeResumptionDecisionCommand(store, {
+        ...command("shift"),
+        trackerKey: "anonymous-tracker",
+      }),
+    ).rejects.toMatchObject({ message: "resumption_shift_not_available" });
+    expect(assessments.get(assessmentId)?.status).toBe("pending");
+  });
+
+  it("still permits keep original when a future timeline version existed at assessment creation", async () => {
+    const { store, assessments, addFuturePlan } = createStore();
+    const future = {
+      ...basePlan,
+      id: "019c0000-0000-7000-8000-000000000221",
+      version: 2,
+      effectiveFrom: "2026-08-01",
+    };
+    addFuturePlan(future);
+    const current = assessments.get(assessmentId)!;
+    assessments.set(assessmentId, {
+      ...current,
+      snapshot: snapshot(assessmentId, basePlan, future),
+    });
+
+    await expect(
+      executeResumptionDecisionCommand(store, {
+        ...command("keep_original"),
+        trackerKey: "anonymous-tracker",
+      }),
+    ).resolves.toMatchObject({ status: "kept_original" });
   });
 
   it("does not change the assessment when the atomic commit fails", async () => {

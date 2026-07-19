@@ -42,6 +42,16 @@ function assessment() {
       version: 2,
       effectiveFrom: "2026-07-01",
     },
+    timelineHead: {
+      id: planId,
+      version: 2,
+      effectiveFrom: "2026-07-01",
+    },
+    shiftAvailability: {
+      allowed: true,
+      reason: null,
+      blockingPlanVersion: null,
+    },
     planningTimeZone: "Asia/Shanghai",
     createdAt: "2026-07-22T08:00:00.000Z",
     recommendedEffectiveFrom: "2026-07-23",
@@ -174,5 +184,45 @@ describe("resumption assessment UI", () => {
     const body = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
     expect(body.decision).toBe("keep_original");
     expect(body).not.toHaveProperty("newPlanVersionId");
+  });
+
+  it("disables shift when a future plan version already exists", async () => {
+    const blocked = assessment();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response({
+          ...blocked,
+          timelineHead: {
+            id: "019c0000-0000-7000-8000-000000000390",
+            version: 3,
+            effectiveFrom: "2026-08-01",
+          },
+          shiftAvailability: {
+            allowed: false,
+            reason: "future_plan_version_exists",
+            blockingPlanVersion: {
+              id: "019c0000-0000-7000-8000-000000000390",
+              version: 3,
+              effectiveFrom: "2026-08-01",
+            },
+          },
+        }),
+      ),
+    );
+    renderClient();
+
+    const shift = await screen.findByRole("radio", {
+      name: /顺延后续安排/,
+    });
+    expect((shift as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByText(/已有后续计划版本，暂时不能顺延/)).toBeTruthy();
+    expect(
+      (
+        screen.getByRole("radio", {
+          name: /按原计划继续/,
+        }) as HTMLInputElement
+      ).disabled,
+    ).toBe(false);
   });
 });

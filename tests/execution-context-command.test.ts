@@ -127,6 +127,16 @@ function createMemoryStore() {
           version: 1,
           effectiveFrom: "2026-07-01",
         },
+        timelineHead: {
+          id: "019c0000-0000-7000-8000-000000000090",
+          version: 1,
+          effectiveFrom: "2026-07-01",
+        },
+        shiftAvailability: {
+          allowed: true as const,
+          reason: null,
+          blockingPlanVersion: null,
+        },
         planningTimeZone: input.planningTimeZone,
         createdAt: input.createdAt.toISOString(),
         recommendedEffectiveFrom: "2026-07-25",
