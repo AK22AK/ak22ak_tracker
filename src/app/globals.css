@@ -75,6 +75,101 @@ a {
   -webkit-tap-highlight-color: transparent;
 }
 
+.integration-card {
+  padding: 1.25rem;
+  border: 1px solid var(--line);
+  background: var(--card);
+}
+
+.integration-heading,
+.integration-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.integration-connected,
+.integration-idle {
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.integration-connected {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.integration-idle {
+  background: var(--paper);
+  color: var(--muted);
+}
+
+.integration-description,
+.integration-actions p,
+.integration-message {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.integration-description {
+  margin-top: 0.75rem;
+}
+
+.integration-form {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 1.2rem;
+}
+
+.integration-form label {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.integration-form input {
+  min-height: 2.9rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  background: white;
+  color: var(--ink);
+  font: inherit;
+}
+
+.integration-form button,
+.integration-actions button {
+  min-height: 2.75rem;
+  padding: 0.7rem 0.9rem;
+  border: 0;
+  border-radius: 0.8rem;
+  background: var(--green);
+  color: white;
+  font: inherit;
+  font-weight: 700;
+}
+
+.integration-form button:disabled,
+.integration-actions button:disabled {
+  opacity: 0.5;
+}
+
+.integration-actions {
+  margin-top: 1rem;
+}
+
+.integration-actions p {
+  font-size: 0.78rem;
+  text-align: right;
+}
+
+.integration-message {
+  margin-top: 0.8rem;
+  font-size: 0.86rem;
+}
+
 .app-shell {
   width: min(100%, 560px);
   min-height: 100dvh;

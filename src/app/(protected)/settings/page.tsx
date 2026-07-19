@@ -1,10 +1,31 @@
-import { UnavailableFeaturePage } from "@/components/tab-page-frame";
+import { IntegrationCard } from "@/components/integration-card";
+import { integrationStatusSchema } from "@/domain/integrations";
+import { getIntegrationStatus } from "@/server/integrations/credentials/repository";
+import { integrationProviderDefinitions } from "@/server/integrations/providers";
 
-export default function SettingsPage() {
+const trackerKey = "knee-rehab";
+const planningTimeZone = "Asia/Shanghai";
+
+export default async function SettingsPage() {
+  const status = integrationStatusSchema.parse(
+    await getIntegrationStatus(trackerKey, "xunji"),
+  );
+  const definition = integrationProviderDefinitions.xunji;
+
   return (
-    <UnavailableFeaturePage
-      title="设置"
-      description="当前账户保护和数据边界已经生效。后续将在这里管理追踪器、提醒与同步状态。"
-    />
+    <main className="app-shell page-frame" aria-label="设置页面">
+      <header className="topbar">
+        <div>
+          <p className="eyebrow">AK Tracker</p>
+          <h1>设置</h1>
+        </div>
+      </header>
+      <IntegrationCard
+        trackerKey={trackerKey}
+        planningTimeZone={planningTimeZone}
+        definition={definition}
+        initialStatus={status}
+      />
+    </main>
   );
 }

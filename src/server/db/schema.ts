@@ -190,10 +190,14 @@ export const externalRecords = pgTable(
     localDate: date("local_date").notNull(),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
+    contentHash: text("content_hash").notNull(),
+    sourceVersion: integer("source_version").default(1).notNull(),
+    sourceChangedAt: timestamp("source_changed_at", { withTimezone: true }),
     document: jsonb("document").$type<ExternalRecord>().notNull(),
   },
   (table) => [
     uniqueIndex("external_records_provider_id_unique").on(
+      table.trackerId,
       table.provider,
       table.providerRecordId,
     ),
@@ -217,11 +221,42 @@ export const externalRecordLinks = pgTable(
     status: linkStatus("status").default("suggested").notNull(),
     confidence: integer("confidence"),
     confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+    sourceVersion: integer("source_version").default(1).notNull(),
+    needsReview: boolean("needs_review").default(false).notNull(),
   },
   (table) => [
     uniqueIndex("external_record_links_pair_unique").on(
       table.externalRecordId,
       table.taskInstanceId,
+    ),
+  ],
+);
+
+export const integrationCredentials = pgTable(
+  "integration_credentials",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    trackerId: uuid("tracker_id")
+      .notNull()
+      .references(() => trackers.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    algorithm: text("algorithm").notNull(),
+    keyVersion: integer("key_version").notNull(),
+    nonce: text("nonce").notNull(),
+    ciphertext: text("ciphertext").notNull(),
+    authTag: text("auth_tag").notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("integration_credentials_tracker_provider_unique").on(
+      table.trackerId,
+      table.provider,
     ),
   ],
 );
@@ -268,6 +303,39 @@ export const integrationSyncState = pgTable(
     uniqueIndex("integration_sync_state_tracker_provider_unique").on(
       table.trackerId,
       table.provider,
+    ),
+  ],
+);
+
+export const integrationDateSyncState = pgTable(
+  "integration_date_sync_state",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    trackerId: uuid("tracker_id")
+      .notNull()
+      .references(() => trackers.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    localDate: date("local_date").notNull(),
+    status: syncStatus("status").default("idle").notNull(),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    lastSucceededAt: timestamp("last_succeeded_at", { withTimezone: true }),
+    cachedUntil: timestamp("cached_until", { withTimezone: true }),
+    recordCount: integer("record_count").default(0).notNull(),
+    contentHash: text("content_hash"),
+    lastErrorCode: text("last_error_code"),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("integration_date_sync_tracker_provider_date_unique").on(
+      table.trackerId,
+      table.provider,
+      table.localDate,
+    ),
+    index("integration_date_sync_status_index").on(
+      table.status,
+      table.updatedAt,
     ),
   ],
 );

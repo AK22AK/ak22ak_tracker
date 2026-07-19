@@ -100,13 +100,15 @@ export const externalRecordSchema = z.object({
   schemaVersion: z.literal(schemaVersion),
   id: z.uuid(),
   trackerKey: trackerKeySchema,
-  provider: z.enum(["garmin"]),
+  provider: z.enum(["garmin", "xunji"]),
   providerRecordId: z.string().min(1).max(200),
-  kind: z.enum(["activity", "sleep", "daily_steps"]),
+  kind: z.enum(["activity", "sleep", "daily_steps", "strength_training"]),
   occurredAt: instantSchema,
   localDate: localDateSchema,
   payload: z.record(z.string(), z.unknown()),
   fetchedAt: instantSchema,
+  contentHash: z.string().regex(/^[0-9a-f]{64}$/),
+  sourceVersion: z.number().int().positive(),
 });
 
 export const planChangeOperationSchema = z.discriminatedUnion("type", [

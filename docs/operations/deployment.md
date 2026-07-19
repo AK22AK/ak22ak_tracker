@@ -26,18 +26,18 @@
 具体变量名以 `.env.example` 为准。生产环境变量只保存在 Vercel Secrets，不进入
 GitHub、构建日志、浏览器或数据镜像。
 
-| 类别         | 配置内容                                           |
-| ------------ | -------------------------------------------------- |
-| 数据库       | Neon `DATABASE_URL`                                |
-| 应用身份     | `NEXTAUTH_URL`、`AUTH_SECRET`、`ALLOWED_GITHUB_ID` |
-| GitHub OAuth | OAuth Client ID 与 Client Secret                   |
-| Tracker 策略 | PostgreSQL 不可变私人策略版本，不进入公共代码      |
-| 数据镜像     | 只允许目标私仓 Contents 权限的 fine-grained token  |
-| DeepSeek     | Base URL、API Key、模型、超时和最大输出长度        |
-| Garmin       | 认证加密密钥及加密后的 Provider Session/Token      |
-| 训记         | 数据库中认证加密的 API Key，不使用公开环境变量明文 |
-| 凭证加密     | `INTEGRATION_CREDENTIALS_ENCRYPTION_KEY`           |
-| 定时任务     | `CRON_SECRET`                                      |
+| 类别         | 配置内容                                                                                     |
+| ------------ | -------------------------------------------------------------------------------------------- |
+| 数据库       | Neon `DATABASE_URL`                                                                          |
+| 应用身份     | `NEXTAUTH_URL`、`AUTH_SECRET`、`ALLOWED_GITHUB_ID`                                           |
+| GitHub OAuth | OAuth Client ID 与 Client Secret                                                             |
+| Tracker 策略 | PostgreSQL 不可变私人策略版本，不进入公共代码                                                |
+| 数据镜像     | 只允许目标私仓 Contents 权限的 fine-grained token                                            |
+| DeepSeek     | Base URL、API Key、模型、超时和最大输出长度                                                  |
+| Garmin       | 认证加密密钥及加密后的 Provider Session/Token                                                |
+| 通用集成加密 | `INTEGRATION_CREDENTIALS_ENCRYPTION_KEY` 与 `INTEGRATION_CREDENTIALS_ENCRYPTION_KEY_VERSION` |
+| 训记         | 数据库中认证加密的 API Key，不使用公开环境变量明文                                           |
+| 定时任务     | `CRON_SECRET`                                                                                |
 
 变更 Secret 时同步更新本地示例中的变量名，但不记录真实值。Token 轮换后必须验证旧值
 已经失效，并检查对应集成最近一次成功状态。

@@ -48,6 +48,14 @@ API 和变更入口都重复验证。OAuth App 的 client secret 只配置在 Ve
 - 日志只记录错误代码和关联 ID，不记录身体反馈原文、外部响应全文、Authorization
   请求头或 API Key。
 
+### 外部凭证发布门禁
+
+请求方式、Adapter、固定 endpoint contract 和通用集成 UI 可以进入公共仓库。任何真实
+Garmin Session/Token、训记 API Key、集成加密主密钥、Cookie 或 Authorization 值均
+不得进入源码、文档、测试夹具、日志、构建产物、GitHub 镜像或 Git 历史。测试只使用
+明确标记的匿名假凭证。每次涉及外部集成的提交在推送前必须分别审查 staged diff，并
+对当前仓库和 Git 历史执行 credential scan；发现疑似真实值时停止发布并先完成轮换。
+
 ## 应用边界
 
 - 所有客户端输入使用 Zod 校验，并限制文本长度和枚举范围。
