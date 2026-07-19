@@ -16,7 +16,8 @@
     "schema:export": "tsx scripts/export-json-schemas.ts",
     "plan:import": "tsx scripts/import-plan.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "db:journal:check": "tsx scripts/check-migration-journal.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",

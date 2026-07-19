@@ -52,6 +52,9 @@ API 和变更入口都重复验证。OAuth App 的 client secret 只配置在 Ve
 - 数据库写入与 outbox 创建同事务完成，防止已保存数据永久漏镜像。
 - 发给 DeepSeek 的上下文移除身份、仓库和原始医疗文档，只包含完成任务所需的
   结构化计划片段、近期事件和安全规则摘要。
+- 个性化安全策略不是 Secret，但属于私人领域数据：公共仓库只保存通用 Schema 和
+  执行器；真实策略仅通过鉴权 DTO、PostgreSQL、私人 IndexedDB 白名单和私有镜像
+  流转。每次判定记录策略版本/hash，客户端值不能取代服务端权威重算。
 - Web Push payload 使用抽象提醒文案，不把疼痛、诊断、训练备注放到锁屏通知。
 - 退出登录、身份变化和“清除本机数据”必须共同清理 Query Cache、IndexedDB、
   Cache Storage 中的用户专属状态和跨标签页状态。

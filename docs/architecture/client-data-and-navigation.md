@@ -48,17 +48,30 @@ Next.js App Router 水合、后台刷新、乐观更新和查询失效。
 
 第一版使用以下稳定 Query Key；过期时间是起始值，真实使用后再调：
 
-| Query Key                    | 内容                        | 初始 `staleTime`   |
-| ---------------------------- | --------------------------- | ------------------ |
-| `['tracker', key]`           | 名称、开始日、当前状态      | 30 分钟            |
-| `['plan', key, version]`     | 不可变计划版本              | 无限，版本变更失效 |
-| `['calendar', key, month]`   | 当月任务和反馈摘要          | 5 分钟             |
-| `['day', key, localDate]`    | 某日任务、实际记录和反馈    | 1 分钟             |
-| `['integrations', key]`      | Garmin、GitHub、AI 同步状态 | 1 分钟             |
-| `['proposals', key, status]` | 计划调整建议                | 1 分钟             |
+| Query Key                         | 内容                        | 初始 `staleTime`   |
+| --------------------------------- | --------------------------- | ------------------ |
+| `['tracker', key]`                | 名称、开始日、当前状态      | 30 分钟            |
+| `['safety-policy', key, version]` | 已鉴权的不可变安全策略      | 无限，版本变更失效 |
+| `['plan', key, version]`          | 不可变计划版本              | 无限，版本变更失效 |
+| `['calendar', key, month]`        | 当月任务和反馈摘要          | 5 分钟             |
+| `['day', key, localDate]`         | 某日任务、实际记录和反馈    | 1 分钟             |
+| `['integrations', key]`           | Garmin、GitHub、AI 同步状态 | 1 分钟             |
+| `['proposals', key, status]`      | 计划调整建议                | 1 分钟             |
 
 日历不下载整月所有详情。月查询只返回每一天的计数、状态和标记；某日详情按日期读取，
 读取后留在缓存中。相邻日期或存在任务的日期可以在浏览器空闲时预取。
+
+### P0b 前置数据契约
+
+P0b 在建立页面 Query 前先定义经过鉴权的聚合 DTO。今日 DTO 至少同时返回 Tracker
+摘要、目标日期的有效计划引用、任务/反馈，以及版本化 `TrackerSafetyPolicy`。策略对象
+包含 `policyId`、`version`、`effectiveFrom`、`hash` 和通用 `rules`，但公共源码、夹具
+和测试不得包含真实规则值。
+
+客户端把策略按不可变版本单独写入 Query Cache，使用与服务端相同的通用规则执行器
+提供即时提示。服务端仍做权威重算；DTO 或请求中的版本/hash 只用于缓存一致性和审计，
+不能成为客户端绕过安全规则的授权凭据。该契约通过匿名策略夹具完成 Schema 与执行器
+测试，真实策略只从私人数据域进入运行时。
 
 ## 交互规则
 
@@ -100,6 +113,9 @@ GET  /api/trackers/:key/integrations
 POST /api/events
 PATCH /api/tasks/:id
 ```
+
+`today` 聚合响应负责下发目标日期对应的安全策略版本；后续日详情可以只返回策略引用，
+由 Query Cache 按 `trackerKey + version` 复用不可变策略。
 
 数据访问层先一次取得 tracker 和当前计划上下文，再并行或合并读取任务与事件。
 同一个请求不能像当前实现一样重复查询 tracker 和计划版本。数据库索引、SQL

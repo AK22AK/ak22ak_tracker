@@ -39,8 +39,10 @@ GitHub、构建日志、浏览器或数据镜像。
 变更 Secret 时同步更新本地示例中的变量名，但不记录真实值。Token 轮换后必须验证旧值
 已经失效，并检查对应集成最近一次成功状态。
 
-当前膝关节模块的私人策略由 `KNEE_REHAB_PAIN_YELLOW_THRESHOLD` 配置。部署必须使用
-私人数据域中已经确认的值；公共仓库只保留通用规则执行器和变量占位符。
+当前膝关节模块的私人策略暂由 `KNEE_REHAB_PAIN_YELLOW_THRESHOLD` 配置。它不是
+凭证，只是版本化 `TrackerSafetyPolicy` 进入 PostgreSQL 前的过渡输入；公共仓库只
+保留通用规则执行器和变量占位符。P0b 契约落地后，新策略通过受控导入/管理流程创建
+不可变版本，不能继续靠修改环境变量形成不可审计的规则变化。
 
 ## 首次部署
 
@@ -68,6 +70,14 @@ GitHub、构建日志、浏览器或数据镜像。
 
 Schema 快照的顺序是：公共代码 Schema 与 migration 先完成，数据库升级并验证后，
 再更新私有数据仓库中的 JSON Schema 快照。
+
+正式 migration 只能通过 `pnpm db:migrate` 所代表的 Drizzle 迁移入口或等价的受控
+运维流程执行。禁止使用“拆分 SQL 后逐条执行”的通用脚本绕过
+`drizzle.__drizzle_migrations`。发布验证必须读取 journal 最新记录，将 `created_at`
+与 `drizzle/meta/_journal.json` 对应，并用 Drizzle `readMigrationFiles()` 的 SHA-256
+结果核对 hash；仅看到列或索引存在不代表迁移账本完整。检查结果不得输出连接串或
+任何 Secret。配置目标数据库的 `DATABASE_URL` 后使用 `pnpm db:journal:check` 执行
+这一只读校验；不匹配时命令失败，不自动修改账本。
 
 ## 定时任务
 

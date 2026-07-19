@@ -103,7 +103,7 @@ integration("P0a Neon atomic command integration", () => {
     await database.delete(trackers).where(eq(trackers.id, trackerId));
   });
 
-  it("commits once without an external service and replays canonically (P0-02/03/10)", async () => {
+  it("commits once and replays canonically (P0-02/03)", async () => {
     const store = createNeonTaskCommandStore();
     const commandInput = {
       commandId,

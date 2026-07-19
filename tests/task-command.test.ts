@@ -46,7 +46,7 @@ function createStore() {
   return store;
 }
 
-describe("task command boundary (P0-02/P0-03/P0-10)", () => {
+describe("task command boundary (P0-02/P0-03)", () => {
   it("prepares task projection, event and outbox as one atomic commit", async () => {
     const store = createStore();
     const result = await executeTaskCommand(store, input());
@@ -74,5 +74,4 @@ describe("task command boundary (P0-02/P0-03/P0-10)", () => {
       executeTaskCommand(store, input("skipped")),
     ).rejects.toBeInstanceOf(CommandConflictError);
   });
-
 });
