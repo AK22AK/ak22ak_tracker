@@ -6,12 +6,14 @@ import { getAuthorizedSession } from "@/server/auth/session";
 
 export default async function ProtectedLayout({
   children,
-}: Readonly<{ children: React.ReactNode }>) {
+  feedback,
+}: Readonly<{ children: React.ReactNode; feedback: React.ReactNode }>) {
   if (!(await getAuthorizedSession())) redirect("/login");
 
   return (
     <AppProviders>
       <ProtectedAppShell>{children}</ProtectedAppShell>
+      {feedback}
     </AppProviders>
   );
 }

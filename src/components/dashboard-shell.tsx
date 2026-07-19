@@ -1,6 +1,7 @@
 "use client";
 
-import { type FormEvent, useRef, useState, useSyncExternalStore } from "react";
+import Link from "next/link";
+import { useRef, useState, useSyncExternalStore } from "react";
 
 import {
   createOrReuseClientCommand,
@@ -11,11 +12,6 @@ import type {
   ExternalTrainingRecord,
 } from "@/domain/external-training";
 import type { TaskActual } from "@/domain/schemas";
-import {
-  safetyPolicyReference,
-  type TrackerSafetyPolicy,
-} from "@/domain/safety-policy";
-import { evaluateKneeCheckIn } from "@/modules/knee-rehab/check-in";
 import type { DashboardTask, TodayDashboard } from "@/server/dashboard";
 
 import { SignOutButton } from "./sign-out-button";
@@ -479,150 +475,6 @@ function TaskCard({
   );
 }
 
-function CheckInForm({
-  safetyPolicy,
-  onEvaluated,
-  onSaved,
-}: {
-  safetyPolicy: TrackerSafetyPolicy;
-  onEvaluated: (safetyLevel: "green" | "yellow" | "red") => void;
-  onSaved: (safetyLevel: "green" | "yellow" | "red") => void;
-}) {
-  const [saving, setSaving] = useState(false);
-  const pendingCommand = useRef<PendingClientCommand | null>(null);
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const formElement = event.currentTarget;
-    setSaving(true);
-    try {
-      const form = new FormData(formElement);
-      const payload = {
-        timing: form.get("timing"),
-        leftPain: Number(form.get("leftPain")),
-        rightPain: Number(form.get("rightPain")),
-        swelling: form.get("swelling"),
-        stiffness: form.get("stiffness") === "on",
-        mechanicalSymptoms: form.get("mechanicalSymptoms") === "on",
-        weightBearingIssue: form.get("weightBearingIssue") === "on",
-        localizedBonePain: form.get("localizedBonePain") === "on",
-        nightOrRestPain: form.get("nightOrRestPain") === "on",
-        note: form.get("note"),
-      };
-      const clientSafetyLevel = evaluateKneeCheckIn(
-        {
-          ...payload,
-          timing: payload.timing as
-            "morning" | "post_training" | "next_day" | "incident",
-          swelling: payload.swelling as "none" | "mild" | "obvious",
-          note: String(payload.note ?? ""),
-        },
-        safetyPolicy.rules,
-      );
-      onEvaluated(clientSafetyLevel);
-      const command = createOrReuseClientCommand(
-        pendingCommand.current,
-        payload,
-      );
-      pendingCommand.current = command;
-      const response = await fetch("/api/check-ins", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...payload,
-          ...command.metadata,
-          clientSafetyPolicy: safetyPolicyReference(safetyPolicy),
-        }),
-      });
-      if (!response.ok) throw new Error("check_in_failed");
-      const result = (await response.json()) as {
-        safetyLevel: "green" | "yellow" | "red";
-      };
-      pendingCommand.current = null;
-      formElement.reset();
-      onSaved(result.safetyLevel);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <form className="check-in-form" onSubmit={submit}>
-      <label>
-        反馈时机
-        <select name="timing" defaultValue="post_training">
-          <option value="morning">晨间／训练前</option>
-          <option value="post_training">训练后</option>
-          <option value="next_day">次日反应</option>
-          <option value="incident">突发情况</option>
-        </select>
-      </label>
-      <div className="pain-grid">
-        <label>
-          左膝疼痛（0–10）
-          <input
-            name="leftPain"
-            type="number"
-            min="0"
-            max="10"
-            defaultValue="0"
-            required
-          />
-        </label>
-        <label>
-          右膝疼痛（0–10）
-          <input
-            name="rightPain"
-            type="number"
-            min="0"
-            max="10"
-            defaultValue="0"
-            required
-          />
-        </label>
-      </div>
-      <label>
-        肿胀
-        <select name="swelling" defaultValue="none">
-          <option value="none">无</option>
-          <option value="mild">轻度</option>
-          <option value="obvious">明显</option>
-        </select>
-      </label>
-      <fieldset>
-        <legend>异常表现</legend>
-        <label>
-          <input name="stiffness" type="checkbox" /> 新增僵硬
-        </label>
-        <label>
-          <input name="mechanicalSymptoms" type="checkbox" />{" "}
-          卡锁、伸不直或打软腿
-        </label>
-        <label>
-          <input name="weightBearingIssue" type="checkbox" /> 跛行或无法正常负重
-        </label>
-        <label>
-          <input name="localizedBonePain" type="checkbox" /> 固定骨性位置疼痛
-        </label>
-        <label>
-          <input name="nightOrRestPain" type="checkbox" /> 夜间或静息痛加重
-        </label>
-      </fieldset>
-      <label>
-        主观感受
-        <textarea
-          name="note"
-          maxLength={2000}
-          placeholder="可补充训练感受、触发动作、恢复情况等"
-        />
-      </label>
-      <button type="submit" disabled={saving}>
-        {saving ? "保存中…" : "提交反馈"}
-      </button>
-    </form>
-  );
-}
-
 function taskIdForRecord(
   record: ExternalTrainingRecord,
   tasks: DashboardTask[],
@@ -656,18 +508,14 @@ function safetyGuidance(level: "green" | "yellow" | "red") {
 export function DashboardShell({
   today,
   initialDashboard,
-  safetyPolicy,
   onRefresh,
   onTaskUpdated,
-  onFeedbackSaved,
   onExternalTrainingUpdated,
 }: {
   today: string;
   initialDashboard: TodayDashboard;
-  safetyPolicy: TrackerSafetyPolicy;
   onRefresh: () => Promise<unknown>;
   onTaskUpdated: (task: DashboardTask) => void;
-  onFeedbackSaved: (safetyLevel: "green" | "yellow" | "red") => void;
   onExternalTrainingUpdated: (
     recordId: string,
     association: ExternalRecordAssociation,
@@ -678,11 +526,7 @@ export function DashboardShell({
     () => navigator.onLine,
     () => true,
   );
-  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [lastSafety, setLastSafety] = useState<
-    "green" | "yellow" | "red" | null
-  >(null);
 
   const tasks = initialDashboard.tasks;
   const feedbackCount = initialDashboard.feedbackCount;
@@ -695,7 +539,7 @@ export function DashboardShell({
   const notStarted = initialDashboard.state === "not_started";
   const missing = initialDashboard.state === "missing";
   const latestSafety = initialDashboard.feedbacks.at(-1)?.safetyLevel ?? null;
-  const currentSafety = lastSafety ?? latestSafety;
+  const currentSafety = latestSafety;
   const externalRecords = initialDashboard.externalTrainingRecords;
   const pendingRecords = externalRecords.filter(
     (record) =>
@@ -857,33 +701,12 @@ export function DashboardShell({
             {safetyGuidance(currentSafety)}
           </p>
         ) : null}
-        {!feedbackOpen ? (
-          <p className="feedback-supporting-copy">
-            可提交训练前后、次日反应或突发情况；每天至少记录一次。
-          </p>
-        ) : null}
-        <button
-          className="secondary-button"
-          type="button"
-          onClick={() => setFeedbackOpen((value) => !value)}
-        >
-          {feedbackOpen
-            ? "收起反馈"
-            : feedbackCount > 0
-              ? "再次反馈"
-              : "添加反馈"}
-        </button>
-        {feedbackOpen ? (
-          <CheckInForm
-            safetyPolicy={safetyPolicy}
-            onEvaluated={setLastSafety}
-            onSaved={(safetyLevel) => {
-              setLastSafety(safetyLevel);
-              setFeedbackOpen(false);
-              onFeedbackSaved(safetyLevel);
-            }}
-          />
-        ) : null}
+        <p className="feedback-supporting-copy">
+          可提交训练前后、次日反应或突发情况；每天至少记录一次。
+        </p>
+        <Link className="secondary-button" href="/feedback" scroll={false}>
+          {feedbackCount > 0 ? "再次反馈" : "添加反馈"}
+        </Link>
       </SurfaceCard>
 
       <SurfaceCard className="pending-sources-card" aria-label="待处理来源">

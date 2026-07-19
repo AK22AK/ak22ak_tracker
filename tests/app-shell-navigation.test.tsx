@@ -62,4 +62,17 @@ describe("protected app shell navigation (P0-05)", () => {
     ]);
     expect(screen.queryByText("不可用")).toBeNull();
   });
+
+  it("keeps the feedback subflow within the Today tab", () => {
+    navigation.pathname = "/feedback";
+    render(
+      <ProtectedAppShell>
+        <main>反馈内容</main>
+      </ProtectedAppShell>,
+    );
+
+    expect(
+      screen.getByRole("link", { name: /今日/ }).getAttribute("aria-current"),
+    ).toBe("page");
+  });
 });

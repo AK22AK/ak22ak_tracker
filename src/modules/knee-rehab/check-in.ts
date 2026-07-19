@@ -31,6 +31,14 @@ export const auditedKneeCheckInEventPayloadSchema =
     safetyPolicy: safetyPolicyReferenceSchema,
   });
 
+export const kneeCheckInSaveResultSchema = z.object({
+  id: z.uuid(),
+  safetyLevel: z.enum(["green", "yellow", "red"]),
+  replayed: z.boolean(),
+  safetyPolicy: safetyPolicyReferenceSchema,
+  clientPolicyOutdated: z.boolean(),
+});
+
 export function evaluateKneeCheckIn(
   input: KneeCheckInInput,
   rules: readonly SafetyRule[],

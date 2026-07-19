@@ -118,14 +118,6 @@ export function TodayClient() {
     refreshRelatedData();
   };
 
-  const handleFeedbackSaved = () => {
-    updateDay((day) => ({
-      ...day,
-      feedbackCount: day.feedbackCount + 1,
-    }));
-    refreshRelatedData();
-  };
-
   const handleExternalTrainingUpdated = (
     recordId: string,
     association: ExternalRecordAssociation,
@@ -144,10 +136,8 @@ export function TodayClient() {
     <DashboardShell
       today={todayLabel(localDate)}
       initialDashboard={query.data.day}
-      safetyPolicy={query.data.safetyPolicy}
       onRefresh={() => query.refetch()}
       onTaskUpdated={handleTaskUpdated}
-      onFeedbackSaved={handleFeedbackSaved}
       onExternalTrainingUpdated={handleExternalTrainingUpdated}
     />
   );

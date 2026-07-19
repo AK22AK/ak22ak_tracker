@@ -233,11 +233,6 @@ describe("external training association UI", () => {
     fireEvent.change(screen.getByLabelText("实际训练与主观感受"), {
       target: { value: "未提交任务草稿" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "添加反馈" }));
-    fireEvent.change(screen.getByLabelText("主观感受"), {
-      target: { value: "未提交反馈草稿" },
-    });
-
     const taskCheckbox = screen.getByRole("checkbox", {
       name: "Anonymous strength task",
     }) as HTMLInputElement;
@@ -252,10 +247,6 @@ describe("external training association UI", () => {
       (screen.getByLabelText("实际训练与主观感受") as HTMLTextAreaElement)
         .value,
     ).toBe("未提交任务草稿");
-    expect(
-      (screen.getByLabelText("主观感受") as HTMLTextAreaElement).value,
-    ).toBe("未提交反馈草稿");
-
     const putCall = fetchMock.mock.calls.find(
       ([, init]) => init?.method === "PUT",
     );

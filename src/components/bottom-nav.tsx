@@ -11,7 +11,9 @@ const tabs = [
 ] as const;
 
 function isCurrentTab(pathname: string, href: string) {
-  return href === "/" ? pathname === href : pathname.startsWith(href);
+  return href === "/"
+    ? pathname === href || pathname.startsWith("/feedback")
+    : pathname.startsWith(href);
 }
 
 function shouldUseNativeNavigation(event: MouseEvent<HTMLAnchorElement>) {

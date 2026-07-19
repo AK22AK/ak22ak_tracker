@@ -188,7 +188,7 @@ describe("today background refresh", () => {
     expect(screen.queryByText("已同步到云端")).toBeNull();
   });
 
-  it("preserves task and feedback drafts after server data refreshes", async () => {
+  it("preserves a task draft after server data refreshes", async () => {
     const refreshed = deferred<Response>();
     const fetchMock = vi
       .fn()
@@ -213,10 +213,6 @@ describe("today background refresh", () => {
     );
     const taskDraft = screen.getByLabelText("实际训练与主观感受");
     fireEvent.change(taskDraft, { target: { value: "未提交任务草稿" } });
-    fireEvent.click(screen.getByRole("button", { name: "添加反馈" }));
-    const feedbackDraft = screen.getByLabelText("主观感受");
-    fireEvent.change(feedbackDraft, { target: { value: "未提交反馈草稿" } });
-
     const queryKey = trackerQueryKeys.today("knee-rehab", "2026-07-19");
     const initialUpdatedAt = queryClient.getQueryState(queryKey)?.dataUpdatedAt;
 
@@ -240,10 +236,8 @@ describe("today background refresh", () => {
       (screen.getByLabelText("实际训练与主观感受") as HTMLTextAreaElement)
         .value,
     ).toBe("未提交任务草稿");
-    expect(
-      (screen.getByLabelText("主观感受") as HTMLTextAreaElement).value,
-    ).toBe("未提交反馈草稿");
-    expect(screen.getByRole("button", { name: "提交反馈" })).toBeTruthy();
+    const feedbackLink = screen.getByRole("link", { name: "再次反馈" });
+    expect(feedbackLink.getAttribute("href")).toBe("/feedback");
   });
 
   it("keeps the today hierarchy stable and separates task expansion from completion", async () => {
