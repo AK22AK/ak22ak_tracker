@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import Link from "next/link";
 import {
   act,
   cleanup,
@@ -141,6 +142,13 @@ function renderOverlay(fetchMock: ReturnType<typeof vi.fn>) {
     defaultOptions: { queries: { retry: false } },
   });
   render(
+    <div className="protected-app-shell" data-testid="underlying-shell">
+      <Link href="/feedback" autoFocus>
+        底层反馈入口
+      </Link>
+    </div>,
+  );
+  return render(
     <QueryClientProvider client={queryClient}>
       <FeedbackFlowClient presentation="overlay" />
     </QueryClientProvider>,
@@ -323,6 +331,71 @@ describe("feedback full-screen flow", () => {
 
     expect(navigation.back).toHaveBeenCalledOnce();
     expect(navigation.push).not.toHaveBeenCalled();
+  });
+
+  it("removes the preserved Today shell from focus and the accessibility tree while overlaid", async () => {
+    const view = renderOverlay(providerFetch("green"));
+    const shell = screen.getByTestId("underlying-shell");
+
+    const back = await screen.findByRole("button", { name: "返回今日" });
+    expect(shell.hasAttribute("inert")).toBe(true);
+    expect(shell.getAttribute("aria-hidden")).toBe("true");
+    expect(screen.getByRole("dialog", { name: "记录身体反馈" })).toBeTruthy();
+    expect(document.activeElement).toBe(back);
+
+    view.unmount();
+    expect(shell.hasAttribute("inert")).toBe(false);
+    expect(shell.hasAttribute("aria-hidden")).toBe(false);
+    expect(document.body.style.overflow).toBe("");
+    expect(document.activeElement).toBe(
+      shell.querySelector('a[href="/feedback"]'),
+    );
+  });
+
+  it("keeps loading and error states inside the isolated dialog", async () => {
+    let resolveLoad!: (response: Response) => void;
+    const pendingResponse = new Promise<Response>((resolve) => {
+      resolveLoad = resolve;
+    });
+    const loadingView = renderOverlay(vi.fn(() => pendingResponse));
+    const shell = screen.getByTestId("underlying-shell");
+    const loadingDialog = screen.getByRole("dialog", {
+      name: "正在准备反馈表单",
+    });
+
+    expect(shell.hasAttribute("inert")).toBe(true);
+    expect(document.activeElement).toBe(loadingDialog);
+    await act(async () => {
+      resolveLoad(jsonResponse({}, 503));
+      await pendingResponse;
+    });
+
+    expect(
+      await screen.findByRole("dialog", {
+        name: "反馈表单暂时无法加载",
+      }),
+    ).toBeTruthy();
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "重试加载" }),
+    );
+    expect(shell.hasAttribute("inert")).toBe(true);
+    loadingView.unmount();
+  });
+
+  it("announces and focuses the saved result without exposing Today", async () => {
+    renderOverlay(providerFetch("green"));
+    const shell = screen.getByTestId("underlying-shell");
+
+    await screen.findByRole("heading", { name: "记录身体反馈" });
+    fireEvent.click(screen.getByRole("button", { name: "保存反馈" }));
+    const resultHeading = await screen.findByRole("heading", {
+      name: "反馈已保存",
+    });
+
+    expect(screen.getByRole("dialog", { name: "反馈已保存" })).toBeTruthy();
+    expect(document.activeElement).toBe(resultHeading);
+    expect(shell.hasAttribute("inert")).toBe(true);
+    expect(shell.getAttribute("aria-hidden")).toBe("true");
   });
 
   it("starts a clean additional form and preserves an unsaved draft during background refresh", async () => {

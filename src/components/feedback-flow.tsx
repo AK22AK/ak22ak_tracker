@@ -116,17 +116,44 @@ export function FeedbackFlowClient({
   const [result, setResult] = useState<ReturnType<
     typeof kneeCheckInSaveResultSchema.parse
   > | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const resultHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const pendingCommand = useRef<PendingClientCommand | null>(null);
   const submitting = useRef(false);
 
   useEffect(() => {
     if (presentation !== "overlay") return;
+    const appShell = document.querySelector<HTMLElement>(
+      ".protected-app-shell",
+    );
     const previousOverflow = document.body.style.overflow;
+    const previousAriaHidden = appShell?.getAttribute("aria-hidden") ?? null;
+    const hadInert = appShell?.hasAttribute("inert") ?? false;
     document.body.style.overflow = "hidden";
+    appShell?.setAttribute("inert", "");
+    appShell?.setAttribute("aria-hidden", "true");
+    const initialFocus = overlayRef.current?.querySelector<HTMLElement>(
+      "[data-feedback-initial-focus]",
+    );
+    (initialFocus ?? overlayRef.current)?.focus();
     return () => {
       document.body.style.overflow = previousOverflow;
+      if (appShell) {
+        if (!hadInert) appShell.removeAttribute("inert");
+        if (previousAriaHidden === null) {
+          appShell.removeAttribute("aria-hidden");
+        } else {
+          appShell.setAttribute("aria-hidden", previousAriaHidden);
+        }
+        appShell.querySelector<HTMLElement>('a[href="/feedback"]')?.focus();
+      }
     };
   }, [presentation]);
+
+  useEffect(() => {
+    if (!result || presentation !== "overlay") return;
+    resultHeadingRef.current?.focus();
+  }, [presentation, result]);
 
   const returnToday = () => {
     if (presentation === "overlay") {
@@ -138,10 +165,20 @@ export function FeedbackFlowClient({
 
   if (query.isPending) {
     return (
-      <div className={`feedback-flow-layer ${presentation}`}>
+      <div
+        ref={overlayRef}
+        className={`feedback-flow-layer ${presentation}`}
+        role={presentation === "overlay" ? "dialog" : undefined}
+        aria-modal={presentation === "overlay" ? "true" : undefined}
+        aria-labelledby={
+          presentation === "overlay" ? "feedback-loading-title" : undefined
+        }
+        tabIndex={presentation === "overlay" ? -1 : undefined}
+      >
         <main className="feedback-flow-page" aria-busy="true">
           <section className="surface-card feedback-flow-loading" role="status">
-            正在准备反馈表单…
+            <h1 id="feedback-loading-title">正在准备反馈表单</h1>
+            <p>请稍候，尚未产生或保存任何反馈。</p>
           </section>
         </main>
       </div>
@@ -150,15 +187,26 @@ export function FeedbackFlowClient({
 
   if (query.isError) {
     return (
-      <div className={`feedback-flow-layer ${presentation}`}>
+      <div
+        ref={overlayRef}
+        className={`feedback-flow-layer ${presentation}`}
+        role={presentation === "overlay" ? "dialog" : undefined}
+        aria-modal={presentation === "overlay" ? "true" : undefined}
+        aria-labelledby={
+          presentation === "overlay" ? "feedback-error-title" : undefined
+        }
+        tabIndex={presentation === "overlay" ? -1 : undefined}
+      >
         <main className="feedback-flow-page">
           <section className="surface-card feedback-flow-error" role="alert">
-            <h1>反馈表单暂时无法加载</h1>
+            <h1 id="feedback-error-title">反馈表单暂时无法加载</h1>
             <p>尚未产生或保存任何反馈，可以稍后重试。</p>
             <div className="feedback-result-actions">
               <button
                 className="primary-button"
                 type="button"
+                data-feedback-initial-focus
+                autoFocus={presentation === "overlay"}
                 onClick={() => void query.refetch()}
               >
                 重试加载
@@ -237,7 +285,20 @@ export function FeedbackFlowClient({
   ) => setDraft((current) => ({ ...current, [key]: value }));
 
   return (
-    <div className={`feedback-flow-layer ${presentation}`}>
+    <div
+      ref={overlayRef}
+      className={`feedback-flow-layer ${presentation}`}
+      role={presentation === "overlay" ? "dialog" : undefined}
+      aria-modal={presentation === "overlay" ? "true" : undefined}
+      aria-labelledby={
+        presentation === "overlay"
+          ? result
+            ? "feedback-result-title"
+            : "feedback-form-title"
+          : undefined
+      }
+      tabIndex={presentation === "overlay" ? -1 : undefined}
+    >
       <main className="feedback-flow-page">
         {result ? (
           <section
@@ -245,7 +306,9 @@ export function FeedbackFlowClient({
             aria-live="polite"
           >
             <p className="eyebrow">身体反馈</p>
-            <h1>反馈已保存</h1>
+            <h1 id="feedback-result-title" ref={resultHeadingRef} tabIndex={-1}>
+              反馈已保存
+            </h1>
             <StatusPill
               tone={safetyTone(result.safetyLevel)}
               icon={result.safetyLevel === "green" ? "✓" : "!"}
@@ -290,6 +353,8 @@ export function FeedbackFlowClient({
                 className="feedback-back-button"
                 type="button"
                 aria-label="返回今日"
+                data-feedback-initial-focus
+                autoFocus={presentation === "overlay"}
                 onClick={returnToday}
               >
                 <span aria-hidden="true">‹</span>
@@ -297,7 +362,7 @@ export function FeedbackFlowClient({
               </button>
               <div>
                 <p className="eyebrow">身体反馈</p>
-                <h1>记录身体反馈</h1>
+                <h1 id="feedback-form-title">记录身体反馈</h1>
               </div>
             </header>
 
