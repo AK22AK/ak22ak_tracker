@@ -80,11 +80,14 @@ function renderCalendar(initialDate = "2026-07-19") {
 
 describe("calendar instant interaction (P0-04/P0-06)", () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-07-19T04:00:00.000Z"));
     window.history.replaceState(null, "", "/calendar?date=2026-07-19");
   });
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
