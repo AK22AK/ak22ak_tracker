@@ -44,7 +44,7 @@ export type ProviderDateSyncStore = {
   }): Promise<void>;
 };
 
-function publicErrorCode(error: unknown): string {
+export function providerPublicErrorCode(error: unknown): string {
   if (
     typeof error === "object" &&
     error !== null &&
@@ -90,7 +90,7 @@ export async function syncProviderDate(input: {
       provider: input.provider,
       date: input.date,
       failedAt: input.now,
-      errorCode: publicErrorCode(error),
+      errorCode: providerPublicErrorCode(error),
     });
     throw error;
   }

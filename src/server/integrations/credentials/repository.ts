@@ -1,10 +1,11 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
 import { getDatabase } from "@/server/db/client";
 import {
   integrationCredentials,
+  integrationDateSyncState,
   integrationSyncState,
   trackers,
 } from "@/server/db/schema";
@@ -41,6 +42,7 @@ export async function requireIntegrationTracker(
     .select({
       id: trackers.id,
       key: trackers.key,
+      startedOn: trackers.startedOn,
       planningTimeZone: trackers.planningTimeZone,
     })
     .from(trackers)
@@ -56,7 +58,7 @@ export async function getIntegrationStatus(
   database: Database = getDatabase(),
 ) {
   const tracker = await requireIntegrationTracker(trackerKey, database);
-  const [credential, sync] = await Promise.all([
+  const [credential, latestSuccessfulDate, sync] = await Promise.all([
     database
       .select({
         verifiedAt: integrationCredentials.verifiedAt,
@@ -69,6 +71,18 @@ export async function getIntegrationStatus(
           eq(integrationCredentials.provider, provider),
         ),
       )
+      .limit(1),
+    database
+      .select({ localDate: integrationDateSyncState.localDate })
+      .from(integrationDateSyncState)
+      .where(
+        and(
+          eq(integrationDateSyncState.trackerId, tracker.id),
+          eq(integrationDateSyncState.provider, provider),
+          eq(integrationDateSyncState.status, "succeeded"),
+        ),
+      )
+      .orderBy(desc(integrationDateSyncState.localDate))
       .limit(1),
     database
       .select({
@@ -99,6 +113,7 @@ export async function getIntegrationStatus(
       status: syncRow?.status ?? "idle",
       lastAttemptAt: syncRow?.lastAttemptAt?.toISOString() ?? null,
       lastSucceededAt: syncRow?.lastSucceededAt?.toISOString() ?? null,
+      lastSucceededDate: latestSuccessfulDate[0]?.localDate ?? null,
       lastErrorCode: syncRow?.lastErrorCode ?? null,
     },
   };

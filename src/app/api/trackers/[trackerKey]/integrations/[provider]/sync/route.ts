@@ -1,19 +1,14 @@
-import { ZodError, z } from "zod";
-
-import { localDateSchema } from "@/domain/schemas";
+import { integrationCatchUpResultSchema } from "@/domain/integrations";
 import { getAuthorizedSession } from "@/server/auth/session";
 import {
   IntegrationCredentialNotFoundError,
   IntegrationTrackerNotFoundError,
 } from "@/server/integrations/credentials/repository";
 import { isSupportedIntegrationProvider } from "@/server/integrations/providers";
-import { XunjiProviderError } from "@/server/integrations/xunji/adapter";
-import { syncXunjiDate } from "@/server/integrations/xunji/runtime";
-
-const syncInputSchema = z.object({ date: localDateSchema });
+import { syncXunjiCatchUpBatch } from "@/server/integrations/xunji/runtime";
 
 export async function POST(
-  request: Request,
+  _request: Request,
   { params }: { params: Promise<{ trackerKey: string; provider: string }> },
 ) {
   if (!(await getAuthorizedSession())) {
@@ -27,10 +22,11 @@ export async function POST(
     );
   }
   try {
-    const { date } = syncInputSchema.parse(await request.json());
     if (route.provider === "xunji") {
       return Response.json(
-        await syncXunjiDate({ trackerKey: route.trackerKey, date }),
+        integrationCatchUpResultSchema.parse(
+          await syncXunjiCatchUpBatch({ trackerKey: route.trackerKey }),
+        ),
       );
     }
     return Response.json(
@@ -38,23 +34,11 @@ export async function POST(
       { status: 404 },
     );
   } catch (error) {
-    if (error instanceof ZodError) {
-      return Response.json({ error: "invalid_request" }, { status: 400 });
-    }
     if (error instanceof IntegrationCredentialNotFoundError) {
       return Response.json({ error: error.message }, { status: 409 });
     }
     if (error instanceof IntegrationTrackerNotFoundError) {
       return Response.json({ error: error.message }, { status: 404 });
-    }
-    if (error instanceof XunjiProviderError) {
-      const status =
-        error.code === "authentication"
-          ? 401
-          : error.code === "rate_limited"
-            ? 429
-            : 502;
-      return Response.json({ error: error.code }, { status });
     }
     throw error;
   }

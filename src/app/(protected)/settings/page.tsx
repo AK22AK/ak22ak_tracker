@@ -4,8 +4,6 @@ import { getIntegrationStatus } from "@/server/integrations/credentials/reposito
 import { integrationProviderDefinitions } from "@/server/integrations/providers";
 
 const trackerKey = "knee-rehab";
-const planningTimeZone = "Asia/Shanghai";
-
 export default async function SettingsPage() {
   const status = integrationStatusSchema.parse(
     await getIntegrationStatus(trackerKey, "xunji"),
@@ -22,7 +20,6 @@ export default async function SettingsPage() {
       </header>
       <IntegrationCard
         trackerKey={trackerKey}
-        planningTimeZone={planningTimeZone}
         definition={definition}
         initialStatus={status}
       />
