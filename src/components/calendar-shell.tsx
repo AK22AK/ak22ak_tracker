@@ -5,8 +5,10 @@ import type {
   DashboardTask,
   TodayDashboard,
 } from "@/server/dashboard";
+import type { ExternalRecordAssociation } from "@/domain/external-training";
 
 import { SignOutButton } from "./sign-out-button";
+import { ExternalTrainingSection } from "./external-training-section";
 
 const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
 const timingLabels: Record<DashboardFeedback["timing"], string> = {
@@ -153,6 +155,7 @@ export function CalendarShell({
   detailError,
   onSelectDate,
   onSelectMonth,
+  onExternalTrainingUpdated,
 }: {
   month: string;
   today: string;
@@ -163,6 +166,10 @@ export function CalendarShell({
   detailError: boolean;
   onSelectDate: (date: string) => void;
   onSelectMonth: (month: string) => void;
+  onExternalTrainingUpdated: (
+    recordId: string,
+    association: ExternalRecordAssociation,
+  ) => void;
 }) {
   const summaries = new Map(days.map((day) => [day.date, day]));
   const cells = calendarMonthCells(month);
@@ -274,6 +281,12 @@ export function CalendarShell({
         )}
         {dashboard && !detailLoading && !detailError && (
           <>
+            <ExternalTrainingSection
+              trackerKey="knee-rehab"
+              records={dashboard.externalTrainingRecords}
+              tasks={dashboard.tasks}
+              onUpdated={onExternalTrainingUpdated}
+            />
             <div className="calendar-task-list">
               {dashboard.tasks.map((task) => (
                 <article

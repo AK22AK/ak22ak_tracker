@@ -43,6 +43,13 @@
       "when": 1784450388005,
       "tag": "0005_heavy_rafael_vega",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784454660649,
+      "tag": "0006_mysterious_leo",
+      "breakpoints": true
     }
   ]
 }

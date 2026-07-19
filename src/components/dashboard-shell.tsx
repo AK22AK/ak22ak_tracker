@@ -6,6 +6,7 @@ import {
   createOrReuseClientCommand,
   type PendingClientCommand,
 } from "@/domain/client-command";
+import type { ExternalRecordAssociation } from "@/domain/external-training";
 import type { TaskActual } from "@/domain/schemas";
 import {
   safetyPolicyReference,
@@ -15,6 +16,7 @@ import { evaluateKneeCheckIn } from "@/modules/knee-rehab/check-in";
 import type { DashboardTask, TodayDashboard } from "@/server/dashboard";
 
 import { SignOutButton } from "./sign-out-button";
+import { ExternalTrainingSection } from "./external-training-section";
 
 function subscribeToNetworkState(onStoreChange: () => void) {
   window.addEventListener("online", onStoreChange);
@@ -518,6 +520,7 @@ export function DashboardShell({
   onRefresh,
   onTaskUpdated,
   onFeedbackSaved,
+  onExternalTrainingUpdated,
 }: {
   today: string;
   initialDashboard: TodayDashboard;
@@ -525,6 +528,10 @@ export function DashboardShell({
   onRefresh: () => Promise<unknown>;
   onTaskUpdated: (task: DashboardTask) => void;
   onFeedbackSaved: (safetyLevel: "green" | "yellow" | "red") => void;
+  onExternalTrainingUpdated: (
+    recordId: string,
+    association: ExternalRecordAssociation,
+  ) => void;
 }) {
   const online = useSyncExternalStore(
     subscribeToNetworkState,
@@ -614,6 +621,12 @@ export function DashboardShell({
             按计划恢复即可；如果有突发反应，仍可以随时提交反馈。
           </p>
         )}
+        <ExternalTrainingSection
+          trackerKey="knee-rehab"
+          records={initialDashboard.externalTrainingRecords}
+          tasks={tasks}
+          onUpdated={onExternalTrainingUpdated}
+        />
         {tasks.length > 0 && (
           <div className="task-list">
             {tasks.map((task) => (

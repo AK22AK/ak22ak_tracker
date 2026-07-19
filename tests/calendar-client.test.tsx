@@ -60,6 +60,7 @@ function dayAggregate(date: string, title: string) {
       ],
       feedbackCount: 0,
       feedbacks: [],
+      externalTrainingRecords: [],
     },
   };
 }

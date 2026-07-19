@@ -10,6 +10,7 @@ import {
   safetyPolicyReferenceSchema,
   trackerSafetyPolicySchema,
 } from "./safety-policy";
+import { externalTrainingRecordSchema } from "./external-training";
 
 export const dashboardTaskSchema = z.object({
   id: z.uuid(),
@@ -42,6 +43,7 @@ export const dayDashboardSchema = z.object({
   tasks: z.array(dashboardTaskSchema),
   feedbackCount: z.number().int().nonnegative(),
   feedbacks: z.array(dashboardFeedbackSchema),
+  externalTrainingRecords: z.array(externalTrainingRecordSchema),
 });
 
 export const trackerSummarySchema = z.object({

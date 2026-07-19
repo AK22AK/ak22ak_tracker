@@ -24,7 +24,8 @@
         "training_log",
         "symptom_check_in",
         "subjective_note",
-        "plan_change_decision"
+        "plan_change_decision",
+        "external_record_link_decision"
       ]
     },
     "occurredAt": {

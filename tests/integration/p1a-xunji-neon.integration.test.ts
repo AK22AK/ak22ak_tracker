@@ -1,11 +1,20 @@
 import { randomBytes, randomUUID } from "node:crypto";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { schemaVersion } from "@/domain/schemas";
 import { createNeonTaskCommandStore } from "@/server/commands/task-command";
 import { executeTaskCommand } from "@/server/commands/task-command-core";
+import { createNeonExternalRecordAssociationStore } from "@/server/commands/external-record-association";
+import {
+  AssociationSourceVersionConflictError,
+  AssociationTargetInvalidError,
+  executeExternalRecordAssociationCommand,
+  type ExternalRecordAssociationCommandInput,
+  ExternalRecordNotFoundError,
+} from "@/server/commands/external-record-association-core";
+import { getDayAggregate } from "@/server/aggregates/tracker";
 import { getDatabase } from "@/server/db/client";
 import {
   events,
@@ -35,7 +44,12 @@ integration("P1a Xunji provider-neutral database slice", () => {
   const trackerKey = `anonymous-${randomUUID()}`;
   const planVersionId = randomUUID();
   const taskId = randomUUID();
+  const secondTaskId = randomUUID();
+  const wrongDateTaskId = randomUUID();
+  const associationRecordId = randomUUID();
+  const displayRecordId = randomUUID();
   const taskCommandId = randomUUID();
+  const associationCommandIds = [randomUUID(), randomUUID(), randomUUID()];
   const date = "2026-07-19";
   const trainStart = Date.parse("2026-07-19T10:00:00+08:00");
   const trainEnd = Date.parse("2026-07-19T11:00:00+08:00");
@@ -80,16 +94,121 @@ integration("P1a Xunji provider-neutral database slice", () => {
         effectiveFrom: date,
         createdAt: "2026-07-19T00:00:00.000Z",
         createdBy: "import",
-        tasks: [],
+        tasks: [
+          {
+            id: "anonymous-task",
+            title: "Anonymous strength task",
+            scheduledDate: date,
+            sortOrder: 0,
+            category: "strength",
+            prescription: {
+              exercises: [{ name: "Anonymous movement", dose: "2 × 8" }],
+            },
+          },
+          {
+            id: "anonymous-task-two",
+            title: "Anonymous alternative task",
+            scheduledDate: date,
+            sortOrder: 1,
+            category: "strength",
+            prescription: {
+              exercises: [{ name: "Other movement", dose: "2 × 8" }],
+            },
+          },
+          {
+            id: "anonymous-task-wrong-date",
+            title: "Anonymous wrong date task",
+            scheduledDate: "2026-07-20",
+            sortOrder: 2,
+            category: "strength",
+            prescription: {},
+          },
+        ],
       },
     });
-    await database.insert(taskInstances).values({
-      id: taskId,
-      trackerId,
-      planVersionId,
-      taskDefinitionId: "anonymous-task",
-      scheduledOn: date,
+    await database.insert(taskInstances).values([
+      {
+        id: taskId,
+        trackerId,
+        planVersionId,
+        taskDefinitionId: "anonymous-task",
+        scheduledOn: date,
+      },
+      {
+        id: secondTaskId,
+        trackerId,
+        planVersionId,
+        taskDefinitionId: "anonymous-task-two",
+        scheduledOn: date,
+      },
+      {
+        id: wrongDateTaskId,
+        trackerId,
+        planVersionId,
+        taskDefinitionId: "anonymous-task-wrong-date",
+        scheduledOn: "2026-07-20",
+      },
+    ]);
+    const externalDocument = (
+      id: string,
+      providerRecordId: string,
+      title: string,
+      sourceVersion: number,
+    ) => ({
+      schemaVersion,
+      id,
+      trackerKey,
+      provider: "xunji" as const,
+      providerRecordId,
+      kind: "strength_training" as const,
+      occurredAt: new Date(trainStart).toISOString(),
+      localDate: date,
+      payload: {
+        ...anonymousTrain(title),
+        internalMarker: "must-not-reach-client",
+      },
+      fetchedAt: "2026-07-19T08:00:00.000Z",
+      contentHash: (sourceVersion === 1 ? "a" : "b").repeat(64),
+      sourceVersion,
     });
+    await database.insert(externalRecords).values([
+      {
+        id: associationRecordId,
+        trackerId,
+        provider: "xunji",
+        providerRecordId: "anonymous-association-record",
+        kind: "strength_training",
+        localDate: date,
+        occurredAt: new Date(trainStart),
+        fetchedAt: new Date("2026-07-19T08:00:00.000Z"),
+        contentHash: "b".repeat(64),
+        sourceVersion: 2,
+        document: externalDocument(
+          associationRecordId,
+          "anonymous-association-record",
+          "Anonymous association session",
+          2,
+        ),
+      },
+      {
+        id: displayRecordId,
+        trackerId,
+        provider: "xunji",
+        providerRecordId: "anonymous-display-record",
+        kind: "strength_training",
+        localDate: date,
+        occurredAt: new Date(trainStart),
+        fetchedAt: new Date("2026-07-19T08:00:00.000Z"),
+        contentHash: "a".repeat(64),
+        sourceVersion: 1,
+        document: externalDocument(
+          displayRecordId,
+          "anonymous-display-record",
+          "Anonymous display session",
+          1,
+        ),
+      },
+    ]);
   });
 
   afterAll(async () => {
@@ -97,7 +216,12 @@ integration("P1a Xunji provider-neutral database slice", () => {
     const database = getDatabase();
     await database
       .delete(githubSyncOutbox)
-      .where(eq(githubSyncOutbox.aggregateId, taskCommandId));
+      .where(
+        inArray(githubSyncOutbox.aggregateId, [
+          taskCommandId,
+          ...associationCommandIds,
+        ]),
+      );
     await database.delete(trackers).where(eq(trackers.id, trackerId));
     delete process.env.INTEGRATION_CREDENTIALS_ENCRYPTION_KEY;
     delete process.env.INTEGRATION_CREDENTIALS_ENCRYPTION_KEY_VERSION;
@@ -130,6 +254,151 @@ integration("P1a Xunji provider-neutral database slice", () => {
     await expect(
       readIntegrationCredential({ trackerId, provider: "xunji", database }),
     ).resolves.toBe("anonymous-fake-key");
+  });
+
+  it("returns only the authenticated Xunji display projection and a conservative same-day suggestion", async () => {
+    const aggregate = await getDayAggregate(trackerKey, date);
+    const record = aggregate.day.externalTrainingRecords.find(
+      (item) => item.id === displayRecordId,
+    );
+
+    expect(record).toMatchObject({
+      id: displayRecordId,
+      sourceVersion: 1,
+      details: {
+        title: "Anonymous display session",
+        startedAt: new Date(trainStart).toISOString(),
+        endedAt: new Date(trainEnd).toISOString(),
+        movements: [
+          expect.objectContaining({
+            name: "Anonymous movement",
+            sets: [expect.objectContaining({ weight: 10, reps: 8 })],
+          }),
+        ],
+      },
+      association: null,
+      suggestion: { taskId },
+    });
+    expect(JSON.stringify(record)).not.toContain("must-not-reach-client");
+    expect(JSON.stringify(record)).not.toContain("anonymous-display-record");
+  });
+
+  it("confirms, replaces and clears one current link without changing task completion", async () => {
+    const database = getDatabase();
+    const store = createNeonExternalRecordAssociationStore(database);
+    const input = (
+      commandId: string,
+      decision: "link" | "unrelated",
+      linkedTaskId?: string,
+    ): ExternalRecordAssociationCommandInput =>
+      ({
+        commandId,
+        trackerKey,
+        externalRecordId: associationRecordId,
+        sourceVersion: 2,
+        decision,
+        ...(decision === "link" ? { taskId: linkedTaskId } : {}),
+        occurredAt: "2026-07-19T08:10:00.000Z",
+        occurredTimeZone: "Asia/Shanghai",
+        occurredUtcOffsetMinutes: 480,
+      }) as ExternalRecordAssociationCommandInput;
+
+    const first = await executeExternalRecordAssociationCommand(
+      store,
+      input(associationCommandIds[0]!, "link", taskId),
+    );
+    await expect(
+      executeExternalRecordAssociationCommand(
+        store,
+        input(associationCommandIds[0]!, "link", taskId),
+      ),
+    ).resolves.toMatchObject({ replayed: true });
+    expect(first).toMatchObject({
+      replayed: false,
+      association: { status: "confirmed", taskId },
+    });
+
+    await executeExternalRecordAssociationCommand(
+      store,
+      input(associationCommandIds[1]!, "link", secondTaskId),
+    );
+    await executeExternalRecordAssociationCommand(
+      store,
+      input(associationCommandIds[2]!, "unrelated"),
+    );
+
+    const links = await database
+      .select({
+        taskId: externalRecordLinks.taskInstanceId,
+        status: externalRecordLinks.status,
+        sourceVersion: externalRecordLinks.sourceVersion,
+        needsReview: externalRecordLinks.needsReview,
+      })
+      .from(externalRecordLinks)
+      .where(eq(externalRecordLinks.externalRecordId, associationRecordId));
+    const taskRows = await database
+      .select({ id: taskInstances.id, status: taskInstances.status })
+      .from(taskInstances)
+      .where(inArray(taskInstances.id, [taskId, secondTaskId]));
+    const auditRows = await database
+      .select({ id: events.id })
+      .from(events)
+      .where(inArray(events.idempotencyKey, associationCommandIds));
+
+    expect(links).toEqual([
+      {
+        taskId: null,
+        status: "rejected",
+        sourceVersion: 2,
+        needsReview: false,
+      },
+    ]);
+    expect(taskRows).toHaveLength(2);
+    expect(taskRows.every((task) => task.status === "planned")).toBe(true);
+    expect(auditRows).toHaveLength(3);
+  });
+
+  it("rejects stale sources and cross-tracker or cross-date targets", async () => {
+    const store = createNeonExternalRecordAssociationStore(getDatabase());
+    const metadata = {
+      occurredAt: "2026-07-19T08:11:00.000Z",
+      occurredTimeZone: "Asia/Shanghai",
+      occurredUtcOffsetMinutes: 480,
+    };
+
+    await expect(
+      executeExternalRecordAssociationCommand(store, {
+        commandId: randomUUID(),
+        trackerKey,
+        externalRecordId: associationRecordId,
+        sourceVersion: 1,
+        decision: "link",
+        taskId,
+        ...metadata,
+      }),
+    ).rejects.toBeInstanceOf(AssociationSourceVersionConflictError);
+    await expect(
+      executeExternalRecordAssociationCommand(store, {
+        commandId: randomUUID(),
+        trackerKey: `other-${trackerKey}`,
+        externalRecordId: associationRecordId,
+        sourceVersion: 2,
+        decision: "link",
+        taskId,
+        ...metadata,
+      }),
+    ).rejects.toBeInstanceOf(ExternalRecordNotFoundError);
+    await expect(
+      executeExternalRecordAssociationCommand(store, {
+        commandId: randomUUID(),
+        trackerKey,
+        externalRecordId: associationRecordId,
+        sourceVersion: 2,
+        decision: "link",
+        taskId: wrongDateTaskId,
+        ...metadata,
+      }),
+    ).rejects.toBeInstanceOf(AssociationTargetInvalidError);
   });
 
   it("upserts idempotently and versions a changed source record", async () => {
@@ -190,6 +459,7 @@ integration("P1a Xunji provider-neutral database slice", () => {
         and(
           eq(externalRecords.trackerId, trackerId),
           eq(externalRecords.provider, "xunji"),
+          eq(externalRecords.providerRecordId, "anonymous-train-1"),
         ),
       );
     const [link] = await database

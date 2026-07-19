@@ -70,6 +70,7 @@ function aggregate(status: "planned" | "completed", feedbackCount: number) {
       ],
       feedbackCount,
       feedbacks: [],
+      externalTrainingRecords: [],
     },
     safetyPolicy: {
       schemaVersion: "1.0.0",

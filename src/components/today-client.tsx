@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { trackerQueryKeys } from "@/client/query-keys";
 import { fetchTodayAggregate } from "@/client/tracker-api";
 import type { TodayAggregate } from "@/domain/api-contracts";
+import type { ExternalRecordAssociation } from "@/domain/external-training";
 import { localDateInTimeZone } from "@/domain/planning-time";
 import type { DashboardTask } from "@/server/dashboard";
 
@@ -120,6 +121,20 @@ export function TodayClient() {
     refreshRelatedData();
   };
 
+  const handleExternalTrainingUpdated = (
+    recordId: string,
+    association: ExternalRecordAssociation,
+  ) => {
+    updateDay((day) => ({
+      ...day,
+      externalTrainingRecords: day.externalTrainingRecords.map((record) =>
+        record.id === recordId
+          ? { ...record, association, suggestion: null }
+          : record,
+      ),
+    }));
+  };
+
   return (
     <DashboardShell
       today={todayLabel(localDate)}
@@ -128,6 +143,7 @@ export function TodayClient() {
       onRefresh={() => query.refetch()}
       onTaskUpdated={handleTaskUpdated}
       onFeedbackSaved={handleFeedbackSaved}
+      onExternalTrainingUpdated={handleExternalTrainingUpdated}
     />
   );
 }

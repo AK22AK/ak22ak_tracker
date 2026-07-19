@@ -10,6 +10,9 @@ import {
 } from "@/client/tracker-api";
 import { isLocalDate } from "@/domain/calendar";
 import { localDateInTimeZone } from "@/domain/planning-time";
+import type { DayAggregate } from "@/domain/api-contracts";
+import type { ExternalRecordAssociation } from "@/domain/external-training";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { CalendarShell } from "./calendar-shell";
 
@@ -17,6 +20,7 @@ const trackerKey = "knee-rehab";
 const planningTimeZone = "Asia/Shanghai";
 
 export function CalendarClient({ initialDate }: { initialDate?: string }) {
+  const queryClient = useQueryClient();
   const today = localDateInTimeZone(new Date(), planningTimeZone);
   const startingDate = isLocalDate(initialDate) ? initialDate : today;
   const [selectedDate, setSelectedDate] = useState(startingDate);
@@ -46,6 +50,30 @@ export function CalendarClient({ initialDate }: { initialDate?: string }) {
     window.history.replaceState(null, "", `/calendar?date=${date}`);
   }, []);
 
+  const updateAssociation = useCallback(
+    (recordId: string, association: ExternalRecordAssociation) => {
+      queryClient.setQueryData<DayAggregate>(
+        trackerQueryKeys.day(trackerKey, selectedDate),
+        (current) =>
+          current
+            ? {
+                ...current,
+                day: {
+                  ...current.day,
+                  externalTrainingRecords:
+                    current.day.externalTrainingRecords.map((record) =>
+                      record.id === recordId
+                        ? { ...record, association, suggestion: null }
+                        : record,
+                    ),
+                },
+              }
+            : current,
+      );
+    },
+    [queryClient, selectedDate],
+  );
+
   return (
     <CalendarShell
       month={month}
@@ -57,6 +85,7 @@ export function CalendarClient({ initialDate }: { initialDate?: string }) {
       detailError={dayQuery.isError}
       onSelectDate={selectDate}
       onSelectMonth={selectMonth}
+      onExternalTrainingUpdated={updateAssociation}
     />
   );
 }

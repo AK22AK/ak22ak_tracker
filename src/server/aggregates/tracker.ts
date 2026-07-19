@@ -16,6 +16,7 @@ import {
   getTrackerDashboardContext,
 } from "@/server/dashboard";
 import { getEffectiveTrackerSafetyPolicyByTrackerId } from "@/server/safety-policy/repository";
+import { getExternalTrainingRecordsForDay } from "@/server/integrations/core/external-training-aggregate";
 
 export class AggregateTrackerNotFoundError extends Error {
   constructor() {
@@ -42,6 +43,33 @@ function planReference(
     : null;
 }
 
+async function dayWithExternalTraining(
+  tracker: Awaited<ReturnType<typeof requireTracker>>,
+  plan: Awaited<ReturnType<typeof getEffectivePlanDashboardContext>>,
+  trackerKey: string,
+  targetDate: string,
+) {
+  const dayPromise = getTodayDashboardForTracker(
+    tracker,
+    plan,
+    trackerKey,
+    targetDate,
+  );
+  const externalTrainingRecordsPromise = getExternalTrainingRecordsForDay({
+    trackerId: tracker.id,
+    localDate: targetDate,
+    tasks: dayPromise.then((day) => day.tasks),
+  });
+  const [day, externalTrainingRecords] = await Promise.all([
+    dayPromise,
+    externalTrainingRecordsPromise,
+  ]);
+  return {
+    ...day,
+    externalTrainingRecords,
+  };
+}
+
 export async function getTodayAggregate(
   trackerKey: string,
   targetDate: string,
@@ -49,7 +77,7 @@ export async function getTodayAggregate(
   const tracker = await requireTracker(trackerKey);
   const plan = await getEffectivePlanDashboardContext(tracker.id, targetDate);
   const [day, safetyPolicy] = await Promise.all([
-    getTodayDashboardForTracker(tracker, plan, trackerKey, targetDate),
+    dayWithExternalTraining(tracker, plan, trackerKey, targetDate),
     getEffectiveTrackerSafetyPolicyByTrackerId(
       tracker.id,
       instantAtLocalNoon(targetDate, tracker.planningTimeZone),
@@ -76,7 +104,7 @@ export async function getDayAggregate(
 ): Promise<DayAggregate> {
   const tracker = await requireTracker(trackerKey);
   const plan = await getEffectivePlanDashboardContext(tracker.id, targetDate);
-  const day = await getTodayDashboardForTracker(
+  const day = await dayWithExternalTraining(
     tracker,
     plan,
     trackerKey,

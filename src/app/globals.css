@@ -307,6 +307,131 @@ h2 {
   line-height: 1.65;
 }
 
+.external-training-section {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1.2rem;
+}
+
+.external-section-title,
+.external-training-heading,
+.external-association-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.external-section-title h2,
+.external-training-heading h3 {
+  margin: 0;
+}
+
+.external-section-title h2 {
+  font-size: 0.95rem;
+}
+
+.external-section-title > span,
+.external-training-heading > span,
+.external-training-time,
+.external-association-hint {
+  color: #c7d7d0;
+  font-size: 0.72rem;
+}
+
+.external-training-card {
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.external-source-badge {
+  display: inline-block;
+  margin-bottom: 0.35rem;
+  padding: 0.18rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #d8e5df;
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+.external-training-time,
+.external-training-note,
+.external-association p {
+  margin-top: 0.55rem;
+  line-height: 1.5;
+}
+
+.external-movement-list {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 0.76rem;
+}
+
+.external-movement-list ol {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.35rem 0 0;
+  padding-left: 1.25rem;
+  color: #d8e5df;
+}
+
+.external-association {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.external-association label {
+  display: grid;
+  gap: 0.35rem;
+  color: #d8e5df;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.external-association-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.date-detail-card .external-training-section {
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.date-detail-card .external-training-card {
+  border-color: var(--line);
+  background: var(--green-soft);
+}
+
+.date-detail-card .external-section-title > span,
+.date-detail-card .external-training-heading > span,
+.date-detail-card .external-training-time,
+.date-detail-card .external-association-hint,
+.date-detail-card .external-movement-list ol,
+.date-detail-card .external-association label {
+  color: var(--muted);
+}
+
+.date-detail-card .external-movement-list,
+.date-detail-card .external-association {
+  border-color: var(--line);
+}
+
+.date-detail-card .external-source-badge {
+  background: #dcebe4;
+  color: var(--green);
+}
+
 .task-list {
   display: grid;
   gap: 0.85rem;

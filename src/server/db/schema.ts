@@ -1,5 +1,6 @@
 import {
   boolean,
+  check,
   date,
   index,
   integer,
@@ -11,6 +12,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 import type {
   ExternalRecord,
@@ -215,9 +217,10 @@ export const externalRecordLinks = pgTable(
     externalRecordId: uuid("external_record_id")
       .notNull()
       .references(() => externalRecords.id, { onDelete: "cascade" }),
-    taskInstanceId: uuid("task_instance_id")
-      .notNull()
-      .references(() => taskInstances.id, { onDelete: "cascade" }),
+    taskInstanceId: uuid("task_instance_id").references(
+      () => taskInstances.id,
+      { onDelete: "cascade" },
+    ),
     status: linkStatus("status").default("suggested").notNull(),
     confidence: integer("confidence"),
     confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
@@ -225,9 +228,12 @@ export const externalRecordLinks = pgTable(
     needsReview: boolean("needs_review").default(false).notNull(),
   },
   (table) => [
-    uniqueIndex("external_record_links_pair_unique").on(
+    uniqueIndex("external_record_links_record_unique").on(
       table.externalRecordId,
-      table.taskInstanceId,
+    ),
+    check(
+      "external_record_links_target_check",
+      sql`(${table.status} = 'rejected' AND ${table.taskInstanceId} IS NULL) OR (${table.status} <> 'rejected' AND ${table.taskInstanceId} IS NOT NULL)`,
     ),
   ],
 );
