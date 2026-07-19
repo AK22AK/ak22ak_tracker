@@ -65,14 +65,14 @@ function dayAggregate(date: string, title: string) {
   };
 }
 
-function renderCalendar() {
+function renderCalendar(initialDate = "2026-07-19") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
       <ProtectedAppShell>
-        <CalendarClient initialDate="2026-07-19" />
+        <CalendarClient initialDate={initialDate} />
       </ProtectedAppShell>
     </QueryClientProvider>,
   );
@@ -107,15 +107,21 @@ describe("calendar instant interaction (P0-04/P0-06)", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderCalendar();
+    const todayButton = screen.getByRole("button", { name: /^2026-07-19/ });
+    expect(todayButton.getAttribute("aria-current")).toBe("date");
+    expect(todayButton.getAttribute("aria-pressed")).toBe("true");
+
     const target = screen.getByRole("button", { name: /^2026-07-20/ });
+    target.focus();
     fireEvent.click(target);
 
     expect(target.className).toContain("selected");
+    expect(target.getAttribute("aria-pressed")).toBe("true");
+    expect(todayButton.getAttribute("aria-pressed")).toBe("false");
+    expect(document.activeElement).toBe(target);
     expect(window.location.search).toBe("?date=2026-07-20");
     expect(screen.getByRole("navigation", { name: "主导航" })).toBeTruthy();
-    expect(screen.getByRole("status").textContent).toContain(
-      "正在加载当天详情",
-    );
+    expect(screen.getByText("正在加载当天详情…")).toBeTruthy();
     expect(
       fetchMock.mock.calls.filter(([input]) =>
         String(input).includes("/calendar?month="),
@@ -193,5 +199,32 @@ describe("calendar instant interaction (P0-04/P0-06)", () => {
     fireEvent.click(screen.getByRole("button", { name: /^2026-07-21/ }));
 
     await waitFor(() => expect(signals.get("2026-07-20")?.aborted).toBe(true));
+  });
+
+  it("preserves the selected day when changing month and clamps to the last valid day", () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/calendar?month=")) {
+          return Promise.resolve(
+            jsonResponse({
+              trackerKey: "knee-rehab",
+              month: url.match(/month=(\d{4}-\d{2})/)?.[1] ?? "2026-08",
+              days: [],
+            }),
+          );
+        }
+        return new Promise<Response>(() => undefined);
+      }),
+    );
+
+    renderCalendar("2026-08-31");
+    fireEvent.click(screen.getByRole("button", { name: "下个月" }));
+
+    expect(window.location.search).toBe("?date=2026-09-30");
+    expect(
+      screen.getByRole("button", { name: /^2026-09-30，已选中/ }),
+    ).toBeTruthy();
   });
 });

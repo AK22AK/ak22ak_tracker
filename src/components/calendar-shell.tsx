@@ -38,6 +38,57 @@ function formatSelectedDate(localDate: string) {
   }).format(new Date(`${localDate}T00:00:00+08:00`));
 }
 
+function selectedDateContext(localDate: string, today: string) {
+  if (localDate === today) return "今天";
+  return localDate < today ? "历史记录" : "未来计划";
+}
+
+function dayTaskLabel(
+  summary: CalendarDaySummary | undefined,
+  date: string,
+  today: string,
+  monthLoading: boolean,
+  monthError: boolean,
+) {
+  if (!summary && monthLoading) return "月摘要加载中";
+  if (!summary && monthError) return "月摘要暂时不可用";
+  if (!summary?.taskCount) return "无任务";
+  if (summary.completedCount === summary.taskCount) return "全部完成";
+  if (summary.skippedCount === summary.taskCount) return "已跳过";
+  if (date > today) return `${summary.taskCount} 项计划`;
+  return `${summary.completedCount}/${summary.taskCount} 项完成`;
+}
+
+function dayAccessibleLabel(
+  date: string,
+  summary: CalendarDaySummary | undefined,
+  selectedDate: string,
+  today: string,
+  monthLoading: boolean,
+  monthError: boolean,
+) {
+  const parts = [date];
+  if (date === selectedDate) parts.push("已选中");
+  parts.push(date === today ? "今天" : date < today ? "历史" : "未来");
+  parts.push(dayTaskLabel(summary, date, today, monthLoading, monthError));
+  if (summary?.feedbackCount) {
+    parts.push(`${summary.feedbackCount} 次反馈`);
+  }
+  return parts.join("，");
+}
+
+function dayVisualTaskLabel(
+  summary: CalendarDaySummary | undefined,
+  date: string,
+  today: string,
+) {
+  if (!summary?.taskCount) return null;
+  if (summary.completedCount === summary.taskCount) return "✓";
+  if (summary.skippedCount === summary.taskCount) return "跳";
+  if (date > today) return `${summary.taskCount}项`;
+  return `${summary.completedCount}/${summary.taskCount}`;
+}
+
 function valueText(value: unknown): string | null {
   if (typeof value === "string" || typeof value === "number")
     return String(value);
@@ -127,6 +178,26 @@ function ActualRecord({ task }: { task: DashboardTask }) {
   );
 }
 
+function CalendarDayUnavailable({ dashboard }: { dashboard: TodayDashboard }) {
+  if (dashboard.state === "not_started") {
+    return (
+      <div className="calendar-detail-state empty">
+        <strong>计划尚未开始</strong>
+        <p>
+          当前计划从 {dashboard.startDate ?? "稍后"} 开始，可先查看其他日期。
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="calendar-detail-state empty">
+      <strong>当天没有生效计划</strong>
+      <p>可查看相邻日期，或在设置中确认当前计划版本。</p>
+    </div>
+  );
+}
+
 function dayClass(
   date: string,
   summary: CalendarDaySummary | undefined,
@@ -137,8 +208,14 @@ function dayClass(
     "calendar-day",
     date === selectedDate ? "selected" : "",
     date === today ? "today" : "",
+    date > today ? "future" : "past",
+    summary?.taskCount ? "has-tasks" : "",
+    summary?.feedbackCount ? "has-feedback" : "",
     summary?.completedCount === summary?.taskCount && summary?.taskCount
       ? "all-completed"
+      : "",
+    summary?.skippedCount === summary?.taskCount && summary?.taskCount
+      ? "all-skipped"
       : "",
   ]
     .filter(Boolean)
@@ -150,9 +227,13 @@ export function CalendarShell({
   today,
   selectedDate,
   days,
+  monthLoading,
+  monthError,
   dashboard,
   detailLoading,
   detailError,
+  onRetryDetail,
+  onRetryMonth,
   onSelectDate,
   onSelectMonth,
   onExternalTrainingUpdated,
@@ -161,9 +242,13 @@ export function CalendarShell({
   today: string;
   selectedDate: string;
   days: CalendarDaySummary[];
+  monthLoading: boolean;
+  monthError: boolean;
   dashboard: TodayDashboard | null;
   detailLoading: boolean;
   detailError: boolean;
+  onRetryDetail: () => void;
+  onRetryMonth: () => void;
   onSelectDate: (date: string) => void;
   onSelectMonth: (month: string) => void;
   onExternalTrainingUpdated: (
@@ -195,7 +280,11 @@ export function CalendarShell({
         </div>
       </header>
 
-      <section className="calendar-card" aria-label={formatMonth(month)}>
+      <section
+        className="calendar-card"
+        aria-label={formatMonth(month)}
+        aria-busy={monthLoading}
+      >
         <div className="month-switcher">
           <button
             type="button"
@@ -213,6 +302,19 @@ export function CalendarShell({
             ›
           </button>
         </div>
+        {monthLoading && (
+          <p className="calendar-month-status" role="status">
+            正在更新月摘要…
+          </p>
+        )}
+        {monthError && !monthLoading && (
+          <div className="calendar-month-status error" role="alert">
+            <span>月摘要暂时不可用</span>
+            <button type="button" onClick={onRetryMonth}>
+              重试
+            </button>
+          </div>
+        )}
         <div className="calendar-weekdays" aria-hidden="true">
           {weekdays.map((weekday) => (
             <span key={weekday}>{weekday}</span>
@@ -225,44 +327,82 @@ export function CalendarShell({
                 <span className="calendar-day empty" key={`empty-${index}`} />
               );
             const summary = summaries.get(date);
+            const visualTaskLabel = dayVisualTaskLabel(summary, date, today);
             return (
               <button
                 type="button"
                 key={date}
                 className={dayClass(date, summary, selectedDate, today)}
                 onClick={() => onSelectDate(date)}
-                aria-label={`${date}，${summary?.taskCount ?? 0} 项训练，${summary?.feedbackCount ?? 0} 次反馈`}
+                aria-current={date === today ? "date" : undefined}
+                aria-pressed={date === selectedDate}
+                aria-label={dayAccessibleLabel(
+                  date,
+                  summary,
+                  selectedDate,
+                  today,
+                  monthLoading,
+                  monthError,
+                )}
               >
-                <time dateTime={date}>{Number(date.slice(-2))}</time>
+                <time dateTime={date}>
+                  {Number(date.slice(-2))}
+                  {date === today && (
+                    <span className="calendar-today-mark" aria-hidden="true">
+                      今
+                    </span>
+                  )}
+                </time>
                 <span className="calendar-markers">
-                  {(summary?.taskCount ?? 0) > 0 && (
-                    <span className="task-marker">
-                      {summary?.completedCount}/{summary?.taskCount}
+                  {visualTaskLabel && (
+                    <span className="task-marker" aria-hidden="true">
+                      {visualTaskLabel}
                     </span>
                   )}
                   {(summary?.feedbackCount ?? 0) > 0 && (
-                    <span className="feedback-marker" />
+                    <span className="feedback-marker" aria-hidden="true">
+                      ◆
+                    </span>
                   )}
                 </span>
               </button>
             );
           })}
         </div>
-        <p className="calendar-legend">
-          任务数字为“完成／计划”，橙点表示当天有症状反馈。
-        </p>
+        <div className="calendar-legend" aria-label="日历标记说明">
+          <span>
+            <i className="legend-symbol completed" aria-hidden="true">
+              ✓
+            </i>
+            全部完成
+          </span>
+          <span>
+            <i className="legend-symbol skipped" aria-hidden="true">
+              跳
+            </i>
+            已跳过
+          </span>
+          <span>
+            <i className="legend-symbol feedback" aria-hidden="true">
+              ◆
+            </i>
+            有反馈
+          </span>
+        </div>
       </section>
 
       <section
         className="date-detail-card"
         aria-labelledby="selected-date-title"
       >
-        <div className="section-heading compact">
+        <div className="section-heading compact calendar-detail-heading">
           <div>
-            <p className="eyebrow">选中日期</p>
+            <p className="eyebrow">
+              {selectedDateContext(selectedDate, today)}
+            </p>
             <h2 id="selected-date-title">{formatSelectedDate(selectedDate)}</h2>
           </div>
-          <span className="date-plan-version">
+          <span className="status-pill date-plan-version" data-tone="brand">
             {dashboard?.planVersion
               ? `计划 v${dashboard.planVersion}`
               : "无计划"}
@@ -275,67 +415,131 @@ export function CalendarShell({
           </div>
         )}
         {detailError && !detailLoading && (
-          <div className="calendar-no-data" role="alert">
-            当天详情加载失败，请稍后重试。
+          <div className="calendar-detail-state error" role="alert">
+            <strong>当天详情暂时没有加载成功</strong>
+            <p>月历仍可继续使用，你可以稍后再试。</p>
+            <button type="button" onClick={onRetryDetail}>
+              重新加载当天详情
+            </button>
           </div>
         )}
-        {dashboard && !detailLoading && !detailError && (
-          <>
-            <ExternalTrainingSection
-              trackerKey="knee-rehab"
-              records={dashboard.externalTrainingRecords}
-              tasks={dashboard.tasks}
-              onUpdated={onExternalTrainingUpdated}
-            />
-            <div className="calendar-task-list">
-              {dashboard.tasks.map((task) => (
-                <article
-                  className={`calendar-task ${task.status}`}
-                  key={task.id}
-                >
-                  <div className="calendar-task-heading">
-                    <strong>{task.title}</strong>
-                    <span>{taskStatusLabels[task.status]}</span>
-                  </div>
-                  {task.description && <p>{task.description}</p>}
-                  <details>
-                    <summary>查看当天计划</summary>
-                    <CalendarPrescription task={task} />
-                  </details>
-                  {(task.status !== "planned" ||
-                    task.actual ||
-                    task.subjectiveNote) && <ActualRecord task={task} />}
-                </article>
-              ))}
-              {dashboard.tasks.length === 0 && (
-                <p className="calendar-no-data">当天没有计划训练。</p>
-              )}
-            </div>
-
-            <div className="calendar-feedback-list">
-              <h3>症状反馈</h3>
-              {dashboard.feedbacks.map((feedback) => (
-                <article
-                  className={`calendar-feedback ${feedback.safetyLevel}`}
-                  key={feedback.id}
-                >
+        {dashboard &&
+          !detailLoading &&
+          !detailError &&
+          (dashboard.state !== "ready" ? (
+            <CalendarDayUnavailable dashboard={dashboard} />
+          ) : (
+            <>
+              <div className="calendar-day-overview" aria-label="当天概览">
+                <span>
+                  <strong>{dashboard.tasks.length}</strong> 项任务
+                </span>
+                <span>
+                  <strong>{dashboard.feedbackCount}</strong> 次反馈
+                </span>
+                <span>
+                  <strong>{dashboard.externalTrainingRecords.length}</strong>{" "}
+                  条来源
+                </span>
+              </div>
+              <ExternalTrainingSection
+                trackerKey="knee-rehab"
+                records={dashboard.externalTrainingRecords}
+                tasks={dashboard.tasks}
+                onUpdated={onExternalTrainingUpdated}
+              />
+              <div className="calendar-task-list">
+                <div className="calendar-subsection-heading">
                   <div>
-                    <strong>{timingLabels[feedback.timing]}</strong>
-                    <span>{safetyLabels[feedback.safetyLevel]}</span>
+                    <p className="eyebrow">计划与执行</p>
+                    <h3>当天任务</h3>
                   </div>
-                  <p>
-                    左膝 {feedback.leftPain}/10 · 右膝 {feedback.rightPain}/10 ·
-                    肿胀 {feedback.swelling}
-                  </p>
-                  {feedback.note && <p>{feedback.note}</p>}
-                </article>
-              ))}
-              {dashboard.feedbacks.length === 0 && (
-                <p className="calendar-no-data">当天没有症状反馈。</p>
-              )}
-            </div>
-          </>
-        )}
+                  <span className="count-badge">{dashboard.tasks.length}</span>
+                </div>
+                {dashboard.tasks.map((task) => (
+                  <article
+                    className={`calendar-task ${task.status}`}
+                    key={task.id}
+                  >
+                    <div className="calendar-task-heading">
+                      <strong>{task.title}</strong>
+                      <span
+                        className="status-pill"
+                        data-tone={
+                          task.status === "completed"
+                            ? "success"
+                            : task.status === "skipped"
+                              ? undefined
+                              : "brand"
+                        }
+                      >
+                        {taskStatusLabels[task.status]}
+                      </span>
+                    </div>
+                    {task.description && <p>{task.description}</p>}
+                    <details>
+                      <summary>查看当天计划</summary>
+                      <CalendarPrescription task={task} />
+                    </details>
+                    {(task.status !== "planned" ||
+                      task.actual ||
+                      task.subjectiveNote) && <ActualRecord task={task} />}
+                  </article>
+                ))}
+                {dashboard.tasks.length === 0 && (
+                  <div className="calendar-detail-state empty compact">
+                    <strong>当天没有计划任务</strong>
+                    <p>仍可查看同步训练来源和身体反馈。</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="calendar-feedback-list">
+                <div className="calendar-subsection-heading">
+                  <div>
+                    <p className="eyebrow">身体状态</p>
+                    <h3>症状反馈</h3>
+                  </div>
+                  <span className="count-badge">{dashboard.feedbackCount}</span>
+                </div>
+                {dashboard.feedbacks.map((feedback) => (
+                  <article
+                    className={`calendar-feedback ${feedback.safetyLevel}`}
+                    key={feedback.id}
+                  >
+                    <div>
+                      <strong>{timingLabels[feedback.timing]}</strong>
+                      <span
+                        className="status-pill"
+                        data-tone={
+                          feedback.safetyLevel === "green"
+                            ? "success"
+                            : feedback.safetyLevel === "yellow"
+                              ? "warning"
+                              : "danger"
+                        }
+                      >
+                        {feedback.safetyLevel === "green"
+                          ? "✓"
+                          : feedback.safetyLevel === "yellow"
+                            ? "!"
+                            : "×"}{" "}
+                        {safetyLabels[feedback.safetyLevel]}
+                      </span>
+                    </div>
+                    <p>
+                      左膝 {feedback.leftPain}/10 · 右膝 {feedback.rightPain}/10
+                      · 肿胀 {feedback.swelling}
+                    </p>
+                    {feedback.note && <p>{feedback.note}</p>}
+                  </article>
+                ))}
+                {dashboard.feedbacks.length === 0 && (
+                  <p className="calendar-no-data">当天没有症状反馈。</p>
+                )}
+              </div>
+            </>
+          ))}
       </section>
     </main>
   );
