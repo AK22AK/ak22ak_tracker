@@ -19,6 +19,7 @@ import type {
   TaskActual,
   TrackerEvent,
 } from "@/domain/schemas";
+import type { TrackerSafetyPolicyDocument } from "@/domain/safety-policy";
 
 export const taskStatus = pgEnum("task_status", [
   "planned",
@@ -81,6 +82,39 @@ export const planVersions = pgTable(
       table.version,
     ),
     index("plan_versions_tracker_effective_index").on(
+      table.trackerId,
+      table.effectiveFrom,
+    ),
+  ],
+);
+
+export const trackerSafetyPolicies = pgTable(
+  "tracker_safety_policies",
+  {
+    id: uuid("id").primaryKey(),
+    trackerId: uuid("tracker_id")
+      .notNull()
+      .references(() => trackers.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    effectiveFrom: timestamp("effective_from", {
+      withTimezone: true,
+    }).notNull(),
+    hash: text("hash").notNull(),
+    document: jsonb("document").$type<TrackerSafetyPolicyDocument>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("tracker_safety_policies_tracker_version_unique").on(
+      table.trackerId,
+      table.version,
+    ),
+    uniqueIndex("tracker_safety_policies_tracker_hash_unique").on(
+      table.trackerId,
+      table.hash,
+    ),
+    index("tracker_safety_policies_tracker_effective_index").on(
       table.trackerId,
       table.effectiveFrom,
     ),

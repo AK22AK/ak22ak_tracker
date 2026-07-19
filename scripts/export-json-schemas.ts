@@ -9,12 +9,14 @@ import {
   planVersionSchema,
   trackerEventSchema,
 } from "../src/domain/schemas";
+import { trackerSafetyPolicyDocumentSchema } from "../src/domain/safety-policy";
 
 const schemas = {
   "plan-version.schema.json": planVersionSchema,
   "event.schema.json": trackerEventSchema,
   "external-record.schema.json": externalRecordSchema,
   "plan-change-proposal.schema.json": planChangeProposalSchema,
+  "tracker-safety-policy.schema.json": trackerSafetyPolicyDocumentSchema,
 };
 
 async function main() {

@@ -7,9 +7,13 @@ import {
   type PendingClientCommand,
 } from "@/domain/client-command";
 import type { TaskActual } from "@/domain/schemas";
+import {
+  safetyPolicyReference,
+  type TrackerSafetyPolicy,
+} from "@/domain/safety-policy";
+import { evaluateKneeCheckIn } from "@/modules/knee-rehab/check-in";
 import type { DashboardTask, TodayDashboard } from "@/server/dashboard";
 
-import { BottomNav } from "./bottom-nav";
 import { SignOutButton } from "./sign-out-button";
 
 function subscribeToNetworkState(onStoreChange: () => void) {
@@ -364,8 +368,12 @@ function TaskCard({
 }
 
 function CheckInForm({
+  safetyPolicy,
+  onEvaluated,
   onSaved,
 }: {
+  safetyPolicy: TrackerSafetyPolicy;
+  onEvaluated: (safetyLevel: "green" | "yellow" | "red") => void;
   onSaved: (safetyLevel: "green" | "yellow" | "red") => void;
 }) {
   const [saving, setSaving] = useState(false);
@@ -389,6 +397,17 @@ function CheckInForm({
         nightOrRestPain: form.get("nightOrRestPain") === "on",
         note: form.get("note"),
       };
+      const clientSafetyLevel = evaluateKneeCheckIn(
+        {
+          ...payload,
+          timing: payload.timing as
+            "morning" | "post_training" | "next_day" | "incident",
+          swelling: payload.swelling as "none" | "mild" | "obvious",
+          note: String(payload.note ?? ""),
+        },
+        safetyPolicy.rules,
+      );
+      onEvaluated(clientSafetyLevel);
       const command = createOrReuseClientCommand(
         pendingCommand.current,
         payload,
@@ -400,6 +419,7 @@ function CheckInForm({
         body: JSON.stringify({
           ...payload,
           ...command.metadata,
+          clientSafetyPolicy: safetyPolicyReference(safetyPolicy),
         }),
       });
       if (!response.ok) throw new Error("check_in_failed");
@@ -494,9 +514,15 @@ function CheckInForm({
 export function DashboardShell({
   today,
   initialDashboard,
+  safetyPolicy,
+  onRefresh,
+  onDataChanged,
 }: {
   today: string;
   initialDashboard: TodayDashboard;
+  safetyPolicy: TrackerSafetyPolicy;
+  onRefresh: () => Promise<unknown>;
+  onDataChanged: () => void;
 }) {
   const online = useSyncExternalStore(
     subscribeToNetworkState,
@@ -512,6 +538,7 @@ export function DashboardShell({
   const [lastSafety, setLastSafety] = useState<
     "green" | "yellow" | "red" | null
   >(null);
+
   const completedCount = tasks.filter(
     (task) => task.status === "completed",
   ).length;
@@ -540,9 +567,13 @@ export function DashboardShell({
             aria-label="刷新今日数据"
             title={online ? "刷新今日数据" : "联网后刷新"}
             disabled={!online || refreshing}
-            onClick={() => {
+            onClick={async () => {
               setRefreshing(true);
-              window.location.reload();
+              try {
+                await onRefresh();
+              } finally {
+                setRefreshing(false);
+              }
             }}
           >
             <span aria-hidden="true">↻</span>
@@ -588,13 +619,14 @@ export function DashboardShell({
               <TaskCard
                 key={task.id}
                 task={task}
-                onUpdated={(updated) =>
+                onUpdated={(updated) => {
                   setTasks((current) =>
                     current.map((item) =>
                       item.id === updated.id ? updated : item,
                     ),
-                  )
-                }
+                  );
+                  onDataChanged();
+                }}
               />
             ))}
           </div>
@@ -641,10 +673,13 @@ export function DashboardShell({
         </button>
         {feedbackOpen && (
           <CheckInForm
+            safetyPolicy={safetyPolicy}
+            onEvaluated={setLastSafety}
             onSaved={(safetyLevel) => {
               setFeedbackCount((count) => count + 1);
               setLastSafety(safetyLevel);
               setFeedbackOpen(false);
+              onDataChanged();
             }}
           />
         )}
@@ -666,8 +701,6 @@ export function DashboardShell({
           </div>
         </article>
       </section>
-
-      <BottomNav current="today" />
     </main>
   );
 }

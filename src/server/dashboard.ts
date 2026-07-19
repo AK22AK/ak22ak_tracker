@@ -13,7 +13,7 @@ import { events, planVersions, taskInstances, trackers } from "./db/schema";
 export type DashboardTask = {
   id: string;
   title: string;
-  description: string | undefined;
+  description?: string;
   category: string;
   prescription: Record<string, unknown>;
   status: "planned" | "completed" | "skipped";
@@ -29,6 +29,11 @@ export type DashboardFeedback = {
   rightPain: number;
   swelling: "none" | "mild" | "obvious";
   safetyLevel: "green" | "yellow" | "red";
+  safetyPolicy?: {
+    policyId: string;
+    version: number;
+    hash: string;
+  };
   note: string;
 };
 
@@ -50,16 +55,79 @@ export type TodayDashboard = {
   feedbacks: DashboardFeedback[];
 };
 
+export type TrackerDashboardContext = {
+  id: string;
+  key: string;
+  name: string;
+  startedOn: string;
+  planningTimeZone: string;
+};
+
+export type EffectivePlanDashboardContext = {
+  id: string;
+  version: number;
+  effectiveFrom: string;
+  document: unknown;
+};
+
+export async function getTrackerDashboardContext(
+  trackerKey: string,
+): Promise<TrackerDashboardContext | null> {
+  const [tracker] = await getDatabase()
+    .select({
+      id: trackers.id,
+      key: trackers.key,
+      name: trackers.name,
+      startedOn: trackers.startedOn,
+      planningTimeZone: trackers.planningTimeZone,
+    })
+    .from(trackers)
+    .where(and(eq(trackers.key, trackerKey), eq(trackers.active, true)))
+    .limit(1);
+  return tracker ?? null;
+}
+
+export async function getEffectivePlanDashboardContext(
+  trackerId: string,
+  localDate: string,
+): Promise<EffectivePlanDashboardContext | null> {
+  const [plan] = await getDatabase()
+    .select({
+      id: planVersions.id,
+      version: planVersions.version,
+      effectiveFrom: planVersions.effectiveFrom,
+      document: planVersions.document,
+    })
+    .from(planVersions)
+    .where(
+      and(
+        eq(planVersions.trackerId, trackerId),
+        lte(planVersions.effectiveFrom, localDate),
+      ),
+    )
+    .orderBy(desc(planVersions.effectiveFrom), desc(planVersions.version))
+    .limit(1);
+  return plan ?? null;
+}
+
 export async function getTodayDashboard(
   trackerKey: string,
   localDate: string,
 ): Promise<TodayDashboard> {
+  const tracker = await getTrackerDashboardContext(trackerKey);
+  const plan = tracker
+    ? await getEffectivePlanDashboardContext(tracker.id, localDate)
+    : null;
+  return getTodayDashboardForTracker(tracker, plan, trackerKey, localDate);
+}
+
+export async function getTodayDashboardForTracker(
+  tracker: TrackerDashboardContext | null,
+  planRow: EffectivePlanDashboardContext | null,
+  trackerKey: string,
+  localDate: string,
+): Promise<TodayDashboard> {
   const database = getDatabase();
-  const [tracker] = await database
-    .select()
-    .from(trackers)
-    .where(and(eq(trackers.key, trackerKey), eq(trackers.active, true)))
-    .limit(1);
 
   if (!tracker) {
     return {
@@ -72,18 +140,6 @@ export async function getTodayDashboard(
       feedbacks: [],
     };
   }
-
-  const [planRow] = await database
-    .select()
-    .from(planVersions)
-    .where(
-      and(
-        eq(planVersions.trackerId, tracker.id),
-        lte(planVersions.effectiveFrom, localDate),
-      ),
-    )
-    .orderBy(desc(planVersions.effectiveFrom), desc(planVersions.version))
-    .limit(1);
 
   if (!planRow) {
     return {
@@ -140,12 +196,12 @@ export async function getTodayDashboard(
       : [];
   });
 
-  const tasks = instances
-    .map((instance) => {
-      const definition = definitions.get(instance.taskDefinitionId);
-      if (!definition) return null;
+  const tasks = instances.flatMap((instance): DashboardTask[] => {
+    const definition = definitions.get(instance.taskDefinitionId);
+    if (!definition) return [];
 
-      return {
+    return [
+      {
         id: instance.id,
         title: definition.title,
         description: definition.description,
@@ -154,9 +210,9 @@ export async function getTodayDashboard(
         status: instance.status,
         actual: instance.actualData,
         subjectiveNote: instance.subjectiveNote,
-      } satisfies DashboardTask;
-    })
-    .filter((task): task is DashboardTask => task !== null);
+      } satisfies DashboardTask,
+    ];
+  });
 
   return {
     state: localDate < tracker.startedOn ? "not_started" : "ready",
@@ -173,13 +229,16 @@ export async function getCalendarMonth(
   trackerKey: string,
   month: string,
 ): Promise<CalendarDaySummary[]> {
+  const tracker = await getTrackerDashboardContext(trackerKey);
+  return getCalendarMonthForTracker(tracker, month);
+}
+
+export async function getCalendarMonthForTracker(
+  tracker: TrackerDashboardContext | null,
+  month: string,
+): Promise<CalendarDaySummary[]> {
   const { start, end } = monthBounds(month);
   const database = getDatabase();
-  const [tracker] = await database
-    .select({ id: trackers.id })
-    .from(trackers)
-    .where(and(eq(trackers.key, trackerKey), eq(trackers.active, true)))
-    .limit(1);
 
   if (!tracker) return [];
 
@@ -262,11 +321,6 @@ export async function getCalendarMonth(
 }
 
 export async function getTrackerPlanningTimeZone(trackerKey: string) {
-  const database = getDatabase();
-  const [tracker] = await database
-    .select({ planningTimeZone: trackers.planningTimeZone })
-    .from(trackers)
-    .where(and(eq(trackers.key, trackerKey), eq(trackers.active, true)))
-    .limit(1);
+  const tracker = await getTrackerDashboardContext(trackerKey);
   return tracker?.planningTimeZone ?? null;
 }

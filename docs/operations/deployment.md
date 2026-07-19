@@ -30,7 +30,7 @@ GitHub、构建日志、浏览器或数据镜像。
 | 数据库       | Neon `DATABASE_URL`                                |
 | 应用身份     | `NEXTAUTH_URL`、`AUTH_SECRET`、`ALLOWED_GITHUB_ID` |
 | GitHub OAuth | OAuth Client ID 与 Client Secret                   |
-| Tracker 策略 | 私人安全阈值等模块配置，不进入公共代码             |
+| Tracker 策略 | PostgreSQL 不可变私人策略版本，不进入公共代码      |
 | 数据镜像     | 只允许目标私仓 Contents 权限的 fine-grained token  |
 | DeepSeek     | Base URL、API Key、模型、超时和最大输出长度        |
 | Garmin       | 认证加密密钥及加密后的 Provider Session/Token      |
@@ -39,10 +39,10 @@ GitHub、构建日志、浏览器或数据镜像。
 变更 Secret 时同步更新本地示例中的变量名，但不记录真实值。Token 轮换后必须验证旧值
 已经失效，并检查对应集成最近一次成功状态。
 
-当前膝关节模块的私人策略暂由 `KNEE_REHAB_PAIN_YELLOW_THRESHOLD` 配置。它不是
-凭证，只是版本化 `TrackerSafetyPolicy` 进入 PostgreSQL 前的过渡输入；公共仓库只
-保留通用规则执行器和变量占位符。P0b 契约落地后，新策略通过受控导入/管理流程创建
-不可变版本，不能继续靠修改环境变量形成不可审计的规则变化。
+当前膝关节模块已使用版本化 `TrackerSafetyPolicy`。公共仓库只保留通用 Schema、
+规则执行器和受控导入工具；真实规则文档位于私人数据域。新版本必须先执行正式
+migration（如需要），再通过 `pnpm safety-policy:import -- <private-policy.json>` 导入，
+最后部署读取新表的应用。导入命令只输出策略 ID、版本和 hash，不输出规则值。
 
 ## 首次部署
 
@@ -65,6 +65,8 @@ GitHub、构建日志、浏览器或数据镜像。
 2. 运行静态检查、类型检查、自动化测试和生产构建。
 3. 如果包含数据库变更，检查 migration 的前向兼容性、锁影响和回滚策略。
 4. 先执行兼容的数据库 migration，再部署能够同时读取旧/新状态的应用版本。
+   对安全策略切换，必须在旧版本仍可服务时先完成策略导入并只读验证，禁止先部署会
+   因策略缺失而拒绝反馈的新代码。
 5. 部署后执行生产冒烟：健康检查、身份门禁、今日读取和本次变更的最小旅程。
 6. 观察错误率、数据库延迟和相关集成状态，确认没有新增待处理积压。
 

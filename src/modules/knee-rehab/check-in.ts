@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+import {
+  evaluateSafetyPolicy,
+  safetyPolicyReferenceSchema,
+  type SafetyRule,
+} from "@/domain/safety-policy";
+
 export const kneeCheckInInputSchema = z.object({
   timing: z.enum(["morning", "post_training", "next_day", "incident"]),
   leftPain: z.number().int().min(0).max(10),
@@ -14,36 +20,20 @@ export const kneeCheckInInputSchema = z.object({
 });
 
 export type KneeCheckInInput = z.infer<typeof kneeCheckInInputSchema>;
-export type SafetyLevel = "green" | "yellow" | "red";
-export type KneeCheckInSafetyPolicy = {
-  painYellowThreshold: number;
-};
 
 export const kneeCheckInEventPayloadSchema = kneeCheckInInputSchema.extend({
   safetyLevel: z.enum(["green", "yellow", "red"]),
+  safetyPolicy: safetyPolicyReferenceSchema.optional(),
 });
+
+export const auditedKneeCheckInEventPayloadSchema =
+  kneeCheckInEventPayloadSchema.extend({
+    safetyPolicy: safetyPolicyReferenceSchema,
+  });
 
 export function evaluateKneeCheckIn(
   input: KneeCheckInInput,
-  policy: KneeCheckInSafetyPolicy,
-): SafetyLevel {
-  if (
-    input.swelling === "obvious" ||
-    input.mechanicalSymptoms ||
-    input.weightBearingIssue ||
-    input.localizedBonePain ||
-    input.nightOrRestPain
-  ) {
-    return "red";
-  }
-
-  if (
-    Math.max(input.leftPain, input.rightPain) >= policy.painYellowThreshold ||
-    input.swelling === "mild" ||
-    input.stiffness
-  ) {
-    return "yellow";
-  }
-
-  return "green";
+  rules: readonly SafetyRule[],
+) {
+  return evaluateSafetyPolicy(input, rules);
 }

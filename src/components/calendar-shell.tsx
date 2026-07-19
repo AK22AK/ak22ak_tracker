@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 import { calendarMonthCells, shiftMonth } from "@/domain/calendar";
 import type {
   CalendarDaySummary,
@@ -8,7 +6,6 @@ import type {
   TodayDashboard,
 } from "@/server/dashboard";
 
-import { BottomNav } from "./bottom-nav";
 import { SignOutButton } from "./sign-out-button";
 
 const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
@@ -152,12 +149,20 @@ export function CalendarShell({
   selectedDate,
   days,
   dashboard,
+  detailLoading,
+  detailError,
+  onSelectDate,
+  onSelectMonth,
 }: {
   month: string;
   today: string;
   selectedDate: string;
   days: CalendarDaySummary[];
-  dashboard: TodayDashboard;
+  dashboard: TodayDashboard | null;
+  detailLoading: boolean;
+  detailError: boolean;
+  onSelectDate: (date: string) => void;
+  onSelectMonth: (month: string) => void;
 }) {
   const summaries = new Map(days.map((day) => [day.date, day]));
   const cells = calendarMonthCells(month);
@@ -172,22 +177,34 @@ export function CalendarShell({
           <h1>训练日历</h1>
         </div>
         <div className="calendar-topbar-actions">
-          <Link className="today-link" href={`/calendar?date=${today}`}>
+          <button
+            className="today-link"
+            type="button"
+            onClick={() => onSelectDate(today)}
+          >
             回到今天
-          </Link>
+          </button>
           <SignOutButton />
         </div>
       </header>
 
       <section className="calendar-card" aria-label={formatMonth(month)}>
         <div className="month-switcher">
-          <Link href={`/calendar?date=${previousMonth}-01`} aria-label="上个月">
+          <button
+            type="button"
+            onClick={() => onSelectMonth(previousMonth)}
+            aria-label="上个月"
+          >
             ‹
-          </Link>
+          </button>
           <h2>{formatMonth(month)}</h2>
-          <Link href={`/calendar?date=${nextMonth}-01`} aria-label="下个月">
+          <button
+            type="button"
+            onClick={() => onSelectMonth(nextMonth)}
+            aria-label="下个月"
+          >
             ›
-          </Link>
+          </button>
         </div>
         <div className="calendar-weekdays" aria-hidden="true">
           {weekdays.map((weekday) => (
@@ -202,10 +219,11 @@ export function CalendarShell({
               );
             const summary = summaries.get(date);
             return (
-              <Link
+              <button
+                type="button"
                 key={date}
                 className={dayClass(date, summary, selectedDate, today)}
-                href={`/calendar?date=${date}`}
+                onClick={() => onSelectDate(date)}
                 aria-label={`${date}，${summary?.taskCount ?? 0} 项训练，${summary?.feedbackCount ?? 0} 次反馈`}
               >
                 <time dateTime={date}>{Number(date.slice(-2))}</time>
@@ -219,7 +237,7 @@ export function CalendarShell({
                     <span className="feedback-marker" />
                   )}
                 </span>
-              </Link>
+              </button>
             );
           })}
         </div>
@@ -238,59 +256,74 @@ export function CalendarShell({
             <h2 id="selected-date-title">{formatSelectedDate(selectedDate)}</h2>
           </div>
           <span className="date-plan-version">
-            {dashboard.planVersion
+            {dashboard?.planVersion
               ? `计划 v${dashboard.planVersion}`
               : "无计划"}
           </span>
         </div>
 
-        <div className="calendar-task-list">
-          {dashboard.tasks.map((task) => (
-            <article className={`calendar-task ${task.status}`} key={task.id}>
-              <div className="calendar-task-heading">
-                <strong>{task.title}</strong>
-                <span>{taskStatusLabels[task.status]}</span>
-              </div>
-              {task.description && <p>{task.description}</p>}
-              <details>
-                <summary>查看当天计划</summary>
-                <CalendarPrescription task={task} />
-              </details>
-              {(task.status !== "planned" ||
-                task.actual ||
-                task.subjectiveNote) && <ActualRecord task={task} />}
-            </article>
-          ))}
-          {dashboard.tasks.length === 0 && (
-            <p className="calendar-no-data">当天没有计划训练。</p>
-          )}
-        </div>
+        {detailLoading && (
+          <div className="calendar-detail-loading" role="status">
+            正在加载当天详情…
+          </div>
+        )}
+        {detailError && !detailLoading && (
+          <div className="calendar-no-data" role="alert">
+            当天详情加载失败，请稍后重试。
+          </div>
+        )}
+        {dashboard && !detailLoading && !detailError && (
+          <>
+            <div className="calendar-task-list">
+              {dashboard.tasks.map((task) => (
+                <article
+                  className={`calendar-task ${task.status}`}
+                  key={task.id}
+                >
+                  <div className="calendar-task-heading">
+                    <strong>{task.title}</strong>
+                    <span>{taskStatusLabels[task.status]}</span>
+                  </div>
+                  {task.description && <p>{task.description}</p>}
+                  <details>
+                    <summary>查看当天计划</summary>
+                    <CalendarPrescription task={task} />
+                  </details>
+                  {(task.status !== "planned" ||
+                    task.actual ||
+                    task.subjectiveNote) && <ActualRecord task={task} />}
+                </article>
+              ))}
+              {dashboard.tasks.length === 0 && (
+                <p className="calendar-no-data">当天没有计划训练。</p>
+              )}
+            </div>
 
-        <div className="calendar-feedback-list">
-          <h3>症状反馈</h3>
-          {dashboard.feedbacks.map((feedback) => (
-            <article
-              className={`calendar-feedback ${feedback.safetyLevel}`}
-              key={feedback.id}
-            >
-              <div>
-                <strong>{timingLabels[feedback.timing]}</strong>
-                <span>{safetyLabels[feedback.safetyLevel]}</span>
-              </div>
-              <p>
-                左膝 {feedback.leftPain}/10 · 右膝 {feedback.rightPain}/10 ·
-                肿胀 {feedback.swelling}
-              </p>
-              {feedback.note && <p>{feedback.note}</p>}
-            </article>
-          ))}
-          {dashboard.feedbacks.length === 0 && (
-            <p className="calendar-no-data">当天没有症状反馈。</p>
-          )}
-        </div>
+            <div className="calendar-feedback-list">
+              <h3>症状反馈</h3>
+              {dashboard.feedbacks.map((feedback) => (
+                <article
+                  className={`calendar-feedback ${feedback.safetyLevel}`}
+                  key={feedback.id}
+                >
+                  <div>
+                    <strong>{timingLabels[feedback.timing]}</strong>
+                    <span>{safetyLabels[feedback.safetyLevel]}</span>
+                  </div>
+                  <p>
+                    左膝 {feedback.leftPain}/10 · 右膝 {feedback.rightPain}/10 ·
+                    肿胀 {feedback.swelling}
+                  </p>
+                  {feedback.note && <p>{feedback.note}</p>}
+                </article>
+              ))}
+              {dashboard.feedbacks.length === 0 && (
+                <p className="calendar-no-data">当天没有症状反馈。</p>
+              )}
+            </div>
+          </>
+        )}
       </section>
-
-      <BottomNav current="calendar" />
     </main>
   );
 }

@@ -53,6 +53,7 @@ Next.js App Router 水合、后台刷新、乐观更新和查询失效。
 | `['tracker', key]`                | 名称、开始日、当前状态      | 30 分钟            |
 | `['safety-policy', key, version]` | 已鉴权的不可变安全策略      | 无限，版本变更失效 |
 | `['plan', key, version]`          | 不可变计划版本              | 无限，版本变更失效 |
+| `['today', key, localDate]`       | 今日聚合与完整有效安全策略  | 1 分钟             |
 | `['calendar', key, month]`        | 当月任务和反馈摘要          | 5 分钟             |
 | `['day', key, localDate]`         | 某日任务、实际记录和反馈    | 1 分钟             |
 | `['integrations', key]`           | Garmin、GitHub、AI 同步状态 | 1 分钟             |
@@ -61,9 +62,9 @@ Next.js App Router 水合、后台刷新、乐观更新和查询失效。
 日历不下载整月所有详情。月查询只返回每一天的计数、状态和标记；某日详情按日期读取，
 读取后留在缓存中。相邻日期或存在任务的日期可以在浏览器空闲时预取。
 
-### P0b 前置数据契约
+### P0b 数据契约
 
-P0b 在建立页面 Query 前先定义经过鉴权的聚合 DTO。今日 DTO 至少同时返回 Tracker
+P0b 已在建立页面 Query 前定义经过鉴权的聚合 DTO。今日 DTO 同时返回 Tracker
 摘要、目标日期的有效计划引用、任务/反馈，以及版本化 `TrackerSafetyPolicy`。策略对象
 包含 `policyId`、`version`、`effectiveFrom`、`hash` 和通用 `rules`，但公共源码、夹具
 和测试不得包含真实规则值。

@@ -1,6 +1,11 @@
-import Link from "next/link";
+"use client";
 
-export function BottomNav({ current }: { current: "today" | "calendar" }) {
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+
+export function BottomNav() {
+  const pathname = usePathname();
+  const current = pathname === "/calendar" ? "calendar" : "today";
   return (
     <nav className="bottom-nav" aria-label="主导航">
       <Link href="/" aria-current={current === "today" ? "page" : undefined}>
