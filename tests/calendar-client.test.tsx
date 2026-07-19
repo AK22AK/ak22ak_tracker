@@ -19,6 +19,7 @@ vi.mock("next-auth/react", () => ({
 }));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/calendar",
+  useRouter: () => ({ push: vi.fn() }),
 }));
 
 function deferred<T>() {

@@ -5,7 +5,9 @@ import { useEffect } from "react";
 
 import { trackerQueryKeys } from "@/client/query-keys";
 import { fetchTodayAggregate } from "@/client/tracker-api";
+import type { TodayAggregate } from "@/domain/api-contracts";
 import { localDateInTimeZone } from "@/domain/planning-time";
+import type { DashboardTask } from "@/server/dashboard";
 
 import { DashboardShell } from "./dashboard-shell";
 
@@ -26,8 +28,9 @@ function todayLabel(localDate: string) {
 export function TodayClient() {
   const queryClient = useQueryClient();
   const localDate = localDateInTimeZone(new Date(), planningTimeZone);
+  const queryKey = trackerQueryKeys.today(trackerKey, localDate);
   const query = useQuery({
-    queryKey: trackerQueryKeys.today(trackerKey, localDate),
+    queryKey,
     queryFn: ({ signal }) => fetchTodayAggregate(trackerKey, localDate, signal),
     staleTime: 60_000,
   });
@@ -78,7 +81,7 @@ export function TodayClient() {
 
   const refreshRelatedData = () => {
     void queryClient.invalidateQueries({
-      queryKey: trackerQueryKeys.today(trackerKey, localDate),
+      queryKey,
     });
     void queryClient.invalidateQueries({
       queryKey: trackerQueryKeys.day(trackerKey, localDate),
@@ -88,14 +91,43 @@ export function TodayClient() {
     });
   };
 
+  const updateDay = (
+    update: (day: TodayAggregate["day"]) => TodayAggregate["day"],
+  ) => {
+    queryClient.setQueryData<TodayAggregate>(queryKey, (current) =>
+      current
+        ? {
+            ...current,
+            day: update(current.day),
+          }
+        : current,
+    );
+  };
+
+  const handleTaskUpdated = (updated: DashboardTask) => {
+    updateDay((day) => ({
+      ...day,
+      tasks: day.tasks.map((task) => (task.id === updated.id ? updated : task)),
+    }));
+    refreshRelatedData();
+  };
+
+  const handleFeedbackSaved = () => {
+    updateDay((day) => ({
+      ...day,
+      feedbackCount: day.feedbackCount + 1,
+    }));
+    refreshRelatedData();
+  };
+
   return (
     <DashboardShell
-      key={query.dataUpdatedAt}
       today={todayLabel(localDate)}
       initialDashboard={query.data.day}
       safetyPolicy={query.data.safetyPolicy}
       onRefresh={() => query.refetch()}
-      onDataChanged={refreshRelatedData}
+      onTaskUpdated={handleTaskUpdated}
+      onFeedbackSaved={handleFeedbackSaved}
     />
   );
 }

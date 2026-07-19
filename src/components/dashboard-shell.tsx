@@ -516,28 +516,29 @@ export function DashboardShell({
   initialDashboard,
   safetyPolicy,
   onRefresh,
-  onDataChanged,
+  onTaskUpdated,
+  onFeedbackSaved,
 }: {
   today: string;
   initialDashboard: TodayDashboard;
   safetyPolicy: TrackerSafetyPolicy;
   onRefresh: () => Promise<unknown>;
-  onDataChanged: () => void;
+  onTaskUpdated: (task: DashboardTask) => void;
+  onFeedbackSaved: (safetyLevel: "green" | "yellow" | "red") => void;
 }) {
   const online = useSyncExternalStore(
     subscribeToNetworkState,
     () => navigator.onLine,
     () => true,
   );
-  const [tasks, setTasks] = useState(initialDashboard.tasks);
-  const [feedbackCount, setFeedbackCount] = useState(
-    initialDashboard.feedbackCount,
-  );
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [lastSafety, setLastSafety] = useState<
     "green" | "yellow" | "red" | null
   >(null);
+
+  const tasks = initialDashboard.tasks;
+  const feedbackCount = initialDashboard.feedbackCount;
 
   const completedCount = tasks.filter(
     (task) => task.status === "completed",
@@ -616,18 +617,7 @@ export function DashboardShell({
         {tasks.length > 0 && (
           <div className="task-list">
             {tasks.map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                onUpdated={(updated) => {
-                  setTasks((current) =>
-                    current.map((item) =>
-                      item.id === updated.id ? updated : item,
-                    ),
-                  );
-                  onDataChanged();
-                }}
-              />
+              <TaskCard key={task.id} task={task} onUpdated={onTaskUpdated} />
             ))}
           </div>
         )}
@@ -676,10 +666,9 @@ export function DashboardShell({
             safetyPolicy={safetyPolicy}
             onEvaluated={setLastSafety}
             onSaved={(safetyLevel) => {
-              setFeedbackCount((count) => count + 1);
               setLastSafety(safetyLevel);
               setFeedbackOpen(false);
-              onDataChanged();
+              onFeedbackSaved(safetyLevel);
             }}
           />
         )}
