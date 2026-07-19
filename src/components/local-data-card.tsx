@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { clearCurrentUserClientState } from "@/offline/clear-private-client-state";
@@ -18,6 +19,9 @@ export function LocalDataCard() {
       <p>
         保存当前账号的白名单快照、安全规则和待同步任务/反馈。清除后不会删除云端数据。
       </p>
+      <Link className="secondary-button" href="/settings/pending">
+        查看待同步记录{commands.length > 0 ? `（${commands.length}）` : ""}
+      </Link>
       {confirming ? (
         <p className="destructive-confirmation" role="alert">
           本机还有 {commands.length}{" "}

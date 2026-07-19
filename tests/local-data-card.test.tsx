@@ -54,4 +54,14 @@ describe("local private data controls (P0-08/P2a)", () => {
       expect(clearCurrentUserClientState).toHaveBeenCalledOnce(),
     );
   });
+
+  it("links to the ordered pending-command status center with the current count", () => {
+    commandHarness.commands = [{ id: "anonymous-command" }];
+    render(<LocalDataCard />);
+
+    const link = screen.getByRole("link", {
+      name: "查看待同步记录（1）",
+    });
+    expect(link.getAttribute("href")).toBe("/settings/pending");
+  });
 });

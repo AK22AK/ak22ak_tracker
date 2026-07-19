@@ -22,6 +22,12 @@ const schemas: Record<QuerySnapshotKind, ZodType> = {
   day: offlineDaySnapshotSchema,
 };
 
+export const querySnapshotLifetimeMs: Record<QuerySnapshotKind, number> = {
+  today: 7 * 24 * 60 * 60 * 1_000,
+  "calendar-month": 35 * 24 * 60 * 60 * 1_000,
+  day: 35 * 24 * 60 * 60 * 1_000,
+};
+
 function assertIdentity(githubUserId: string) {
   if (!immutableGithubUserId.test(githubUserId)) {
     throw new Error("invalid_immutable_github_user_id");
@@ -37,6 +43,20 @@ function snapshotId(input: {
   return [input.githubUserId, input.trackerKey, input.kind, input.scope].join(
     ":",
   );
+}
+
+export function createQuerySnapshotRow<T>(
+  input: Omit<QuerySnapshotRow, "id" | "schemaVersion" | "data"> & {
+    data: T;
+  },
+): QuerySnapshotRow {
+  assertIdentity(input.githubUserId);
+  return {
+    ...input,
+    id: snapshotId(input),
+    schemaVersion: PRIVATE_OFFLINE_SNAPSHOT_SCHEMA_VERSION,
+    data: schemas[input.kind].parse(input.data),
+  };
 }
 
 export async function prepareOfflineIdentity(
@@ -93,14 +113,7 @@ export async function saveQuerySnapshot<T>(
     data: T;
   },
 ) {
-  assertIdentity(input.githubUserId);
-  const data = schemas[input.kind].parse(input.data);
-  await database.querySnapshots.put({
-    ...input,
-    id: snapshotId(input),
-    schemaVersion: PRIVATE_OFFLINE_SNAPSHOT_SCHEMA_VERSION,
-    data,
-  });
+  await database.querySnapshots.put(createQuerySnapshotRow(input));
 }
 
 export async function readQuerySnapshot(

@@ -5,17 +5,27 @@ import { useCallback, useMemo } from "react";
 
 import {
   prepareOfflineIdentity,
+  querySnapshotLifetimeMs,
   readQuerySnapshot,
   saveQuerySnapshot,
 } from "./query-snapshots";
 import { usePrivateOfflineIdentity } from "./private-offline-context";
 import { offlineDatabase, type QuerySnapshotKind } from "./store";
 
-const snapshotLifetimeMs: Record<QuerySnapshotKind, number> = {
-  today: 7 * 24 * 60 * 60 * 1_000,
-  "calendar-month": 35 * 24 * 60 * 60 * 1_000,
-  day: 35 * 24 * 60 * 60 * 1_000,
-};
+export function privateOfflineSnapshotQueryKey(
+  githubUserId: string | null,
+  trackerKey: string,
+  kind: QuerySnapshotKind,
+  scope: string,
+) {
+  return [
+    "private-offline-snapshot",
+    githubUserId,
+    trackerKey,
+    kind,
+    scope,
+  ] as const;
+}
 
 export function useQuerySnapshot<T>({
   trackerKey,
@@ -29,14 +39,7 @@ export function useQuerySnapshot<T>({
   const githubUserId = usePrivateOfflineIdentity();
   const queryClient = useQueryClient();
   const queryKey = useMemo(
-    () =>
-      [
-        "private-offline-snapshot",
-        githubUserId,
-        trackerKey,
-        kind,
-        scope,
-      ] as const,
+    () => privateOfflineSnapshotQueryKey(githubUserId, trackerKey, kind, scope),
     [githubUserId, kind, scope, trackerKey],
   );
   const snapshot = useQuery({
@@ -70,7 +73,7 @@ export function useQuerySnapshot<T>({
           data,
           savedAt: savedAt.toISOString(),
           expiresAt: new Date(
-            savedAt.getTime() + snapshotLifetimeMs[kind],
+            savedAt.getTime() + querySnapshotLifetimeMs[kind],
           ).toISOString(),
           sourceVersion,
         });

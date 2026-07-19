@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests/browser",
-  testMatch: "offline-cold-start.spec.ts",
+  testMatch: ["offline-cold-start.spec.ts", "pending-command-layout.spec.ts"],
   fullyParallel: false,
   workers: 1,
   retries: 0,

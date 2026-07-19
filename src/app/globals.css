@@ -3141,6 +3141,144 @@ summary:focus-visible {
   margin-top: 1rem;
 }
 
+.pending-command-page {
+  min-width: 0;
+}
+
+.pending-command-header,
+.pending-command-intro,
+.pending-command-card-heading,
+.pending-command-facts,
+.pending-command-confirmation > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.pending-command-header .text-button {
+  min-height: var(--control-height);
+}
+
+.pending-command-intro {
+  margin-bottom: 1rem;
+}
+
+.pending-command-intro p,
+.pending-command-card p,
+.pending-command-empty p {
+  margin-bottom: 0;
+  color: var(--color-ink-muted);
+}
+
+.pending-command-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.pending-command-card {
+  min-width: 0;
+}
+
+.pending-command-card-heading {
+  align-items: flex-start;
+}
+
+.pending-command-card-heading h2 {
+  margin: 0.25rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.queue-position {
+  color: var(--color-brand);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.pending-command-facts {
+  justify-content: flex-start;
+  margin: 1rem 0;
+}
+
+.pending-command-facts > div {
+  min-width: 0;
+}
+
+.pending-command-facts dt {
+  color: var(--color-ink-muted);
+  font-size: 0.75rem;
+}
+
+.pending-command-facts dd {
+  margin: 0.2rem 0 0;
+  color: var(--color-ink);
+  font-weight: 650;
+}
+
+.pending-command-summary {
+  color: var(--color-ink) !important;
+  font-weight: 650;
+}
+
+.pending-command-explanation,
+.pending-command-action-note,
+.pending-command-discard small {
+  display: block;
+  margin-top: 0.75rem;
+}
+
+.pending-command-discard {
+  display: grid;
+  justify-items: start;
+  gap: 0.25rem;
+  margin-top: 1rem;
+}
+
+.pending-command-confirmation {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--color-danger);
+  border-radius: var(--radius-control);
+  background: var(--color-danger-soft);
+}
+
+.pending-command-confirmation p {
+  margin: 0.5rem 0 1rem;
+  color: var(--color-ink);
+}
+
+.pending-command-confirmation > div {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.pending-command-message {
+  margin-top: 1rem;
+}
+
+@media (max-width: 430px) {
+  .pending-command-header,
+  .pending-command-intro,
+  .pending-command-card-heading {
+    align-items: flex-start;
+  }
+
+  .pending-command-intro,
+  .pending-command-card-heading {
+    flex-direction: column;
+  }
+
+  .pending-command-card .secondary-button,
+  .pending-command-confirmation button {
+    width: 100%;
+  }
+
+  .pending-command-confirmation > div {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 350px) {
   .task-card-summary {
     grid-template-columns: 2.75rem minmax(0, 1fr);
