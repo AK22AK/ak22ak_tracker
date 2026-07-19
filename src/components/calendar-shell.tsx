@@ -9,6 +9,7 @@ import type {
 } from "@/server/dashboard";
 
 import { BottomNav } from "./bottom-nav";
+import { SignOutButton } from "./sign-out-button";
 
 const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
 const timingLabels: Record<DashboardFeedback["timing"], string> = {
@@ -170,9 +171,12 @@ export function CalendarShell({
           <p className="eyebrow">AK Tracker</p>
           <h1>训练日历</h1>
         </div>
-        <Link className="today-link" href={`/calendar?date=${today}`}>
-          回到今天
-        </Link>
+        <div className="calendar-topbar-actions">
+          <Link className="today-link" href={`/calendar?date=${today}`}>
+            回到今天
+          </Link>
+          <SignOutButton />
+        </div>
       </header>
 
       <section className="calendar-card" aria-label={formatMonth(month)}>

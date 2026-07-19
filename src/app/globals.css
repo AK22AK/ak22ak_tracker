@@ -673,6 +673,30 @@ h2 {
   text-decoration: none;
 }
 
+.calendar-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.sign-out-button {
+  min-height: 2.55rem;
+  padding: 0.55rem 0.72rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sign-out-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 .calendar-card,
 .date-detail-card {
   padding: 1.15rem;

@@ -1,61 +1,74 @@
-import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 
-import { and, eq } from "drizzle-orm";
-import { getServerSession } from "next-auth";
+import { ZodError } from "zod";
 
-import { schemaVersion, trackerEventSchema } from "@/domain/schemas";
+import { clientCommandMetadataSchema } from "@/domain/schemas";
 import {
   evaluateKneeCheckIn,
+  kneeCheckInEventPayloadSchema,
   kneeCheckInInputSchema,
 } from "@/modules/knee-rehab/check-in";
-import { authOptions } from "@/server/auth/options";
-import { getDatabase } from "@/server/db/client";
-import { events, trackers } from "@/server/db/schema";
+import { getAuthorizedSession } from "@/server/auth/session";
+import { createNeonEventCommandStore } from "@/server/commands/event-command";
+import {
+  EventCommandConflictError,
+  executeAppendEventCommand,
+  TrackerNotFoundError,
+} from "@/server/commands/event-command-core";
+import { getKneeCheckInSafetyPolicy } from "@/server/knee-rehab/safety-policy";
+
+const checkInCommandSchema = clientCommandMetadataSchema.and(
+  kneeCheckInInputSchema,
+);
 
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
+  const session = await getAuthorizedSession();
   if (!session) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const input = kneeCheckInInputSchema.parse(await request.json());
-  const database = getDatabase();
-  const [tracker] = await database
-    .select()
-    .from(trackers)
-    .where(and(eq(trackers.key, "knee-rehab"), eq(trackers.active, true)))
-    .limit(1);
+  try {
+    const input = checkInCommandSchema.parse(await request.json());
+    const checkIn = kneeCheckInInputSchema.parse(input);
+    const safetyLevel = evaluateKneeCheckIn(
+      checkIn,
+      getKneeCheckInSafetyPolicy(),
+    );
+    const result = await executeAppendEventCommand(
+      createNeonEventCommandStore(),
+      {
+        commandId: input.commandId,
+        trackerKey: "knee-rehab",
+        kind: "symptom_check_in",
+        payload: { ...checkIn, safetyLevel },
+        occurredAt: input.occurredAt,
+        occurredTimeZone: input.occurredTimeZone,
+        occurredUtcOffsetMinutes: input.occurredUtcOffsetMinutes,
+        payloadMatches: (existingPayload) => {
+          const parsed = kneeCheckInInputSchema.safeParse(existingPayload);
+          return parsed.success && isDeepStrictEqual(parsed.data, checkIn);
+        },
+      },
+    );
+    const canonicalPayload = kneeCheckInEventPayloadSchema.parse(
+      result.event.payload,
+    );
 
-  if (!tracker) {
-    return Response.json({ error: "tracker_not_found" }, { status: 404 });
+    return Response.json({
+      id: result.event.id,
+      safetyLevel: canonicalPayload.safetyLevel,
+      replayed: result.replayed,
+    });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return Response.json({ error: "invalid_request" }, { status: 400 });
+    }
+    if (error instanceof TrackerNotFoundError) {
+      return Response.json({ error: error.message }, { status: 404 });
+    }
+    if (error instanceof EventCommandConflictError) {
+      return Response.json({ error: error.message }, { status: 409 });
+    }
+    throw error;
   }
-
-  const now = new Date();
-  const eventId = randomUUID();
-  const safetyLevel = evaluateKneeCheckIn(input);
-  const event = trackerEventSchema.parse({
-    schemaVersion,
-    id: eventId,
-    trackerKey: tracker.key,
-    kind: "symptom_check_in",
-    occurredAt: now.toISOString(),
-    recordedAt: now.toISOString(),
-    localDate: input.localDate,
-    idempotencyKey: `check-in:${eventId}`,
-    payload: { ...input, safetyLevel },
-    provenance: { source: "user" },
-  });
-
-  await database.insert(events).values({
-    id: event.id,
-    trackerId: tracker.id,
-    kind: event.kind,
-    localDate: event.localDate,
-    occurredAt: new Date(event.occurredAt),
-    recordedAt: new Date(event.recordedAt),
-    idempotencyKey: event.idempotencyKey,
-    document: event,
-  });
-
-  return Response.json({ id: event.id, safetyLevel });
 }

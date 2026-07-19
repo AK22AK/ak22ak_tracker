@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 export const kneeCheckInInputSchema = z.object({
-  localDate: z.string().date(),
   timing: z.enum(["morning", "post_training", "next_day", "incident"]),
   leftPain: z.number().int().min(0).max(10),
   rightPain: z.number().int().min(0).max(10),
@@ -16,12 +15,18 @@ export const kneeCheckInInputSchema = z.object({
 
 export type KneeCheckInInput = z.infer<typeof kneeCheckInInputSchema>;
 export type SafetyLevel = "green" | "yellow" | "red";
+export type KneeCheckInSafetyPolicy = {
+  painYellowThreshold: number;
+};
 
 export const kneeCheckInEventPayloadSchema = kneeCheckInInputSchema.extend({
   safetyLevel: z.enum(["green", "yellow", "red"]),
 });
 
-export function evaluateKneeCheckIn(input: KneeCheckInInput): SafetyLevel {
+export function evaluateKneeCheckIn(
+  input: KneeCheckInInput,
+  policy: KneeCheckInSafetyPolicy,
+): SafetyLevel {
   if (
     input.swelling === "obvious" ||
     input.mechanicalSymptoms ||
@@ -33,7 +38,7 @@ export function evaluateKneeCheckIn(input: KneeCheckInInput): SafetyLevel {
   }
 
   if (
-    Math.max(input.leftPain, input.rightPain) >= 3 ||
+    Math.max(input.leftPain, input.rightPain) >= policy.painYellowThreshold ||
     input.swelling === "mild" ||
     input.stiffness
   ) {

@@ -1,6 +1,5 @@
-const CACHE_NAME = "ak-tracker-shell-v2";
+const CACHE_NAME = "ak-tracker-public-v3";
 const APP_SHELL = [
-  "/",
   "/manifest.webmanifest",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
@@ -20,7 +19,9 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => key !== CACHE_NAME)
+            .filter(
+              (key) => key.startsWith("ak-tracker-") && key !== CACHE_NAME,
+            )
             .map((key) => caches.delete(key)),
         ),
       ),
@@ -35,21 +36,22 @@ self.addEventListener("fetch", (event) => {
   if (
     request.method !== "GET" ||
     url.origin !== self.location.origin ||
+    request.mode === "navigate" ||
     url.pathname.startsWith("/api/")
   ) {
     return;
   }
 
-  if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request).catch(() =>
-        caches.match("/").then((cached) => cached || Response.error()),
-      ),
-    );
-    return;
-  }
-
-  if (["style", "script", "font", "image"].includes(request.destination)) {
+  const isPublicAsset =
+    url.pathname.startsWith("/_next/static/") ||
+    url.pathname.startsWith("/icons/") ||
+    url.pathname === "/manifest.webmanifest";
+  if (
+    isPublicAsset &&
+    ["style", "script", "font", "image", "manifest"].includes(
+      request.destination,
+    )
+  ) {
     event.respondWith(
       caches.match(request).then(
         (cached) =>

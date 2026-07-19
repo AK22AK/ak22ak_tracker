@@ -1,11 +1,16 @@
 "use client";
 
-import { type FormEvent, useState, useSyncExternalStore } from "react";
+import { type FormEvent, useRef, useState, useSyncExternalStore } from "react";
 
+import {
+  createOrReuseClientCommand,
+  type PendingClientCommand,
+} from "@/domain/client-command";
 import type { TaskActual } from "@/domain/schemas";
 import type { DashboardTask, TodayDashboard } from "@/server/dashboard";
 
 import { BottomNav } from "./bottom-nav";
+import { SignOutButton } from "./sign-out-button";
 
 function subscribeToNetworkState(onStoreChange: () => void) {
   window.addEventListener("online", onStoreChange);
@@ -133,22 +138,33 @@ function TaskCard({
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveFailed, setSaveFailed] = useState(false);
+  const pendingCommand = useRef<PendingClientCommand | null>(null);
 
   async function save(status: DashboardTask["status"], nextNote = note) {
     setSaving(true);
     setSaveMessage(null);
     setSaveFailed(false);
     try {
+      const payload = {
+        status,
+        actual,
+        note: nextNote || null,
+      };
+      const command = createOrReuseClientCommand(
+        pendingCommand.current,
+        payload,
+      );
+      pendingCommand.current = command;
       const response = await fetch(`/api/tasks/${task.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          status,
-          actual,
-          note: nextNote || null,
+          ...payload,
+          ...command.metadata,
         }),
       });
       if (!response.ok) throw new Error("task_update_failed");
+      pendingCommand.current = null;
       onUpdated({
         ...task,
         status,
@@ -348,13 +364,12 @@ function TaskCard({
 }
 
 function CheckInForm({
-  localDate,
   onSaved,
 }: {
-  localDate: string;
   onSaved: (safetyLevel: "green" | "yellow" | "red") => void;
 }) {
   const [saving, setSaving] = useState(false);
+  const pendingCommand = useRef<PendingClientCommand | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -362,27 +377,36 @@ function CheckInForm({
     setSaving(true);
     try {
       const form = new FormData(formElement);
+      const payload = {
+        timing: form.get("timing"),
+        leftPain: Number(form.get("leftPain")),
+        rightPain: Number(form.get("rightPain")),
+        swelling: form.get("swelling"),
+        stiffness: form.get("stiffness") === "on",
+        mechanicalSymptoms: form.get("mechanicalSymptoms") === "on",
+        weightBearingIssue: form.get("weightBearingIssue") === "on",
+        localizedBonePain: form.get("localizedBonePain") === "on",
+        nightOrRestPain: form.get("nightOrRestPain") === "on",
+        note: form.get("note"),
+      };
+      const command = createOrReuseClientCommand(
+        pendingCommand.current,
+        payload,
+      );
+      pendingCommand.current = command;
       const response = await fetch("/api/check-ins", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          localDate,
-          timing: form.get("timing"),
-          leftPain: Number(form.get("leftPain")),
-          rightPain: Number(form.get("rightPain")),
-          swelling: form.get("swelling"),
-          stiffness: form.get("stiffness") === "on",
-          mechanicalSymptoms: form.get("mechanicalSymptoms") === "on",
-          weightBearingIssue: form.get("weightBearingIssue") === "on",
-          localizedBonePain: form.get("localizedBonePain") === "on",
-          nightOrRestPain: form.get("nightOrRestPain") === "on",
-          note: form.get("note"),
+          ...payload,
+          ...command.metadata,
         }),
       });
       if (!response.ok) throw new Error("check_in_failed");
       const result = (await response.json()) as {
         safetyLevel: "green" | "yellow" | "red";
       };
+      pendingCommand.current = null;
       formElement.reset();
       onSaved(result.safetyLevel);
     } finally {
@@ -469,11 +493,9 @@ function CheckInForm({
 
 export function DashboardShell({
   today,
-  localDate,
   initialDashboard,
 }: {
   today: string;
-  localDate: string;
   initialDashboard: TodayDashboard;
 }) {
   const online = useSyncExternalStore(
@@ -530,6 +552,7 @@ export function DashboardShell({
             <span aria-hidden="true" />
             {online ? "已联网" : "当前离线"}
           </div>
+          <SignOutButton />
         </div>
       </header>
 
@@ -618,7 +641,6 @@ export function DashboardShell({
         </button>
         {feedbackOpen && (
           <CheckInForm
-            localDate={localDate}
             onSaved={(safetyLevel) => {
               setFeedbackCount((count) => count + 1);
               setLastSafety(safetyLevel);

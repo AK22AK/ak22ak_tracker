@@ -25,6 +25,8 @@ async function main() {
   const database = drizzle(neon(databaseUrl));
   const trackerName = process.env.TRACKER_NAME ?? document.trackerKey;
   const trackerModule = process.env.TRACKER_MODULE ?? document.trackerKey;
+  const planningTimeZone =
+    process.env.TRACKER_PLANNING_TIME_ZONE ?? "Asia/Shanghai";
 
   const [tracker] = await database
     .insert(trackers)
@@ -33,13 +35,14 @@ async function main() {
       name: trackerName,
       module: trackerModule,
       startedOn: document.effectiveFrom,
+      planningTimeZone,
     })
     .onConflictDoUpdate({
       target: trackers.key,
       set: {
         name: trackerName,
         module: trackerModule,
-        startedOn: document.effectiveFrom,
+        planningTimeZone,
         active: true,
         updatedAt: new Date(),
       },

@@ -1,8 +1,9 @@
 import "server-only";
 
-import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
 
 import { monthBounds } from "@/domain/calendar";
+import { resolveEffectivePlanVersion } from "@/domain/plan-timeline";
 import { planVersionSchema, type TaskActual } from "@/domain/schemas";
 import { kneeCheckInEventPayloadSchema } from "@/modules/knee-rehab/check-in";
 
@@ -75,13 +76,18 @@ export async function getTodayDashboard(
   const [planRow] = await database
     .select()
     .from(planVersions)
-    .where(eq(planVersions.trackerId, tracker.id))
-    .orderBy(desc(planVersions.version))
+    .where(
+      and(
+        eq(planVersions.trackerId, tracker.id),
+        lte(planVersions.effectiveFrom, localDate),
+      ),
+    )
+    .orderBy(desc(planVersions.effectiveFrom), desc(planVersions.version))
     .limit(1);
 
   if (!planRow) {
     return {
-      state: "missing",
+      state: localDate < tracker.startedOn ? "not_started" : "missing",
       trackerName: tracker.name,
       startDate: tracker.startedOn,
       planVersion: null,
@@ -177,24 +183,36 @@ export async function getCalendarMonth(
 
   if (!tracker) return [];
 
-  const [planRow] = await database
-    .select({ id: planVersions.id })
+  const planRows = await database
+    .select({
+      id: planVersions.id,
+      version: planVersions.version,
+      effectiveFrom: planVersions.effectiveFrom,
+    })
     .from(planVersions)
-    .where(eq(planVersions.trackerId, tracker.id))
-    .orderBy(desc(planVersions.version))
-    .limit(1);
+    .where(
+      and(
+        eq(planVersions.trackerId, tracker.id),
+        lte(planVersions.effectiveFrom, end),
+      ),
+    )
+    .orderBy(asc(planVersions.effectiveFrom), asc(planVersions.version));
 
-  const taskRows = planRow
+  const taskRows = planRows.length
     ? await database
         .select({
           date: taskInstances.scheduledOn,
           status: taskInstances.status,
+          planVersionId: taskInstances.planVersionId,
         })
         .from(taskInstances)
         .where(
           and(
             eq(taskInstances.trackerId, tracker.id),
-            eq(taskInstances.planVersionId, planRow.id),
+            inArray(
+              taskInstances.planVersionId,
+              planRows.map((version) => version.id),
+            ),
             gte(taskInstances.scheduledOn, start),
             lte(taskInstances.scheduledOn, end),
           ),
@@ -227,6 +245,8 @@ export async function getCalendarMonth(
   };
 
   for (const task of taskRows) {
+    const effectiveVersion = resolveEffectivePlanVersion(planRows, task.date);
+    if (effectiveVersion?.id !== task.planVersionId) continue;
     const summary = summaryFor(task.date);
     summary.taskCount += 1;
     if (task.status === "completed") summary.completedCount += 1;
@@ -239,4 +259,14 @@ export async function getCalendarMonth(
   return [...summaries.values()].sort((left, right) =>
     left.date.localeCompare(right.date),
   );
+}
+
+export async function getTrackerPlanningTimeZone(trackerKey: string) {
+  const database = getDatabase();
+  const [tracker] = await database
+    .select({ planningTimeZone: trackers.planningTimeZone })
+    .from(trackers)
+    .where(and(eq(trackers.key, trackerKey), eq(trackers.active, true)))
+    .limit(1);
+  return tracker?.planningTimeZone ?? null;
 }

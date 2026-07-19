@@ -12,6 +12,8 @@ describe("eventMirrorPath", () => {
       kind: "symptom_check_in",
       occurredAt: "2026-07-16T08:15:00+08:00",
       recordedAt: "2026-07-16T08:16:00+08:00",
+      occurredTimeZone: "Asia/Shanghai",
+      occurredUtcOffsetMinutes: 480,
       localDate: "2026-07-16",
       idempotencyKey: "phone-019bfe22-f969-7000-8000-000000000001",
       payload: { pain: 2 },

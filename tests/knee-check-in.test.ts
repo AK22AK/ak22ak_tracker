@@ -6,7 +6,6 @@ import {
 } from "@/modules/knee-rehab/check-in";
 
 const baseline: KneeCheckInInput = {
-  localDate: "2026-07-18",
   timing: "post_training",
   leftPain: 0,
   rightPain: 0,
@@ -18,25 +17,33 @@ const baseline: KneeCheckInInput = {
   nightOrRestPain: false,
   note: "",
 };
+const anonymousPolicy = { painYellowThreshold: 5 };
 
 describe("evaluateKneeCheckIn", () => {
   it("returns green for a low-symptom check-in", () => {
-    expect(evaluateKneeCheckIn({ ...baseline, leftPain: 2 })).toBe("green");
+    expect(
+      evaluateKneeCheckIn({ ...baseline, leftPain: 4 }, anonymousPolicy),
+    ).toBe("green");
   });
 
   it("returns yellow for pain at the threshold", () => {
-    expect(evaluateKneeCheckIn({ ...baseline, rightPain: 3 })).toBe("yellow");
+    expect(
+      evaluateKneeCheckIn({ ...baseline, rightPain: 5 }, anonymousPolicy),
+    ).toBe("yellow");
   });
 
   it("returns yellow for mild swelling", () => {
-    expect(evaluateKneeCheckIn({ ...baseline, swelling: "mild" })).toBe(
-      "yellow",
-    );
+    expect(
+      evaluateKneeCheckIn({ ...baseline, swelling: "mild" }, anonymousPolicy),
+    ).toBe("yellow");
   });
 
   it("returns red when a red-flag symptom is present", () => {
-    expect(evaluateKneeCheckIn({ ...baseline, mechanicalSymptoms: true })).toBe(
-      "red",
-    );
+    expect(
+      evaluateKneeCheckIn(
+        { ...baseline, mechanicalSymptoms: true },
+        anonymousPolicy,
+      ),
+    ).toBe("red");
   });
 });

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { isIanaTimeZone } from "./planning-time";
+
 export const schemaVersion = "1.0.0" as const;
 
 const identifierSchema = z
@@ -11,6 +13,18 @@ const identifierSchema = z
 export const trackerKeySchema = identifierSchema;
 export const localDateSchema = z.string().date();
 export const instantSchema = z.string().datetime({ offset: true });
+export const ianaTimeZoneSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .refine(isIanaTimeZone, "Invalid IANA time zone");
+export const utcOffsetMinutesSchema = z.number().int().min(-840).max(840);
+export const clientCommandMetadataSchema = z.object({
+  commandId: z.uuid(),
+  occurredAt: instantSchema,
+  occurredTimeZone: ianaTimeZoneSchema,
+  occurredUtcOffsetMinutes: utcOffsetMinutesSchema,
+});
 
 export const planTaskSchema = z.object({
   id: identifierSchema,
@@ -71,6 +85,8 @@ export const trackerEventSchema = z.object({
   ]),
   occurredAt: instantSchema,
   recordedAt: instantSchema,
+  occurredTimeZone: ianaTimeZoneSchema,
+  occurredUtcOffsetMinutes: utcOffsetMinutesSchema,
   localDate: localDateSchema,
   idempotencyKey: z.string().min(8).max(200),
   payload: z.record(z.string(), z.unknown()),

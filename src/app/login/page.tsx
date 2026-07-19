@@ -1,13 +1,12 @@
-import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 
 import { GithubSignInButton } from "@/components/github-sign-in-button";
-import { authOptions } from "@/server/auth/options";
+import { getAuthorizedSession } from "@/server/auth/session";
 
 export const dynamic = "force-dynamic";
 
 export default async function LoginPage() {
-  const session = await getServerSession(authOptions);
+  const session = await getAuthorizedSession();
   if (session) {
     redirect("/");
   }

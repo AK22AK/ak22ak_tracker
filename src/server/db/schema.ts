@@ -49,6 +49,9 @@ export const trackers = pgTable("trackers", {
   name: text("name").notNull(),
   module: text("module").notNull(),
   startedOn: date("started_on").notNull(),
+  planningTimeZone: text("planning_time_zone")
+    .default("Asia/Shanghai")
+    .notNull(),
   active: boolean("active").default(true).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
@@ -76,6 +79,10 @@ export const planVersions = pgTable(
     uniqueIndex("plan_versions_tracker_version_unique").on(
       table.trackerId,
       table.version,
+    ),
+    index("plan_versions_tracker_effective_index").on(
+      table.trackerId,
+      table.effectiveFrom,
     ),
   ],
 );
@@ -121,6 +128,12 @@ export const events = pgTable(
     localDate: date("local_date").notNull(),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    occurredTimeZone: text("occurred_time_zone")
+      .default("Asia/Shanghai")
+      .notNull(),
+    occurredUtcOffsetMinutes: integer("occurred_utc_offset_minutes")
+      .default(480)
+      .notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
     document: jsonb("document").$type<TrackerEvent>().notNull(),
   },

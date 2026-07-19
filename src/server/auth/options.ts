@@ -1,7 +1,7 @@
 import type { NextAuthOptions } from "next-auth";
 import GitHubProvider, { type GithubProfile } from "next-auth/providers/github";
 
-import { isAllowedGithubLogin } from "./allowlist";
+import { isAllowedGithubId } from "./allowlist";
 
 export const authOptions: NextAuthOptions = {
   secret: process.env.AUTH_SECRET,
@@ -22,10 +22,25 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async signIn({ profile }) {
       const githubProfile = profile as GithubProfile | undefined;
-      return isAllowedGithubLogin(
-        githubProfile?.login,
-        process.env.ALLOWED_GITHUB_LOGIN,
+      return isAllowedGithubId(
+        githubProfile?.id,
+        process.env.ALLOWED_GITHUB_ID,
       );
+    },
+    async jwt({ token, profile }) {
+      const githubProfile = profile as GithubProfile | undefined;
+      if (githubProfile?.id) {
+        token.githubId = String(githubProfile.id);
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      const githubId =
+        typeof token.githubId === "string" ? token.githubId : token.sub;
+      if (session.user && typeof githubId === "string") {
+        session.user.githubId = githubId;
+      }
+      return session;
     },
   },
 };

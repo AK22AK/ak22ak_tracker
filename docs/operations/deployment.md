@@ -25,18 +25,22 @@
 具体变量名以 `.env.example` 为准。生产环境变量只保存在 Vercel Secrets，不进入
 GitHub、构建日志、浏览器或数据镜像。
 
-| 类别         | 配置内容                                             |
-| ------------ | ---------------------------------------------------- |
-| 数据库       | Neon `DATABASE_URL`                                  |
-| 应用身份     | `NEXTAUTH_URL`、`AUTH_SECRET`、GitHub 数字 ID 白名单 |
-| GitHub OAuth | OAuth Client ID 与 Client Secret                     |
-| 数据镜像     | 只允许目标私仓 Contents 权限的 fine-grained token    |
-| DeepSeek     | Base URL、API Key、模型、超时和最大输出长度          |
-| Garmin       | 认证加密密钥及加密后的 Provider Session/Token        |
-| 定时任务     | `CRON_SECRET`                                        |
+| 类别         | 配置内容                                           |
+| ------------ | -------------------------------------------------- |
+| 数据库       | Neon `DATABASE_URL`                                |
+| 应用身份     | `NEXTAUTH_URL`、`AUTH_SECRET`、`ALLOWED_GITHUB_ID` |
+| GitHub OAuth | OAuth Client ID 与 Client Secret                   |
+| Tracker 策略 | 私人安全阈值等模块配置，不进入公共代码             |
+| 数据镜像     | 只允许目标私仓 Contents 权限的 fine-grained token  |
+| DeepSeek     | Base URL、API Key、模型、超时和最大输出长度        |
+| Garmin       | 认证加密密钥及加密后的 Provider Session/Token      |
+| 定时任务     | `CRON_SECRET`                                      |
 
 变更 Secret 时同步更新本地示例中的变量名，但不记录真实值。Token 轮换后必须验证旧值
 已经失效，并检查对应集成最近一次成功状态。
+
+当前膝关节模块的私人策略由 `KNEE_REHAB_PAIN_YELLOW_THRESHOLD` 配置。部署必须使用
+私人数据域中已经确认的值；公共仓库只保留通用规则执行器和变量占位符。
 
 ## 首次部署
 
