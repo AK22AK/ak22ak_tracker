@@ -1,5 +1,9 @@
-const CACHE_NAME = "ak-tracker-public-v3";
+const CACHE_NAME = "ak-tracker-public-v4";
+const OFFLINE_SHELL_URL = "/offline.html";
 const APP_SHELL = [
+  OFFLINE_SHELL_URL,
+  "/offline.css",
+  "/offline.js",
   "/manifest.webmanifest",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
@@ -33,16 +37,30 @@ self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
 
-  if (
-    request.method !== "GET" ||
-    url.origin !== self.location.origin ||
-    request.mode === "navigate" ||
-    url.pathname.startsWith("/api/")
-  ) {
+  if (request.method !== "GET" || url.origin !== self.location.origin) {
     return;
   }
 
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request).catch(async () => {
+        const offlineShell = await caches.match(OFFLINE_SHELL_URL);
+        if (offlineShell) return offlineShell;
+        return new Response("Offline shell unavailable", {
+          status: 503,
+          headers: { "Content-Type": "text/plain; charset=utf-8" },
+        });
+      }),
+    );
+    return;
+  }
+
+  if (url.pathname.startsWith("/api/")) return;
+
   const isPublicAsset =
+    url.pathname === OFFLINE_SHELL_URL ||
+    url.pathname === "/offline.css" ||
+    url.pathname === "/offline.js" ||
     url.pathname.startsWith("/_next/static/") ||
     url.pathname.startsWith("/icons/") ||
     url.pathname === "/manifest.webmanifest";

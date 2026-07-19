@@ -38,7 +38,9 @@ Dexie / IndexedDB
   数据库。P2a 只启用白名单查询快照，待同步命令表仅保留 Schema 边界，不入队。
 - Server Component 可以为首次打开预取并脱水必要查询，但不得让每次本地交互
   都重新执行整页服务器渲染。
-- Service Worker 只缓存应用外壳和静态资源，不缓存已认证 API 响应。
+- Service Worker 只缓存固定的公共离线启动壳和公共静态资源；同源导航网络失败时
+  回退公共壳，不缓存已认证页面、RSC 或 API 响应。公共壳独立读取同一数字身份的
+  IndexedDB 白名单快照，因此销毁旧页面后也能离线冷启动。
 
 Next.js 官方 Layout 在导航时保持状态和交互；原生 `history.pushState()` 与
 `history.replaceState()` 可以同步 URL 而不重新加载页面。TanStack Query 支持

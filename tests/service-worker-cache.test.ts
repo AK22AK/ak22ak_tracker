@@ -20,10 +20,12 @@ async function loadServiceWorker() {
     match: vi.fn(),
     put: vi.fn(),
   };
+  const networkFetch = vi.fn();
+  const cacheMatch = vi.fn();
   const context = {
     URL,
     Promise,
-    fetch: vi.fn(),
+    fetch: networkFetch,
     caches: {
       open: vi.fn(async () => cache),
       keys: vi.fn(async () => ["ak-tracker-shell-v2", "unrelated-cache"]),
@@ -31,7 +33,7 @@ async function loadServiceWorker() {
         deletedCaches.push(name);
         return true;
       }),
-      match: vi.fn(),
+      match: cacheMatch,
     },
     self: {
       location: { origin: "https://tracker.example" },
@@ -44,11 +46,17 @@ async function loadServiceWorker() {
   };
 
   runInNewContext(source, context);
-  return { listeners, addedUrls, deletedCaches };
+  return {
+    listeners,
+    addedUrls,
+    deletedCaches,
+    networkFetch,
+    cacheMatch,
+  };
 }
 
 describe("Service Worker private-cache policy (P0-07/P0-08)", () => {
-  it("pre-caches only public assets and removes the legacy authenticated shell", async () => {
+  it("pre-caches a self-contained public offline shell without the authenticated home page", async () => {
     const { listeners, addedUrls, deletedCaches } = await loadServiceWorker();
     let install: Promise<unknown> | undefined;
     listeners.get("install")?.({
@@ -59,6 +67,9 @@ describe("Service Worker private-cache policy (P0-07/P0-08)", () => {
     await install;
 
     expect(addedUrls.flat()).not.toContain("/");
+    expect(addedUrls.flat()).toEqual(
+      expect.arrayContaining(["/offline.html", "/offline.css", "/offline.js"]),
+    );
 
     let activate: Promise<unknown> | undefined;
     listeners.get("activate")?.({
@@ -70,9 +81,11 @@ describe("Service Worker private-cache policy (P0-07/P0-08)", () => {
     expect(deletedCaches).toContain("ak-tracker-shell-v2");
   });
 
-  it("never intercepts authenticated navigation or API requests", async () => {
-    const { listeners } = await loadServiceWorker();
-    const navigationRespond = vi.fn();
+  it("uses network-first navigation and falls back to the public shell without caching private HTML", async () => {
+    const { listeners, networkFetch, cacheMatch } = await loadServiceWorker();
+    const onlineResponse = new Response("private authenticated page");
+    networkFetch.mockResolvedValueOnce(onlineResponse);
+    const onlineRespond = vi.fn();
     listeners.get("fetch")?.({
       request: {
         method: "GET",
@@ -80,9 +93,34 @@ describe("Service Worker private-cache policy (P0-07/P0-08)", () => {
         mode: "navigate",
         destination: "document",
       },
-      respondWith: navigationRespond,
+      respondWith: onlineRespond,
     });
-    expect(navigationRespond).not.toHaveBeenCalled();
+    expect(onlineRespond).toHaveBeenCalledOnce();
+    await expect(onlineRespond.mock.calls[0]?.[0]).resolves.toBe(
+      onlineResponse,
+    );
+    expect(cacheMatch).not.toHaveBeenCalled();
+
+    const offlineShell = new Response("public offline shell");
+    networkFetch.mockRejectedValueOnce(new TypeError("offline"));
+    cacheMatch.mockResolvedValueOnce(offlineShell);
+    const offlineRespond = vi.fn();
+    listeners.get("fetch")?.({
+      request: {
+        method: "GET",
+        url: "https://tracker.example/calendar",
+        mode: "navigate",
+        destination: "document",
+      },
+      respondWith: offlineRespond,
+    });
+    expect(offlineRespond).toHaveBeenCalledOnce();
+    await expect(offlineRespond.mock.calls[0]?.[0]).resolves.toBe(offlineShell);
+    expect(cacheMatch).toHaveBeenCalledWith("/offline.html");
+  });
+
+  it("never intercepts authenticated API requests", async () => {
+    const { listeners } = await loadServiceWorker();
 
     const apiRespond = vi.fn();
     listeners.get("fetch")?.({

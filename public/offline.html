@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#173f35" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>AK Tracker · 离线缓存</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icons/icon-192.png" />
+    <link rel="stylesheet" href="/offline.css" />
+    <script src="/offline.js" defer></script>
+  </head>
+  <body>
+    <div class="offline-app">
+      <header class="offline-header">
+        <div>
+          <p class="eyebrow">AK Tracker</p>
+          <h1 id="page-title">离线缓存</h1>
+        </div>
+        <span class="offline-pill" role="status">当前离线</span>
+      </header>
+
+      <section class="offline-notice" aria-labelledby="offline-notice-title">
+        <strong id="offline-notice-title">离线缓存 · 仅供查看</strong>
+        <span id="offline-saved-at">正在读取本机缓存…</span>
+        <small>离线提交尚未开放，请联网后操作。</small>
+      </section>
+
+      <main id="offline-content" tabindex="-1" aria-live="polite">
+        <section class="surface-card loading-state" role="status">
+          正在读取本机缓存…
+        </section>
+      </main>
+
+      <nav class="offline-tabs" aria-label="离线页面">
+        <button type="button" data-view="today" aria-current="page">
+          <span aria-hidden="true">●</span>
+          今日
+        </button>
+        <button type="button" data-view="calendar">
+          <span aria-hidden="true">▦</span>
+          日历
+        </button>
+      </nav>
+    </div>
+    <noscript>离线缓存需要启用 JavaScript。</noscript>
+  </body>
+</html>

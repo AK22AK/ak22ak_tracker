@@ -99,7 +99,9 @@
 P2a 只验收本场景的只读前半段：在线成功读取后白名单快照落盘；PWA 重启并离线时，
 同一 GitHub 数字身份可查看今日和日历，其他身份、过期或损坏快照不可见；所有写操作
 明确要求联网。离线命令、重放与冲突仍属于 P2b，不能据 P2a 的通过状态提前声明
-S05 全部完成。
+S05 全部完成。浏览器门禁必须销毁旧 document，在 Service Worker 控制的 Chromium
+context 中断网后从 manifest `start_url` 新建页面；组件 unmount/remount 不能替代
+冷启动证据。iOS 主屏 PWA 真机仍需单独验收。
 
 ### S06：出差或器械受限
 
