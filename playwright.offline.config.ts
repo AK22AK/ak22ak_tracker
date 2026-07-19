@@ -19,7 +19,8 @@ export default defineConfig({
     use: { viewport: { width, height: 844 } },
   })),
   webServer: {
-    command: "pnpm start --hostname 127.0.0.1 --port 4173",
+    command:
+      "AUTH_SECRET=anonymous-offline-browser-test-secret NEXTAUTH_URL=http://127.0.0.1:4173 pnpm start --hostname 127.0.0.1 --port 4173",
     url: "http://127.0.0.1:4173/offline.html",
     reuseExistingServer: false,
     timeout: 60_000,

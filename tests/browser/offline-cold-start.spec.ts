@@ -199,19 +199,107 @@ async function cachedPaths(page: import("@playwright/test").Page) {
   });
 }
 
+async function prepareOnlineSnapshots(page: import("@playwright/test").Page) {
+  await page.goto("/login");
+  await waitForServiceWorkerControl(page);
+  return seedAnonymousSnapshots(page);
+}
+
+async function corruptSnapshot(
+  page: import("@playwright/test").Page,
+  input: {
+    kind: "today" | "calendar-month" | "day";
+    scope: string;
+  },
+) {
+  await page.evaluate(
+    async ({ identity, key, kind, scope }) => {
+      const id = `${identity}:${key}:${kind}:${scope}`;
+      await new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open("ak22ak-tracker", 2);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction(
+            "querySnapshots",
+            "readwrite",
+          );
+          const store = transaction.objectStore("querySnapshots");
+          const getRequest = store.get(id);
+          getRequest.onerror = () => reject(getRequest.error);
+          getRequest.onsuccess = () => {
+            const row = getRequest.result;
+            if (!row) {
+              reject(new Error(`Missing snapshot ${id}`));
+              return;
+            }
+            if (kind === "today") {
+              row.data = { ...row.data, tracker: null };
+            } else if (kind === "calendar-month") {
+              row.data = {
+                ...row.data,
+                days: row.data.days.map(
+                  (day: Record<string, unknown>, index: number) =>
+                    index === 0 ? { ...day, taskCount: "one" } : day,
+                ),
+              };
+            } else {
+              row.data = {
+                ...row.data,
+                day: { ...row.data.day, tasks: "not-an-array" },
+              };
+            }
+            store.put(row);
+          };
+          transaction.oncomplete = () => {
+            database.close();
+            resolve();
+          };
+          transaction.onerror = () => reject(transaction.error);
+        };
+      });
+    },
+    {
+      identity: githubUserId,
+      key: trackerKey,
+      kind: input.kind,
+      scope: input.scope,
+    },
+  );
+}
+
+async function openOfflineColdStart(
+  context: import("@playwright/test").BrowserContext,
+  path: "/" | "/calendar",
+) {
+  const page = await context.newPage();
+  await page.goto(path, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("离线缓存 · 仅供查看")).toBeVisible();
+  return page;
+}
+
+test("online direct access returns to the protected identity path", async ({
+  page,
+}) => {
+  await page.goto("/offline.html");
+
+  await expect(page).toHaveURL(/\/login(?:\?|$)/);
+  await expect(page.getByText("离线缓存 · 仅供查看")).toHaveCount(0);
+});
+
 test("cold starts from the public shell after the old document is destroyed", async ({
   context,
   page,
 }) => {
-  await page.goto("/offline.html");
-  await waitForServiceWorkerControl(page);
-  const { today } = await seedAnonymousSnapshots(page);
-  await page.reload();
-
-  await expect(page.getByText("Anonymous browser cache task")).toBeVisible();
+  const { today } = await prepareOnlineSnapshots(page);
   const onlineCache = await cachedPaths(page);
   expect(onlineCache).toEqual(
-    expect.arrayContaining(["/offline.html", "/offline.css", "/offline.js"]),
+    expect.arrayContaining([
+      "/offline.html",
+      "/offline.css",
+      "/offline-contract.js",
+      "/offline.js",
+    ]),
   );
   expect(onlineCache).not.toContain("/");
   expect(onlineCache.some((path) => path.startsWith("/api/"))).toBe(false);
@@ -221,9 +309,7 @@ test("cold starts from the public shell after the old document is destroyed", as
   await page.close();
   expect(context.pages()).toHaveLength(0);
 
-  const coldStart = await context.newPage();
-  await coldStart.goto("/", { waitUntil: "domcontentloaded" });
-  await expect(coldStart.getByText("离线缓存 · 仅供查看")).toBeVisible();
+  const coldStart = await openOfflineColdStart(context, "/");
   await expect(
     coldStart.getByText("Anonymous browser cache task"),
   ).toBeVisible();
@@ -268,5 +354,45 @@ test("cold starts from the public shell after the old document is destroyed", as
   ).toBeVisible();
   await expect(
     emptyColdStart.getByText("Anonymous browser cache task"),
+  ).toHaveCount(0);
+});
+
+test("corrupt today, month, and day snapshots never render as real zero data", async ({
+  context,
+  page,
+}) => {
+  const { today } = await prepareOnlineSnapshots(page);
+  const month = today.slice(0, 7);
+  await corruptSnapshot(page, { kind: "today", scope: today });
+  await context.setOffline(true);
+  await page.close();
+
+  const corruptToday = await openOfflineColdStart(context, "/");
+  await expect(corruptToday.getByText("当前没有可用的今日缓存")).toBeVisible();
+  await expect(corruptToday.getByText("已缓存 0 次反馈。")).toHaveCount(0);
+
+  await seedAnonymousSnapshots(corruptToday);
+  await corruptSnapshot(corruptToday, {
+    kind: "calendar-month",
+    scope: month,
+  });
+  await corruptToday.close();
+
+  const corruptMonth = await openOfflineColdStart(context, "/calendar");
+  await expect(corruptMonth.getByText("当前月份没有有效缓存")).toBeVisible();
+  await expect(
+    corruptMonth.getByRole("button", { name: `${today}，1 项任务` }),
+  ).toHaveCount(0);
+
+  await seedAnonymousSnapshots(corruptMonth);
+  await corruptSnapshot(corruptMonth, { kind: "day", scope: today });
+  await corruptMonth.close();
+
+  const corruptDay = await openOfflineColdStart(context, "/calendar");
+  await expect(
+    corruptDay.getByText("这一天没有有效的本机详情缓存。"),
+  ).toBeVisible();
+  await expect(
+    corruptDay.getByText("Anonymous browser cache task"),
   ).toHaveCount(0);
 });

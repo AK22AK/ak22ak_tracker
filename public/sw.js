@@ -1,8 +1,9 @@
-const CACHE_NAME = "ak-tracker-public-v4";
+const CACHE_NAME = "ak-tracker-public-v5";
 const OFFLINE_SHELL_URL = "/offline.html";
 const APP_SHELL = [
   OFFLINE_SHELL_URL,
   "/offline.css",
+  "/offline-contract.js",
   "/offline.js",
   "/manifest.webmanifest",
   "/icons/icon-192.png",
@@ -60,6 +61,7 @@ self.addEventListener("fetch", (event) => {
   const isPublicAsset =
     url.pathname === OFFLINE_SHELL_URL ||
     url.pathname === "/offline.css" ||
+    url.pathname === "/offline-contract.js" ||
     url.pathname === "/offline.js" ||
     url.pathname.startsWith("/_next/static/") ||
     url.pathname.startsWith("/icons/") ||

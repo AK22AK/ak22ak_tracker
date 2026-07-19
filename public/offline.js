@@ -2,8 +2,17 @@
   "use strict";
 
   const DB_NAME = "ak22ak-tracker";
-  const SCHEMA_VERSION = 2;
   const PLANNING_TIME_ZONE = "Asia/Shanghai";
+  const protectedTarget = location.pathname.startsWith("/calendar")
+    ? "/calendar"
+    : "/";
+
+  if (navigator.onLine) {
+    location.replace(protectedTarget);
+    return;
+  }
+
+  const snapshotContract = globalThis.AKTrackerOfflineContract;
   const content = document.querySelector("#offline-content");
   const pageTitle = document.querySelector("#page-title");
   const savedAtLabel = document.querySelector("#offline-saved-at");
@@ -66,19 +75,7 @@
   }
 
   function validSnapshotRow(row, identity) {
-    return (
-      objectValue(row) &&
-      row.githubUserId === identity &&
-      row.schemaVersion === SCHEMA_VERSION &&
-      typeof row.trackerKey === "string" &&
-      ["today", "calendar-month", "day"].includes(row.kind) &&
-      typeof row.scope === "string" &&
-      typeof row.savedAt === "string" &&
-      Number.isFinite(Date.parse(row.savedAt)) &&
-      typeof row.expiresAt === "string" &&
-      Date.parse(row.expiresAt) > Date.now() &&
-      objectValue(row.data)
-    );
+    return Boolean(snapshotContract?.validSnapshotRow(row, identity));
   }
 
   async function readPrivateSnapshots() {
@@ -279,21 +276,22 @@
 
   function validTodayData(row, date) {
     const data = objectValue(row?.data);
-    return data && data.targetDate === date && objectValue(data.day)
+    return data && snapshotContract?.validTodayData(data, row?.trackerKey, date)
       ? data
       : null;
   }
 
   function validCalendarData(row, month) {
     const data = objectValue(row?.data);
-    return data && data.month === month && Array.isArray(data.days)
+    return data &&
+      snapshotContract?.validCalendarData(data, row?.trackerKey, month)
       ? data
       : null;
   }
 
   function validDayData(row, date) {
     const data = objectValue(row?.data);
-    return data && data.targetDate === date && objectValue(data.day)
+    return data && snapshotContract?.validDayData(data, row?.trackerKey, date)
       ? data
       : null;
   }
@@ -304,9 +302,8 @@
     pageTitle.textContent = formatLocalDate(today);
     const row = rowFor("today", today);
     const data = validTodayData(row, today);
-    savedAtLabel.textContent = row
-      ? formatSavedAt(row.savedAt)
-      : "没有当前日期的有效缓存";
+    savedAtLabel.textContent =
+      row && data ? formatSavedAt(row.savedAt) : "没有当前日期的有效缓存";
     if (!state.identity || !state.trackerKey || !data) {
       replaceContent(
         emptyState(
@@ -356,7 +353,7 @@
     const section = element("section", "surface-card day-detail-list");
     const heading = element("div", "section-heading");
     heading.append(element("h2", "", formatLocalDate(date)));
-    if (row) heading.append(badge("离线详情"));
+    if (row && data) heading.append(badge("离线详情"));
     section.append(heading);
     if (!data) {
       section.append(element("p", "", "这一天没有有效的本机详情缓存。"));
@@ -373,9 +370,8 @@
     pageTitle.textContent = "日历";
     const row = rowFor("calendar-month", state.month);
     const data = validCalendarData(row, state.month);
-    savedAtLabel.textContent = row
-      ? formatSavedAt(row.savedAt)
-      : "当前月份没有有效缓存";
+    savedAtLabel.textContent =
+      row && data ? formatSavedAt(row.savedAt) : "当前月份没有有效缓存";
 
     const calendar = element("section", "surface-card");
     const toolbar = element("div", "month-toolbar");

@@ -68,7 +68,12 @@ describe("Service Worker private-cache policy (P0-07/P0-08)", () => {
 
     expect(addedUrls.flat()).not.toContain("/");
     expect(addedUrls.flat()).toEqual(
-      expect.arrayContaining(["/offline.html", "/offline.css", "/offline.js"]),
+      expect.arrayContaining([
+        "/offline.html",
+        "/offline.css",
+        "/offline-contract.js",
+        "/offline.js",
+      ]),
     );
 
     let activate: Promise<unknown> | undefined;
