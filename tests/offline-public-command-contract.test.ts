@@ -9,6 +9,7 @@ import { pendingCommandSchema } from "@/offline/command-contracts";
 
 interface PublicOfflineContract {
   createPendingTaskCommand(value: unknown): unknown;
+  createPendingFeedbackCommand(value: unknown): unknown;
   validPendingCommand(value: unknown, identity: string): boolean;
 }
 
@@ -70,6 +71,53 @@ describe("public cold-start task command contract", () => {
           note: "Anonymous cached note",
           baseStatus: "planned",
           planVersion: 3,
+        },
+      }),
+    );
+    expect(contract.validPendingCommand(value, "10001")).toBe(true);
+  });
+
+  it("creates an append-only feedback command without a public safety judgment", async () => {
+    const contract = await loadPublicOfflineContract();
+    const checkIn = {
+      timing: "incident",
+      leftPain: 4,
+      rightPain: 1,
+      swelling: "mild",
+      stiffness: true,
+      mechanicalSymptoms: false,
+      weightBearingIssue: false,
+      localizedBonePain: false,
+      nightOrRestPain: false,
+      note: "Anonymous offline feedback",
+    };
+    const value = contract.createPendingFeedbackCommand({
+      id: "019c0000-0000-7000-8000-000000000511",
+      githubUserId: "10001",
+      trackerKey: "knee-rehab",
+      createdAt: "2026-07-20T10:00:00.001Z",
+      occurredAt: "2026-07-20T10:00:00.000Z",
+      localDate: "2026-07-20",
+      occurredTimeZone: "Asia/Shanghai",
+      occurredUtcOffsetMinutes: 480,
+      sourceVersion: "anonymous-today-v1",
+      checkIn,
+    });
+
+    expect(pendingCommandSchema.parse(value)).toEqual(
+      expect.objectContaining({
+        id: "019c0000-0000-7000-8000-000000000511",
+        schemaVersion: 1,
+        kind: "symptom_check_in",
+        status: "local_only",
+        attemptCount: 0,
+        nextAttemptAt: "2026-07-20T10:00:00.001Z",
+        occurredTimeZone: "Asia/Shanghai",
+        occurredUtcOffsetMinutes: 480,
+        payload: {
+          checkIn,
+          clientSafetyPolicy: null,
+          localSafetyLevel: null,
         },
       }),
     );

@@ -25,7 +25,23 @@
     view: location.pathname.startsWith("/calendar") ? "calendar" : "today",
     selectedDate: null,
     month: null,
+    feedbackFlow: null,
   };
+
+  function emptyFeedbackDraft() {
+    return {
+      timing: "post_training",
+      leftPain: 0,
+      rightPain: 0,
+      swelling: "none",
+      stiffness: false,
+      mechanicalSymptoms: false,
+      weightBearingIssue: false,
+      localizedBonePain: false,
+      nightOrRestPain: false,
+      note: "",
+    };
+  }
 
   function objectValue(value) {
     return value && typeof value === "object" && !Array.isArray(value)
@@ -295,6 +311,12 @@
     return section;
   }
 
+  function pendingFeedbackCount(date) {
+    return relevantCommands(date).filter(
+      (command) => command.kind === "symptom_check_in",
+    ).length;
+  }
+
   function taskDose(task) {
     const prescription = task.prescription;
     for (const key of ["main", "target", "effort", "warmup"]) {
@@ -426,6 +448,30 @@
     });
   }
 
+  function createFeedbackCommand(options, draft) {
+    if (
+      state.identity === null ||
+      state.trackerKey !== "knee-rehab" ||
+      options.date !== localDateNow()
+    ) {
+      return null;
+    }
+    const occurred = new Date();
+    const occurrence = deviceOccurrence(occurred);
+    return snapshotContract?.createPendingFeedbackCommand({
+      id: crypto.randomUUID(),
+      githubUserId: state.identity,
+      trackerKey: state.trackerKey,
+      createdAt: nextCreatedAt(occurred),
+      occurredAt: occurred.toISOString(),
+      localDate: options.date,
+      occurredTimeZone: occurrence.timeZone,
+      occurredUtcOffsetMinutes: occurrence.utcOffsetMinutes,
+      sourceVersion: options.sourceVersion,
+      checkIn: draft,
+    });
+  }
+
   function renderTaskList(day, options = null) {
     const tasks = safeTasks(day);
     const list = element("div", "task-list");
@@ -500,13 +546,15 @@
     return ["green", "yellow", "red"].includes(value) ? value : null;
   }
 
-  function renderFeedbackSummary(day) {
+  function renderFeedbackSummary(day, options = null) {
     const section = element("section", "surface-card");
     const heading = element("div", "section-heading");
     heading.append(element("h2", "", "身体反馈"));
     const safety = latestSafety(day);
     const labels = { green: "绿灯", yellow: "黄灯", red: "红灯" };
-    if (safety) heading.append(badge(labels[safety], safety));
+    const localCount = options?.date ? pendingFeedbackCount(options.date) : 0;
+    if (localCount > 0) heading.append(badge("待判断", "yellow"));
+    else if (safety) heading.append(badge(labels[safety], safety));
     section.append(heading);
     const count = numberValue(objectValue(day)?.feedbackCount) ?? 0;
     section.append(
@@ -516,6 +564,269 @@
         count > 0 ? `已缓存 ${count} 次反馈。` : "这一天没有缓存到反馈。",
       ),
     );
+    if (localCount > 0) {
+      section.append(
+        element(
+          "p",
+          "offline-feedback-pending",
+          `${localCount} 条本机反馈等待安全判断`,
+        ),
+      );
+    }
+    const canWrite =
+      options?.writable === true &&
+      state.identity !== null &&
+      state.trackerKey === "knee-rehab" &&
+      options.date === localDateNow();
+    if (canWrite) {
+      const action = element(
+        "button",
+        "offline-feedback-action",
+        localCount > 0 ? "再次添加反馈" : "添加身体反馈",
+      );
+      action.type = "button";
+      action.addEventListener("click", () => {
+        state.feedbackFlow = {
+          mode: "form",
+          draft: emptyFeedbackDraft(),
+          pendingCommand: null,
+          saving: false,
+          saveFailed: false,
+        };
+        render();
+      });
+      section.append(action);
+    }
+    return section;
+  }
+
+  function feedbackSelect(labelText, value, choices, update) {
+    const label = element("label", "offline-feedback-field", labelText);
+    const select = element("select");
+    select.setAttribute("aria-label", labelText);
+    for (const [choiceValue, choiceLabel] of choices) {
+      const option = element("option", "", choiceLabel);
+      option.value = choiceValue;
+      option.selected = choiceValue === value;
+      select.append(option);
+    }
+    select.addEventListener("change", () => update(select.value));
+    label.append(select);
+    return label;
+  }
+
+  function feedbackNumber(labelText, value, update) {
+    const label = element("label", "offline-feedback-field", labelText);
+    const input = element("input");
+    input.type = "number";
+    input.min = "0";
+    input.max = "10";
+    input.step = "1";
+    input.required = true;
+    input.value = String(value);
+    input.setAttribute("aria-label", labelText);
+    input.addEventListener("input", () => update(Number(input.value)));
+    label.append(input);
+    return label;
+  }
+
+  function feedbackCheckbox(labelText, checked, update) {
+    const label = element("label", "offline-feedback-checkbox");
+    const input = element("input");
+    input.type = "checkbox";
+    input.checked = checked;
+    input.setAttribute("aria-label", labelText);
+    input.addEventListener("change", () => update(input.checked));
+    label.append(input, element("span", "", labelText));
+    return label;
+  }
+
+  function renderFeedbackForm(options) {
+    const flow = state.feedbackFlow;
+    const section = element("section", "surface-card offline-feedback-flow");
+    const back = element("button", "offline-secondary-action", "返回今日");
+    back.type = "button";
+    back.addEventListener("click", () => {
+      state.feedbackFlow = null;
+      render();
+    });
+    section.append(
+      element("p", "eyebrow", "身体反馈"),
+      element("h2", "", "记录身体反馈"),
+      element(
+        "p",
+        "",
+        "反馈会先完整保存在本机；联网后由服务器按权威安全策略判断。",
+      ),
+      back,
+    );
+    const form = element("form", "offline-feedback-form");
+    const update = (key, value) => {
+      flow.draft[key] = value;
+    };
+    form.append(
+      feedbackSelect(
+        "反馈时机",
+        flow.draft.timing,
+        [
+          ["morning", "晨间／训练前"],
+          ["post_training", "训练后"],
+          ["next_day", "次日反应"],
+          ["incident", "突发情况"],
+        ],
+        (value) => update("timing", value),
+      ),
+    );
+    const pain = element("div", "offline-feedback-pain-grid");
+    pain.append(
+      feedbackNumber("左膝疼痛（0–10）", flow.draft.leftPain, (value) =>
+        update("leftPain", value),
+      ),
+      feedbackNumber("右膝疼痛（0–10）", flow.draft.rightPain, (value) =>
+        update("rightPain", value),
+      ),
+    );
+    form.append(pain);
+    form.append(
+      feedbackSelect(
+        "肿胀",
+        flow.draft.swelling,
+        [
+          ["none", "无"],
+          ["mild", "轻度"],
+          ["obvious", "明显"],
+        ],
+        (value) => update("swelling", value),
+      ),
+      feedbackCheckbox("僵硬", flow.draft.stiffness, (value) =>
+        update("stiffness", value),
+      ),
+    );
+    const symptoms = element("fieldset", "offline-feedback-symptoms");
+    symptoms.append(element("legend", "", "需要留意的症状"));
+    for (const [key, label] of [
+      ["mechanicalSymptoms", "卡锁、伸不直或打软腿"],
+      ["weightBearingIssue", "跛行或无法正常负重"],
+      ["localizedBonePain", "固定骨性位置疼痛"],
+      ["nightOrRestPain", "夜间或静息痛加重"],
+    ]) {
+      symptoms.append(
+        feedbackCheckbox(label, flow.draft[key], (value) => update(key, value)),
+      );
+    }
+    form.append(symptoms);
+    const noteLabel = element("label", "offline-feedback-field", "主观补充");
+    const note = element("textarea");
+    note.rows = 5;
+    note.maxLength = 2000;
+    note.value = flow.draft.note;
+    note.placeholder = "选填；补充触发动作、训练感受或恢复变化";
+    note.setAttribute("aria-label", "主观补充");
+    note.addEventListener("input", () => update("note", note.value));
+    noteLabel.append(note);
+    form.append(noteLabel);
+    const safetyNotice = element("div", "offline-feedback-safety-notice");
+    safetyNotice.append(
+      element("strong", "", "安全级别等待联网后判断"),
+      element(
+        "p",
+        "",
+        "离线期间不据此升级训练；如有明显异常，请停止相关负荷并重新评估。",
+      ),
+    );
+    form.append(safetyNotice);
+    if (flow.saveFailed) {
+      const error = element("div", "offline-feedback-error");
+      error.setAttribute("role", "alert");
+      error.append(
+        element("strong", "", "尚未保存，请重试。"),
+        element("span", "", "完整表单仍保留在当前页面。"),
+      );
+      form.append(error);
+    }
+    const submit = element(
+      "button",
+      "offline-feedback-submit",
+      flow.saving ? "正在保存…" : flow.saveFailed ? "重试保存" : "保存反馈",
+    );
+    submit.type = "submit";
+    submit.disabled = flow.saving;
+    form.append(submit);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (flow.saving) return;
+      flow.saving = true;
+      flow.saveFailed = false;
+      submit.disabled = true;
+      submit.textContent = "正在保存…";
+      const command =
+        flow.pendingCommand ??
+        createFeedbackCommand(options, structuredClone(flow.draft));
+      if (!command) {
+        flow.saving = false;
+        flow.saveFailed = true;
+        render();
+        return;
+      }
+      flow.pendingCommand = command;
+      try {
+        await persistPendingCommand(command);
+        state.commands.push(command);
+        flow.mode = "result";
+        flow.saving = false;
+        flow.saveFailed = false;
+        render();
+      } catch {
+        flow.saving = false;
+        flow.saveFailed = true;
+        render();
+      }
+    });
+    section.append(form);
+    queueMicrotask(() =>
+      form.querySelector("select")?.focus({ preventScroll: true }),
+    );
+    return section;
+  }
+
+  function renderFeedbackResult() {
+    const section = element("section", "surface-card offline-feedback-result");
+    section.setAttribute("aria-live", "polite");
+    section.append(
+      element("p", "eyebrow", "身体反馈"),
+      element("h2", "", "反馈已保存在本机"),
+      element(
+        "strong",
+        "offline-feedback-result-status",
+        "安全级别等待联网后由服务器判断",
+      ),
+      element(
+        "p",
+        "",
+        "联网前请保持保守，不据此升级训练；明显异常时停止相关负荷并重新评估。",
+      ),
+    );
+    const actions = element("div", "offline-feedback-result-actions");
+    const back = element("button", "offline-secondary-action", "返回今日");
+    back.type = "button";
+    back.addEventListener("click", () => {
+      state.feedbackFlow = null;
+      render();
+    });
+    const again = element("button", "offline-feedback-action", "继续添加反馈");
+    again.type = "button";
+    again.addEventListener("click", () => {
+      state.feedbackFlow = {
+        mode: "form",
+        draft: emptyFeedbackDraft(),
+        pendingCommand: null,
+        saving: false,
+        saveFailed: false,
+      };
+      render();
+    });
+    actions.append(back, again);
+    section.append(actions);
     return section;
   }
 
@@ -566,6 +877,21 @@
       return;
     }
 
+    const feedbackOptions = {
+      writable: true,
+      date: today,
+      sourceVersion: row.sourceVersion,
+    };
+    if (state.feedbackFlow?.mode === "form") {
+      replaceContent(renderFeedbackForm(feedbackOptions));
+      return;
+    }
+    if (state.feedbackFlow?.mode === "result") {
+      const pending = renderPendingStatus(today);
+      replaceContent(...(pending ? [pending] : []), renderFeedbackResult());
+      return;
+    }
+
     const plan = objectValue(data.plan);
     const planSection = element("section", "surface-card");
     const heading = element("div", "section-heading");
@@ -587,7 +913,7 @@
     replaceContent(
       ...(pending ? [pending] : []),
       planSection,
-      renderFeedbackSummary(projectedDay),
+      renderFeedbackSummary(projectedDay, feedbackOptions),
     );
   }
 

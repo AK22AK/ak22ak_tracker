@@ -289,6 +289,28 @@ async function cachedPaths(page: import("@playwright/test").Page) {
   });
 }
 
+async function pendingCommandCount(page: import("@playwright/test").Page) {
+  return page.evaluate(
+    () =>
+      new Promise<number>((resolve, reject) => {
+        const request = indexedDB.open("ak22ak-tracker", 3);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const count = database
+            .transaction("pendingCommands", "readonly")
+            .objectStore("pendingCommands")
+            .count();
+          count.onerror = () => reject(count.error);
+          count.onsuccess = () => {
+            database.close();
+            resolve(count.result);
+          };
+        };
+      }),
+  );
+}
+
 async function prepareOnlineSnapshots(
   page: import("@playwright/test").Page,
   options: { trackerKey?: string } = {},
@@ -367,7 +389,7 @@ async function openOfflineColdStart(
 ) {
   const page = await context.newPage();
   await page.goto(path, { waitUntil: "domcontentloaded" });
-  await expect(page.getByText("离线缓存 · 今日任务可记录")).toBeVisible();
+  await expect(page.getByText("离线缓存 · 今日记录可保存")).toBeVisible();
   return page;
 }
 
@@ -377,7 +399,7 @@ test("online direct access returns to the protected identity path", async ({
   await page.goto("/offline.html");
 
   await expect(page).toHaveURL(/\/login(?:\?|$)/);
-  await expect(page.getByText("离线缓存 · 今日任务可记录")).toHaveCount(0);
+  await expect(page.getByText("离线缓存 · 今日记录可保存")).toHaveCount(0);
 });
 
 test("cold starts from the public shell after the old document is destroyed", async ({
@@ -409,7 +431,7 @@ test("cold starts from the public shell after the old document is destroyed", as
   await expect(coldStart.getByText(/最近更新：/)).toBeVisible();
   await expect(
     coldStart.getByText(
-      "今日任务状态可先保存在本机；其他内容仅供查看，联网后由受保护应用同步。",
+      "今日任务和身体反馈可先保存在本机；其他内容仅供查看，联网后由受保护应用同步。",
     ),
   ).toBeVisible();
   expect(
@@ -616,6 +638,225 @@ test("cold-start shell never changes the task when write-ahead persistence fails
   ).toBe(0);
 });
 
+test("cold-start shell appends an unclassified feedback before updating the UI", async ({
+  context,
+  page,
+}) => {
+  const { today } = await prepareOnlineSnapshots(page);
+  await context.setOffline(true);
+  await page.close();
+
+  const firstStart = await openOfflineColdStart(context, "/");
+  await firstStart.getByRole("button", { name: "添加身体反馈" }).click();
+  const formLayout = await firstStart.evaluate(() => ({
+    fits: document.documentElement.scrollWidth <= window.innerWidth,
+    controls: Array.from(
+      document.querySelectorAll<HTMLElement>(
+        ".offline-feedback-field input, .offline-feedback-field select, .offline-feedback-field textarea, .offline-feedback-checkbox, .offline-feedback-submit",
+      ),
+    ).map((control) => control.getBoundingClientRect().height),
+  }));
+  expect(formLayout.fits).toBe(true);
+  expect(formLayout.controls.every((height) => height >= 44)).toBe(true);
+  await firstStart.getByLabel("反馈时机").selectOption("incident");
+  await firstStart.getByLabel("左膝疼痛（0–10）").fill("4");
+  await firstStart.getByLabel("右膝疼痛（0–10）").fill("1");
+  await firstStart.getByLabel("肿胀").selectOption("mild");
+  await firstStart.getByLabel("僵硬").check();
+  await firstStart.getByLabel("卡锁、伸不直或打软腿").check();
+  await firstStart.getByLabel("主观补充").fill("Anonymous cold-start feedback");
+  await firstStart.getByRole("button", { name: "保存反馈" }).click();
+
+  await expect(firstStart.getByText("反馈已保存在本机")).toBeVisible();
+  await expect(
+    firstStart.getByText("安全级别等待联网后由服务器判断"),
+  ).toBeVisible();
+  await expect(firstStart.getByText("1 条仅保存在本机")).toBeVisible();
+  await expect(
+    firstStart.getByRole("button", { name: "返回今日" }),
+  ).toBeVisible();
+  await expect(
+    firstStart.getByRole("button", { name: "继续添加反馈" }),
+  ).toBeVisible();
+  await firstStart.getByRole("button", { name: "继续添加反馈" }).click();
+  await expect(firstStart.getByLabel("反馈时机")).toHaveValue("post_training");
+  await expect(firstStart.getByLabel("左膝疼痛（0–10）")).toHaveValue("0");
+  await expect(firstStart.getByLabel("右膝疼痛（0–10）")).toHaveValue("0");
+  await expect(firstStart.getByLabel("主观补充")).toHaveValue("");
+  await firstStart.getByRole("button", { name: "返回今日" }).click();
+  await expect(firstStart.getByText("1 条本机反馈等待安全判断")).toBeVisible();
+  await firstStart.close();
+
+  const secondStart = await openOfflineColdStart(context, "/");
+  await expect(secondStart.getByText("1 条本机反馈等待安全判断")).toBeVisible();
+  await expect(secondStart.getByText("1 条仅保存在本机")).toBeVisible();
+  await expect(secondStart.getByText("待判断", { exact: true })).toBeVisible();
+  await expect(secondStart.getByText("绿灯", { exact: true })).toHaveCount(0);
+  await secondStart.getByRole("button", { name: "再次添加反馈" }).click();
+  await secondStart.getByLabel("反馈时机").selectOption("next_day");
+  await secondStart.getByLabel("左膝疼痛（0–10）").fill("2");
+  await secondStart.getByLabel("右膝疼痛（0–10）").fill("0");
+  await secondStart
+    .getByLabel("主观补充")
+    .fill("Anonymous second offline feedback");
+  await secondStart.getByRole("button", { name: "保存反馈" }).click();
+  await expect(secondStart.getByText("2 条仅保存在本机")).toBeVisible();
+  await secondStart.close();
+
+  const thirdStart = await openOfflineColdStart(context, "/");
+  await expect(thirdStart.getByText("2 条本机反馈等待安全判断")).toBeVisible();
+  await expect(thirdStart.getByText("2 条仅保存在本机")).toBeVisible();
+  await expect(thirdStart.getByText("待判断", { exact: true })).toBeVisible();
+  await expect(thirdStart.getByText("绿灯", { exact: true })).toHaveCount(0);
+  const commands = await thirdStart.evaluate(async () => {
+    return new Promise<Record<string, unknown>[]>((resolve, reject) => {
+      const request = indexedDB.open("ak22ak-tracker", 3);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const database = request.result;
+        const getAll = database
+          .transaction("pendingCommands", "readonly")
+          .objectStore("pendingCommands")
+          .getAll();
+        getAll.onerror = () => reject(getAll.error);
+        getAll.onsuccess = () => {
+          database.close();
+          resolve(
+            (getAll.result as Record<string, unknown>[])
+              .filter((command) => command.kind === "symptom_check_in")
+              .sort((left, right) =>
+                String(left.createdAt).localeCompare(String(right.createdAt)),
+              ),
+          );
+        };
+      };
+    });
+  });
+  expect(commands).toHaveLength(2);
+  expect(new Set(commands.map((command) => command.id)).size).toBe(2);
+  expect(
+    String(commands[0]?.createdAt).localeCompare(
+      String(commands[1]?.createdAt),
+    ),
+  ).toBeLessThan(0);
+  for (const command of commands) {
+    expect(command.schemaVersion).toBe(1);
+    expect(command.localDate).toBe(today);
+    expect(command.trackerKey).toBe(trackerKey);
+    expect(command.status).toBe("local_only");
+    expect(command.occurredTimeZone).toEqual(expect.any(String));
+    expect(command.occurredUtcOffsetMinutes).toEqual(expect.any(Number));
+    const payload = command.payload as Record<string, unknown>;
+    expect(payload.clientSafetyPolicy).toBeNull();
+    expect(payload.localSafetyLevel).toBeNull();
+  }
+  expect(
+    await thirdStart.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+});
+
+test("cold-start feedback keeps its draft and command id when write-ahead fails", async ({
+  context,
+  page,
+}) => {
+  await prepareOnlineSnapshots(page);
+  await context.addInitScript(() => {
+    let calls = 0;
+    Object.defineProperty(globalThis.crypto, "randomUUID", {
+      configurable: true,
+      value: () => {
+        calls += 1;
+        Reflect.set(globalThis, "__offlineUuidCalls", calls);
+        return "019c0000-0000-4000-8000-000000000599";
+      },
+    });
+  });
+  await context.setOffline(true);
+  await page.close();
+
+  const coldStart = await openOfflineColdStart(context, "/");
+  await coldStart.getByRole("button", { name: "添加身体反馈" }).click();
+  await coldStart.getByLabel("反馈时机").selectOption("incident");
+  await coldStart.getByLabel("左膝疼痛（0–10）").fill("6");
+  await coldStart.getByLabel("右膝疼痛（0–10）").fill("2");
+  await coldStart.getByLabel("肿胀").selectOption("obvious");
+  await coldStart.getByLabel("跛行或无法正常负重").check();
+  await coldStart
+    .getByLabel("主观补充")
+    .fill("Anonymous draft retained after failure");
+  await coldStart.evaluate(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open("ak22ak-tracker", 3);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction("metadata", "readwrite");
+          transaction.objectStore("metadata").put({
+            key: "active-identity",
+            value: "20002",
+            updatedAt: new Date().toISOString(),
+          });
+          transaction.oncomplete = () => {
+            database.close();
+            resolve();
+          };
+          transaction.onerror = () => reject(transaction.error);
+        };
+      }),
+  );
+
+  await coldStart.getByRole("button", { name: "保存反馈" }).click();
+  await expect(coldStart.getByText("尚未保存，请重试。")).toBeVisible();
+  await expect(coldStart.getByLabel("反馈时机")).toHaveValue("incident");
+  await expect(coldStart.getByLabel("左膝疼痛（0–10）")).toHaveValue("6");
+  await expect(coldStart.getByLabel("右膝疼痛（0–10）")).toHaveValue("2");
+  await expect(coldStart.getByLabel("肿胀")).toHaveValue("obvious");
+  await expect(coldStart.getByLabel("跛行或无法正常负重")).toBeChecked();
+  await expect(coldStart.getByLabel("主观补充")).toHaveValue(
+    "Anonymous draft retained after failure",
+  );
+  expect(
+    await coldStart.evaluate(() =>
+      Reflect.get(globalThis, "__offlineUuidCalls"),
+    ),
+  ).toBe(1);
+  expect(await pendingCommandCount(coldStart)).toBe(0);
+
+  await coldStart.evaluate(
+    ({ identity }) =>
+      new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open("ak22ak-tracker", 3);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction("metadata", "readwrite");
+          transaction.objectStore("metadata").put({
+            key: "active-identity",
+            value: identity,
+            updatedAt: new Date().toISOString(),
+          });
+          transaction.oncomplete = () => {
+            database.close();
+            resolve();
+          };
+          transaction.onerror = () => reject(transaction.error);
+        };
+      }),
+    { identity: githubUserId },
+  );
+  await coldStart.getByRole("button", { name: "重试保存" }).click();
+  await expect(coldStart.getByText("反馈已保存在本机")).toBeVisible();
+  expect(
+    await coldStart.evaluate(() =>
+      Reflect.get(globalThis, "__offlineUuidCalls"),
+    ),
+  ).toBe(1);
+  expect(await pendingCommandCount(coldStart)).toBe(1);
+});
+
 test("cold-start shell keeps a non-knee tracker strictly read-only", async ({
   context,
   page,
@@ -633,6 +874,9 @@ test("cold-start shell keeps a non-knee tracker strictly read-only", async ({
   );
   await expect(
     coldStart.getByRole("button", { name: "恢复待完成" }),
+  ).toHaveCount(0);
+  await expect(
+    coldStart.getByRole("button", { name: "添加身体反馈" }),
   ).toHaveCount(0);
 });
 
@@ -673,6 +917,9 @@ test("corrupt today, month, and day snapshots never render as real zero data", a
   const corruptToday = await openOfflineColdStart(context, "/");
   await expect(corruptToday.getByText("当前没有可用的今日缓存")).toBeVisible();
   await expect(corruptToday.getByText("已缓存 0 次反馈。")).toHaveCount(0);
+  await expect(
+    corruptToday.getByRole("button", { name: "添加身体反馈" }),
+  ).toHaveCount(0);
 
   await seedAnonymousSnapshots(corruptToday);
   await corruptSnapshot(corruptToday, {
