@@ -3,10 +3,15 @@ import { expect, test } from "@playwright/test";
 test("pending-command status and confirmation fit a mobile viewport", async ({
   page,
 }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/login");
   await page.evaluate(() => {
     document.body.innerHTML = `
       <div class="protected-app-shell">
+        <section class="pwa-update-banner" aria-labelledby="pwa-update-title">
+          <div aria-live="polite"><strong id="pwa-update-title">新版本可用</strong><p>更新不会删除 2 条仅保存在本机的记录。</p></div>
+          <div class="pwa-update-actions"><button class="secondary-button" type="button">稍后</button><button class="primary-button" type="button">立即更新</button></div>
+        </section>
         <main class="app-shell page-frame pending-command-page">
           <header class="topbar pending-command-header">
             <div><p class="eyebrow">隐私与离线</p><h1>待同步记录</h1></div>
@@ -50,6 +55,7 @@ test("pending-command status and confirmation fit a mobile viewport", async ({
   });
 
   await expect(page.getByRole("heading", { name: "待同步记录" })).toBeVisible();
+  await expect(page.getByText("新版本可用")).toBeVisible();
   const viewport = await page.evaluate(() => ({
     clientWidth: document.documentElement.clientWidth,
     scrollWidth: document.documentElement.scrollWidth,

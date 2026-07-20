@@ -52,12 +52,14 @@ async function loadServiceWorker() {
     deletedCaches,
     networkFetch,
     cacheMatch,
+    skipWaiting: context.self.skipWaiting,
   };
 }
 
 describe("Service Worker private-cache policy (P0-07/P0-08)", () => {
   it("pre-caches a self-contained public offline shell without the authenticated home page", async () => {
-    const { listeners, addedUrls, deletedCaches } = await loadServiceWorker();
+    const { listeners, addedUrls, deletedCaches, skipWaiting } =
+      await loadServiceWorker();
     let install: Promise<unknown> | undefined;
     listeners.get("install")?.({
       waitUntil: (promise: Promise<unknown>) => {
@@ -65,6 +67,8 @@ describe("Service Worker private-cache policy (P0-07/P0-08)", () => {
       },
     });
     await install;
+
+    expect(skipWaiting).not.toHaveBeenCalled();
 
     expect(addedUrls.flat()).not.toContain("/");
     expect(addedUrls.flat()).toEqual(
@@ -84,6 +88,16 @@ describe("Service Worker private-cache policy (P0-07/P0-08)", () => {
     });
     await activate;
     expect(deletedCaches).toContain("ak-tracker-shell-v2");
+  });
+
+  it("only activates a waiting worker after an explicit user message", async () => {
+    const { listeners, skipWaiting } = await loadServiceWorker();
+
+    listeners.get("message")?.({ data: { type: "UNRELATED" } });
+    expect(skipWaiting).not.toHaveBeenCalled();
+
+    listeners.get("message")?.({ data: { type: "SKIP_WAITING" } });
+    expect(skipWaiting).toHaveBeenCalledOnce();
   });
 
   it("uses network-first navigation and falls back to the public shell without caching private HTML", async () => {

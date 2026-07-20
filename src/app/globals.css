@@ -3119,6 +3119,50 @@ summary:focus-visible {
   margin-left: auto;
 }
 
+.pwa-update-banner {
+  position: fixed;
+  z-index: 80;
+  right: max(var(--page-gutter), env(safe-area-inset-right));
+  bottom: calc(5.75rem + env(safe-area-inset-bottom));
+  left: max(var(--page-gutter), env(safe-area-inset-left));
+  display: grid;
+  width: min(calc(100% - 2 * var(--page-gutter)), 28rem);
+  min-width: 0;
+  gap: 0.875rem;
+  padding: 1rem;
+  margin-inline: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-floating);
+}
+
+.pwa-update-banner p,
+.pwa-update-banner small {
+  display: block;
+  margin: 0.25rem 0 0;
+  color: var(--color-muted);
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+
+.pwa-update-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.625rem;
+}
+
+.pwa-update-actions button {
+  min-width: 0;
+  min-height: var(--control-height);
+}
+
+@media (max-width: 340px) {
+  .pwa-update-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 430px) {
   .offline-command-status {
     align-items: stretch;

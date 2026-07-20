@@ -3,12 +3,16 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 
+import { useOfflineCommands } from "@/offline/offline-command-context";
+
 import { BottomNav } from "./bottom-nav";
+import { PwaUpdatePrompt } from "./service-worker-registration";
 import { TabTransitionFrame } from "./tab-page-frame";
 
 export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { commands } = useOfflineCommands();
   const [pendingPath, setPendingPath] = useState<string | null>(null);
   const effectivePendingPath = pendingPath === pathname ? null : pendingPath;
 
@@ -26,6 +30,7 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="protected-app-shell">
+      <PwaUpdatePrompt pendingCommandCount={commands.length} />
       {effectivePendingPath ? (
         <TabTransitionFrame pathname={effectivePendingPath} />
       ) : (

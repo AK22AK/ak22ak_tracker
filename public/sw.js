@@ -1,4 +1,4 @@
-const CACHE_NAME = "ak-tracker-public-v9";
+const CACHE_NAME = "ak-tracker-public-v10";
 const OFFLINE_SHELL_URL = "/offline.html";
 const APP_SHELL = [
   OFFLINE_SHELL_URL,
@@ -14,7 +14,10 @@ self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)),
   );
-  self.skipWaiting();
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
