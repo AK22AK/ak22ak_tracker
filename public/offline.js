@@ -590,6 +590,7 @@
           mode: "form",
           draft: emptyFeedbackDraft(),
           pendingCommand: null,
+          intentChanged: false,
           saving: false,
           saveFailed: false,
         };
@@ -663,6 +664,18 @@
     const form = element("form", "offline-feedback-form");
     const update = (key, value) => {
       flow.draft[key] = value;
+      if (!flow.saveFailed || !flow.pendingCommand) return;
+
+      flow.pendingCommand = null;
+      flow.intentChanged = true;
+      const errorTitle = form.querySelector(".offline-feedback-error strong");
+      const errorDetail = form.querySelector(".offline-feedback-error span");
+      const submit = form.querySelector(".offline-feedback-submit");
+      if (errorTitle) errorTitle.textContent = "内容已修改，尚未保存。";
+      if (errorDetail) {
+        errorDetail.textContent = "下次保存会按当前完整表单创建一条新记录。";
+      }
+      if (submit) submit.textContent = "保存修改后的反馈";
     };
     form.append(
       feedbackSelect(
@@ -739,15 +752,31 @@
       const error = element("div", "offline-feedback-error");
       error.setAttribute("role", "alert");
       error.append(
-        element("strong", "", "尚未保存，请重试。"),
-        element("span", "", "完整表单仍保留在当前页面。"),
+        element(
+          "strong",
+          "",
+          flow.intentChanged ? "内容已修改，尚未保存。" : "尚未保存，请重试。",
+        ),
+        element(
+          "span",
+          "",
+          flow.intentChanged
+            ? "下次保存会按当前完整表单创建一条新记录。"
+            : "完整表单仍保留在当前页面。",
+        ),
       );
       form.append(error);
     }
     const submit = element(
       "button",
       "offline-feedback-submit",
-      flow.saving ? "正在保存…" : flow.saveFailed ? "重试保存" : "保存反馈",
+      flow.saving
+        ? "正在保存…"
+        : flow.intentChanged
+          ? "保存修改后的反馈"
+          : flow.saveFailed
+            ? "重试保存"
+            : "保存反馈",
     );
     submit.type = "submit";
     submit.disabled = flow.saving;
@@ -769,12 +798,14 @@
         return;
       }
       flow.pendingCommand = command;
+      flow.intentChanged = false;
       try {
         await persistPendingCommand(command);
         state.commands.push(command);
         flow.mode = "result";
         flow.saving = false;
         flow.saveFailed = false;
+        flow.intentChanged = false;
         render();
       } catch {
         flow.saving = false;
@@ -820,6 +851,7 @@
         mode: "form",
         draft: emptyFeedbackDraft(),
         pendingCommand: null,
+        intentChanged: false,
         saving: false,
         saveFailed: false,
       };

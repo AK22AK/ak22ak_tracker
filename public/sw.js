@@ -1,4 +1,4 @@
-const CACHE_NAME = "ak-tracker-public-v8";
+const CACHE_NAME = "ak-tracker-public-v9";
 const OFFLINE_SHELL_URL = "/offline.html";
 const APP_SHELL = [
   OFFLINE_SHELL_URL,

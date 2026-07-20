@@ -857,6 +857,140 @@ test("cold-start feedback keeps its draft and command id when write-ahead fails"
   expect(await pendingCommandCount(coldStart)).toBe(1);
 });
 
+test("editing a failed cold-start feedback creates one new intent with the visible draft", async ({
+  context,
+  page,
+}) => {
+  const firstCommandId = "019c0000-0000-4000-8000-000000000601";
+  const editedCommandId = "019c0000-0000-4000-8000-000000000602";
+  await prepareOnlineSnapshots(page);
+  await context.addInitScript(
+    ({ firstId, editedId }) => {
+      let calls = 0;
+      Object.defineProperty(globalThis.crypto, "randomUUID", {
+        configurable: true,
+        value: () => {
+          calls += 1;
+          Reflect.set(globalThis, "__offlineUuidCalls", calls);
+          return calls === 1 ? firstId : editedId;
+        },
+      });
+    },
+    { firstId: firstCommandId, editedId: editedCommandId },
+  );
+  await context.setOffline(true);
+  await page.close();
+
+  const coldStart = await openOfflineColdStart(context, "/");
+  await coldStart.getByRole("button", { name: "添加身体反馈" }).click();
+  await coldStart.getByLabel("左膝疼痛（0–10）").fill("3");
+  await coldStart.getByLabel("主观补充").fill("Anonymous first intent");
+  await coldStart.evaluate(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open("ak22ak-tracker", 3);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction("metadata", "readwrite");
+          transaction.objectStore("metadata").put({
+            key: "active-identity",
+            value: "20002",
+            updatedAt: new Date().toISOString(),
+          });
+          transaction.oncomplete = () => {
+            database.close();
+            resolve();
+          };
+          transaction.onerror = () => reject(transaction.error);
+        };
+      }),
+  );
+  await coldStart.getByRole("button", { name: "保存反馈" }).click();
+  await expect(
+    coldStart.getByRole("button", { name: "重试保存" }),
+  ).toBeVisible();
+  expect(
+    await coldStart.evaluate(() =>
+      Reflect.get(globalThis, "__offlineUuidCalls"),
+    ),
+  ).toBe(1);
+
+  await coldStart.getByLabel("左膝疼痛（0–10）").fill("7");
+  await coldStart.getByLabel("肿胀").selectOption("mild");
+  await coldStart.getByLabel("固定骨性位置疼痛").check();
+  await coldStart
+    .getByLabel("主观补充")
+    .fill("Anonymous edited intent after failure");
+  await expect(
+    coldStart.getByRole("button", { name: "保存修改后的反馈" }),
+  ).toBeVisible();
+  await expect(coldStart.getByText("内容已修改，尚未保存。")).toBeVisible();
+
+  await coldStart.evaluate(
+    ({ identity }) =>
+      new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open("ak22ak-tracker", 3);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const transaction = database.transaction("metadata", "readwrite");
+          transaction.objectStore("metadata").put({
+            key: "active-identity",
+            value: identity,
+            updatedAt: new Date().toISOString(),
+          });
+          transaction.oncomplete = () => {
+            database.close();
+            resolve();
+          };
+          transaction.onerror = () => reject(transaction.error);
+        };
+      }),
+    { identity: githubUserId },
+  );
+  await coldStart.getByRole("button", { name: "保存修改后的反馈" }).click();
+  await expect(coldStart.getByText("反馈已保存在本机")).toBeVisible();
+  expect(
+    await coldStart.evaluate(() =>
+      Reflect.get(globalThis, "__offlineUuidCalls"),
+    ),
+  ).toBe(2);
+
+  const commands = await coldStart.evaluate(async () => {
+    return new Promise<Record<string, unknown>[]>((resolve, reject) => {
+      const request = indexedDB.open("ak22ak-tracker", 3);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const database = request.result;
+        const getAll = database
+          .transaction("pendingCommands", "readonly")
+          .objectStore("pendingCommands")
+          .getAll();
+        getAll.onerror = () => reject(getAll.error);
+        getAll.onsuccess = () => {
+          database.close();
+          resolve(getAll.result as Record<string, unknown>[]);
+        };
+      };
+    });
+  });
+  expect(commands).toHaveLength(1);
+  expect(commands[0]?.id).toBe(editedCommandId);
+  expect(commands[0]?.id).not.toBe(firstCommandId);
+  const payload = commands[0]?.payload as Record<string, unknown>;
+  expect(payload.clientSafetyPolicy).toBeNull();
+  expect(payload.localSafetyLevel).toBeNull();
+  expect(payload.checkIn).toEqual(
+    expect.objectContaining({
+      leftPain: 7,
+      swelling: "mild",
+      localizedBonePain: true,
+      note: "Anonymous edited intent after failure",
+    }),
+  );
+});
+
 test("cold-start shell keeps a non-knee tracker strictly read-only", async ({
   context,
   page,
