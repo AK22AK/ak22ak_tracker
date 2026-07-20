@@ -78,6 +78,13 @@
       "when": 1784481657881,
       "tag": "0010_polite_silhouette",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784517398576,
+      "tag": "0011_flawless_dagger",
+      "breakpoints": true
     }
   ]
 }

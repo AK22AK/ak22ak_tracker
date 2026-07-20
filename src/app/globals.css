@@ -145,6 +145,22 @@ a {
   margin-top: 0.75rem;
 }
 
+.mirror-summary {
+  display: grid;
+  gap: 0.35rem;
+  margin: 1rem 0;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+.mirror-summary strong {
+  color: var(--color-ink);
+}
+
+.mirror-card > .secondary-button {
+  width: 100%;
+}
+
 .integration-form {
   display: grid;
   gap: 0.55rem;

@@ -605,6 +605,8 @@ export const githubSyncOutbox = pgTable(
     nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
+    leaseOwner: text("lease_owner"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
     lastErrorCode: text("last_error_code"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -621,6 +623,11 @@ export const githubSyncOutbox = pgTable(
     index("github_sync_outbox_status_retry_index").on(
       table.status,
       table.nextAttemptAt,
+    ),
+    index("github_sync_outbox_target_order_index").on(
+      table.targetPath,
+      table.createdAt,
+      table.id,
     ),
   ],
 );
