@@ -140,4 +140,51 @@ describe("GitHub mirror outbox consumer", () => {
     expect(db.claimNext).not.toHaveBeenCalled();
     expect(db.state.get(item().id)).toBe("pending");
   });
+
+  it("reports an unconfirmed result when success loses its lease", async () => {
+    const db = store([item()]);
+    vi.mocked(db.markSucceeded).mockResolvedValue(false);
+    const result = await consumeGitHubMirrorBatch({
+      store: db,
+      mirror: {
+        putJson: vi.fn(async () => ({
+          outcome: "created" as const,
+          sha: "sha",
+        })),
+      },
+      leaseOwner: "stale-worker",
+    });
+    expect(result).toEqual({
+      status: "unconfirmed",
+      processed: 1,
+      succeeded: 0,
+      failed: 0,
+    });
+  });
+
+  it.each([
+    ["retryable", new GitHubMirrorError("rate_limited", true), "markRetryable"],
+    ["terminal", new GitHubMirrorError("permissions", false), "markFailed"],
+  ] as const)(
+    "reports an unconfirmed result when a %s transition loses its lease",
+    async (_kind, mirrorError, transition) => {
+      const db = store([item()]);
+      vi.mocked(db[transition]).mockResolvedValue(false);
+      const result = await consumeGitHubMirrorBatch({
+        store: db,
+        mirror: {
+          putJson: vi.fn(async () => {
+            throw mirrorError;
+          }),
+        },
+        leaseOwner: "stale-worker",
+      });
+      expect(result).toEqual({
+        status: "unconfirmed",
+        processed: 1,
+        succeeded: 0,
+        failed: 0,
+      });
+    },
+  );
 });

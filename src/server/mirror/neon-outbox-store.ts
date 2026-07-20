@@ -154,7 +154,7 @@ export function createNeonGitHubMirrorOutboxStore(
 }
 
 export async function getGitHubMirrorStatusProjection(
-  configured: boolean,
+  configuration: "configured" | "not_configured" | "invalid_configuration",
   database: Database = getDatabase(),
   now: Date = new Date(),
 ) {
@@ -180,9 +180,7 @@ export async function getGitHubMirrorStatusProjection(
     ? new Date(row.oldest_pending_at)
     : null;
   return {
-    configuration: configured
-      ? ("configured" as const)
-      : ("not_configured" as const),
+    configuration,
     pendingCount: Number(row?.pending_count ?? 0),
     processingCount: Number(row?.processing_count ?? 0),
     failedCount: Number(row?.failed_count ?? 0),

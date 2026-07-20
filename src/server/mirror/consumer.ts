@@ -33,10 +33,12 @@ export type GitHubMirrorOutboxStore = {
 export type GitHubMirrorBatchResult = {
   status:
     | "not_configured"
+    | "invalid_configuration"
     | "idle"
     | "succeeded"
     | "retry_scheduled"
-    | "needs_attention";
+    | "needs_attention"
+    | "unconfirmed";
   processed: number;
   succeeded: number;
   failed: number;
@@ -82,12 +84,18 @@ export async function consumeGitHubMirrorBatch(input: {
     processed += 1;
     try {
       await input.mirror.putJson(outbox.targetPath, outbox.payload);
-      if (await input.store.markSucceeded(outbox.id, input.leaseOwner, now())) {
-        succeeded += 1;
+      const transitioned = await input.store.markSucceeded(
+        outbox.id,
+        input.leaseOwner,
+        now(),
+      );
+      if (!transitioned) {
+        status = "unconfirmed";
+        break;
       }
+      succeeded += 1;
       status = "succeeded";
     } catch (error) {
-      failed += 1;
       const mirrorError =
         error instanceof GitHubMirrorError
           ? error
@@ -96,19 +104,29 @@ export async function consumeGitHubMirrorBatch(input: {
         const nextAttemptAt = new Date(
           now().getTime() + backoffDelayMs(outbox.attempts),
         );
-        await input.store.markRetryable(
+        const transitioned = await input.store.markRetryable(
           outbox.id,
           input.leaseOwner,
           mirrorError.code,
           nextAttemptAt,
         );
+        if (!transitioned) {
+          status = "unconfirmed";
+          break;
+        }
+        failed += 1;
         status = "retry_scheduled";
       } else {
-        await input.store.markFailed(
+        const transitioned = await input.store.markFailed(
           outbox.id,
           input.leaseOwner,
           mirrorError.retryable ? "retry_exhausted" : mirrorError.code,
         );
+        if (!transitioned) {
+          status = "unconfirmed";
+          break;
+        }
+        failed += 1;
         status = "needs_attention";
       }
       break;

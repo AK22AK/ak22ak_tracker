@@ -51,6 +51,39 @@ describe("GitHub mirror status card", () => {
     expect(screen.getByRole("status").textContent).toContain("超过 24 小时");
   });
 
+  it("treats every failed outbox item as needing attention", () => {
+    render(
+      <GitHubMirrorCard
+        initialStatus={{
+          ...baseStatus,
+          failedCount: 1,
+          permissionError: false,
+        }}
+      />,
+    );
+    expect(screen.getByText("需要处理")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("部分记录需要处理");
+    expect(screen.getByText("需要处理").className).toBe("integration-idle");
+  });
+
+  it("distinguishes invalid configuration from missing configuration", () => {
+    render(
+      <GitHubMirrorCard
+        initialStatus={{
+          ...baseStatus,
+          configuration: "invalid_configuration",
+          pendingCount: 0,
+        }}
+      />,
+    );
+    expect(screen.getByText("配置需处理")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("配置无效");
+    expect(
+      (screen.getByRole("button", { name: "立即同步" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
   it("runs one bounded sync request and refreshes the safe status", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       new Response(
@@ -78,5 +111,30 @@ describe("GitHub mirror status card", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/mirror/sync", {
       method: "POST",
     });
+  });
+
+  it("does not present a lost-lease result as a successful mirror", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          result: {
+            status: "unconfirmed",
+            processed: 1,
+            succeeded: 0,
+            failed: 0,
+          },
+          status: { ...baseStatus, pendingCount: 0, processingCount: 1 },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<GitHubMirrorCard initialStatus={baseStatus} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "立即同步" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toContain("尚未确认"),
+    );
+    expect(screen.queryByText(/已镜像 0 条/)).toBeNull();
   });
 });

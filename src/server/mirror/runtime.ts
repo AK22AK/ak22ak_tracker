@@ -15,31 +15,48 @@ import {
   getGitHubMirrorStatusProjection,
 } from "./neon-outbox-store";
 
-function configuredMirror() {
+export function resolveGitHubMirrorRuntimeConfig(
+  environment: Record<string, string | undefined> = process.env,
+) {
   try {
-    const config = readGitHubMirrorConfig();
-    return config ? createGitHubContentsMirror(config) : null;
+    const config = readGitHubMirrorConfig(environment);
+    return config
+      ? {
+          configuration: "configured" as const,
+          mirror: createGitHubContentsMirror(config),
+        }
+      : { configuration: "not_configured" as const, mirror: null };
   } catch (error) {
-    if (error instanceof GitHubMirrorError) return null;
+    if (error instanceof GitHubMirrorError) {
+      return { configuration: "invalid_configuration" as const, mirror: null };
+    }
     throw error;
   }
 }
 
 export async function getGitHubMirrorStatus() {
-  const configured = configuredMirror() !== null;
+  const { configuration } = resolveGitHubMirrorRuntimeConfig();
   return githubMirrorStatusSchema.parse(
-    await getGitHubMirrorStatusProjection(configured),
+    await getGitHubMirrorStatusProjection(configuration),
   );
 }
 
 export async function syncGitHubMirrorBatch() {
-  const mirror = configuredMirror();
-  const result = await consumeGitHubMirrorBatch({
-    store: createNeonGitHubMirrorOutboxStore(),
-    mirror,
-    leaseOwner: randomUUID(),
-    batchSize: 3,
-    maxRuntimeMs: 8_000,
-  });
+  const { configuration, mirror } = resolveGitHubMirrorRuntimeConfig();
+  const result =
+    configuration === "invalid_configuration"
+      ? {
+          status: "invalid_configuration" as const,
+          processed: 0,
+          succeeded: 0,
+          failed: 0,
+        }
+      : await consumeGitHubMirrorBatch({
+          store: createNeonGitHubMirrorOutboxStore(),
+          mirror,
+          leaseOwner: randomUUID(),
+          batchSize: 3,
+          maxRuntimeMs: 8_000,
+        });
   return { result, status: await getGitHubMirrorStatus() };
 }

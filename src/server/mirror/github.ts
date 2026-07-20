@@ -54,7 +54,7 @@ function safeConfigSegment(value: string): boolean {
 }
 
 export function readGitHubMirrorConfig(
-  environment: NodeJS.ProcessEnv = process.env,
+  environment: Record<string, string | undefined> = process.env,
 ): GitHubMirrorConfig | null {
   const owner = environment.GITHUB_DATA_OWNER?.trim();
   const repo = environment.GITHUB_DATA_REPO?.trim();

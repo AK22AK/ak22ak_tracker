@@ -1,7 +1,11 @@
 import { z } from "zod";
 
 export const githubMirrorStatusSchema = z.object({
-  configuration: z.enum(["configured", "not_configured"]),
+  configuration: z.enum([
+    "configured",
+    "not_configured",
+    "invalid_configuration",
+  ]),
   pendingCount: z.number().int().nonnegative(),
   processingCount: z.number().int().nonnegative(),
   failedCount: z.number().int().nonnegative(),
@@ -14,10 +18,12 @@ export const githubMirrorStatusSchema = z.object({
 export const githubMirrorBatchResultSchema = z.object({
   status: z.enum([
     "not_configured",
+    "invalid_configuration",
     "idle",
     "succeeded",
     "retry_scheduled",
     "needs_attention",
+    "unconfirmed",
   ]),
   processed: z.number().int().nonnegative(),
   succeeded: z.number().int().nonnegative(),
