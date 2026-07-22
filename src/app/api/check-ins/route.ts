@@ -23,6 +23,7 @@ import {
   getEffectiveTrackerSafetyPolicy,
   TrackerSafetyPolicyNotFoundError,
 } from "@/server/safety-policy/repository";
+import { scheduleGitHubMirrorAfterResponse } from "@/server/mirror/after-response";
 
 const checkInCommandSchema = clientCommandMetadataSchema.and(
   kneeCheckInInputSchema.extend({
@@ -69,6 +70,7 @@ export async function POST(request: Request) {
       result.event.payload,
     );
 
+    scheduleGitHubMirrorAfterResponse();
     return Response.json({
       id: result.event.id,
       safetyLevel: canonicalPayload.safetyLevel,

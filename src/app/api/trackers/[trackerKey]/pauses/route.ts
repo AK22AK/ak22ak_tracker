@@ -9,6 +9,7 @@ import {
   ExecutionTrackerNotFoundError,
   executeStartExecutionPauseCommand,
 } from "@/server/commands/execution-context-core";
+import { scheduleGitHubMirrorAfterResponse } from "@/server/mirror/after-response";
 
 export async function POST(
   request: Request,
@@ -19,12 +20,12 @@ export async function POST(
   }
   try {
     const input = startExecutionPauseCommandSchema.parse(await request.json());
-    return Response.json(
-      await executeStartExecutionPauseCommand(
-        createNeonExecutionContextCommandStore(),
-        { ...input, trackerKey: (await params).trackerKey },
-      ),
+    const result = await executeStartExecutionPauseCommand(
+      createNeonExecutionContextCommandStore(),
+      { ...input, trackerKey: (await params).trackerKey },
     );
+    scheduleGitHubMirrorAfterResponse();
+    return Response.json(result);
   } catch (error) {
     if (error instanceof ZodError) {
       return Response.json({ error: "invalid_request" }, { status: 400 });

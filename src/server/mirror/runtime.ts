@@ -14,6 +14,7 @@ import {
   createNeonGitHubMirrorOutboxStore,
   getGitHubMirrorStatusProjection,
 } from "./neon-outbox-store";
+import type { GitHubMirrorOutboxStore } from "./consumer";
 
 export function resolveGitHubMirrorRuntimeConfig(
   environment: Record<string, string | undefined> = process.env,
@@ -59,4 +60,33 @@ export async function syncGitHubMirrorBatch() {
           maxRuntimeMs: 8_000,
         });
   return { result, status: await getGitHubMirrorStatus() };
+}
+
+type ConsumeOneGitHubMirrorOptions = {
+  resolveConfig?: typeof resolveGitHubMirrorRuntimeConfig;
+  store?: GitHubMirrorOutboxStore;
+  leaseOwner?: string;
+};
+
+export async function consumeOneGitHubMirrorAfterResponse(
+  options: ConsumeOneGitHubMirrorOptions = {},
+) {
+  const { configuration, mirror } = (
+    options.resolveConfig ?? resolveGitHubMirrorRuntimeConfig
+  )();
+  if (configuration !== "configured" || !mirror) {
+    return {
+      status: configuration,
+      processed: 0,
+      succeeded: 0,
+      failed: 0,
+    } as const;
+  }
+  return consumeGitHubMirrorBatch({
+    store: options.store ?? createNeonGitHubMirrorOutboxStore(),
+    mirror,
+    leaseOwner: options.leaseOwner ?? randomUUID(),
+    batchSize: 1,
+    maxRuntimeMs: 8_000,
+  });
 }

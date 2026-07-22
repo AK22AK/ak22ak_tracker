@@ -13,6 +13,7 @@ import {
   executeExternalRecordAssociationCommand,
   ExternalRecordNotFoundError,
 } from "@/server/commands/external-record-association-core";
+import { scheduleGitHubMirrorAfterResponse } from "@/server/mirror/after-response";
 
 const routeParametersSchema = z.object({
   trackerKey: z.string().min(1).max(100),
@@ -41,6 +42,7 @@ export async function PUT(
       createNeonExternalRecordAssociationStore(),
       { ...body, trackerKey },
     );
+    scheduleGitHubMirrorAfterResponse();
     return Response.json(externalRecordAssociationResultSchema.parse(result));
   } catch (error) {
     if (error instanceof ZodError) {

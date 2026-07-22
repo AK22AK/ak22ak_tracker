@@ -10,6 +10,7 @@ import {
   ExecutionTrackerNotFoundError,
   executeCreateExecutionContextCommand,
 } from "@/server/commands/execution-context-core";
+import { scheduleGitHubMirrorAfterResponse } from "@/server/mirror/after-response";
 
 export async function POST(
   request: Request,
@@ -22,12 +23,12 @@ export async function POST(
     const input = createExecutionContextCommandSchema.parse(
       await request.json(),
     );
-    return Response.json(
-      await executeCreateExecutionContextCommand(
-        createNeonExecutionContextCommandStore(),
-        { ...input, trackerKey: (await params).trackerKey },
-      ),
+    const result = await executeCreateExecutionContextCommand(
+      createNeonExecutionContextCommandStore(),
+      { ...input, trackerKey: (await params).trackerKey },
     );
+    scheduleGitHubMirrorAfterResponse();
+    return Response.json(result);
   } catch (error) {
     if (
       error instanceof ZodError ||

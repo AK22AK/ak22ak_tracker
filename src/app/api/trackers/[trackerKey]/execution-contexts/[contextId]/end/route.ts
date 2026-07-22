@@ -9,6 +9,7 @@ import {
   ExecutionTrackerNotFoundError,
   executeEndExecutionContextCommand,
 } from "@/server/commands/execution-context-core";
+import { scheduleGitHubMirrorAfterResponse } from "@/server/mirror/after-response";
 
 export async function POST(
   request: Request,
@@ -23,12 +24,12 @@ export async function POST(
       ...(await request.json()),
       contextId: routeParams.contextId,
     });
-    return Response.json(
-      await executeEndExecutionContextCommand(
-        createNeonExecutionContextCommandStore(),
-        { ...input, trackerKey: routeParams.trackerKey },
-      ),
+    const result = await executeEndExecutionContextCommand(
+      createNeonExecutionContextCommandStore(),
+      { ...input, trackerKey: routeParams.trackerKey },
     );
+    scheduleGitHubMirrorAfterResponse();
+    return Response.json(result);
   } catch (error) {
     if (error instanceof ZodError) {
       return Response.json({ error: "invalid_request" }, { status: 400 });

@@ -10,6 +10,7 @@ import {
   ResumptionCommandConflictError,
   ResumptionTrackerNotFoundError,
 } from "@/server/commands/resumption-core";
+import { scheduleGitHubMirrorAfterResponse } from "@/server/mirror/after-response";
 
 export async function POST(
   request: Request,
@@ -28,12 +29,12 @@ export async function POST(
       ...(await request.json()),
       assessmentId: route.assessmentId,
     });
-    return Response.json(
-      await executeResumptionDecisionCommand(
-        createNeonResumptionDecisionStore(),
-        { ...input, trackerKey: route.trackerKey },
-      ),
+    const result = await executeResumptionDecisionCommand(
+      createNeonResumptionDecisionStore(),
+      { ...input, trackerKey: route.trackerKey },
     );
+    scheduleGitHubMirrorAfterResponse();
+    return Response.json(result);
   } catch (error) {
     if (error instanceof ZodError) {
       return Response.json({ error: "invalid_request" }, { status: 400 });

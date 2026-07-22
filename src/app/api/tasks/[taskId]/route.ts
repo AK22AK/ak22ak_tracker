@@ -11,6 +11,7 @@ import {
   executeTaskCommand,
   TaskNotFoundError,
 } from "@/server/commands/task-command-core";
+import { scheduleGitHubMirrorAfterResponse } from "@/server/mirror/after-response";
 
 const updateTaskSchema = clientCommandMetadataSchema.extend({
   status: z.enum(["planned", "completed", "skipped"]),
@@ -36,6 +37,7 @@ export async function PATCH(
       actual: input.actual ?? null,
       note: input.note ?? null,
     });
+    scheduleGitHubMirrorAfterResponse();
     return Response.json(result);
   } catch (error) {
     if (error instanceof ZodError) {

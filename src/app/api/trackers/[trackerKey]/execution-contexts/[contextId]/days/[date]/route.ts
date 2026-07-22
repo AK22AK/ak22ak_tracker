@@ -13,6 +13,7 @@ import {
   ExecutionTrackerNotFoundError,
   executeSetExecutionDayCommand,
 } from "@/server/commands/execution-context-core";
+import { scheduleGitHubMirrorAfterResponse } from "@/server/mirror/after-response";
 
 export async function PUT(
   request: Request,
@@ -32,12 +33,12 @@ export async function PUT(
       contextId: routeParams.contextId,
       localDate: routeParams.date,
     });
-    return Response.json(
-      await executeSetExecutionDayCommand(
-        createNeonExecutionContextCommandStore(),
-        { ...input, trackerKey: routeParams.trackerKey },
-      ),
+    const result = await executeSetExecutionDayCommand(
+      createNeonExecutionContextCommandStore(),
+      { ...input, trackerKey: routeParams.trackerKey },
     );
+    scheduleGitHubMirrorAfterResponse();
+    return Response.json(result);
   } catch (error) {
     if (
       error instanceof ZodError ||

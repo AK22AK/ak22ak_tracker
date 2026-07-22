@@ -10,6 +10,7 @@ import {
   ExecutionTrackerNotFoundError,
   executeEndExecutionPauseCommand,
 } from "@/server/commands/execution-context-core";
+import { scheduleGitHubMirrorAfterResponse } from "@/server/mirror/after-response";
 
 export async function POST(
   request: Request,
@@ -24,12 +25,12 @@ export async function POST(
       ...(await request.json()),
       pauseId: routeParams.pauseId,
     });
-    return Response.json(
-      await executeEndExecutionPauseCommand(
-        createNeonExecutionContextCommandStore(),
-        { ...input, trackerKey: routeParams.trackerKey },
-      ),
+    const result = await executeEndExecutionPauseCommand(
+      createNeonExecutionContextCommandStore(),
+      { ...input, trackerKey: routeParams.trackerKey },
     );
+    scheduleGitHubMirrorAfterResponse();
+    return Response.json(result);
   } catch (error) {
     if (
       error instanceof ZodError ||
