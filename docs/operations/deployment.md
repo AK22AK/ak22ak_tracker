@@ -87,7 +87,8 @@ Schema 快照的顺序是：公共代码 Schema 与 migration 先完成，数据
 
 ## 定时任务
 
-- Vercel Hobby Cron 最多每日执行一次，且可能在目标小时内漂移。
+- Vercel Hobby 的单个 Cron 计划只支持每日或更低频率，且可能在目标小时内漂移最多
+  59 分钟；它不适合依赖精确分钟的任务。
 - Vercel 不会替失败的 Cron 调用自动重试；任务自身必须持久化状态和下次重试时间。
 - 适合每日 Garmin/训记同步、GitHub outbox 消费和弱提醒，不用于分钟级精确调度。
 - 每个任务验证 `CRON_SECRET`，使用 provider 或任务类型级锁，并持有幂等键。
@@ -96,6 +97,26 @@ Schema 快照的顺序是：公共代码 Schema 与 migration 先完成，数据
   消费；AI 第一版由用户请求内执行一次，失败后保留任务供手动重试。
 - 长时间或依赖不兼容运行时的任务可以迁移到独立受控 Worker，但仍通过相同应用
   契约写入 PostgreSQL。
+
+GitHub 镜像兜底由 `vercel.json` 注册：每天 `19:00 UTC` 请求
+`GET /api/cron/github-mirror`。该时间只是低流量目标时段，不是业务截止时间。Route
+Handler 使用 Vercel 自动附加的 `Authorization: Bearer <CRON_SECRET>` 做独立鉴权，
+不接受用户 Session 代替；服务端没有配置 Secret 或请求不匹配时，在读取 outbox 前
+返回 401。
+
+每次调用复用 GitHub 镜像的同一个持久消费者，最多领取三条、最多运行八秒。租约、
+同路径串行、过期恢复和退避仍由 PostgreSQL outbox 决定；Cron 不在失败后自行循环，
+Vercel 的重复或重叠投递也不能绕过租约。响应只返回安全分类和计数，不包含
+Authorization、Token、目标 payload 或外部响应原文。
+
+发布检查顺序：
+
+1. 只确认 Production 中 `CRON_SECRET` 的变量名处于 configured 状态，不拉取或输出值。
+2. 部署后确认 Vercel 已注册 `/api/cron/github-mirror` 的每日计划。
+3. 未带授权访问该路由必须返回 401；不要在终端或任务记录中手工拼接 Secret。
+4. 首次平台调用后核对安全计数、outbox 状态和 Runtime Logs 中不存在敏感内容。
+5. 平台调用失败时等待持久 outbox 的下次可领取时间；不要把 Cron 当作队列或手工
+   制造健康记录验证。
 
 平台限制以 [Vercel Cron 用量与计划](https://vercel.com/docs/cron-jobs/usage-and-pricing)
 和 [Cron 管理与失败行为](https://vercel.com/docs/cron-jobs/manage-cron-jobs)为准。

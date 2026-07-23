@@ -42,8 +42,20 @@ export async function getGitHubMirrorStatus() {
   );
 }
 
-export async function syncGitHubMirrorBatch() {
-  const { configuration, mirror } = resolveGitHubMirrorRuntimeConfig();
+type SyncGitHubMirrorBatchOptions = {
+  resolveConfig?: typeof resolveGitHubMirrorRuntimeConfig;
+  store?: GitHubMirrorOutboxStore;
+  leaseOwner?: string;
+  getStatus?: typeof getGitHubMirrorStatus;
+  now?: () => Date;
+};
+
+export async function syncGitHubMirrorBatch(
+  options: SyncGitHubMirrorBatchOptions = {},
+) {
+  const { configuration, mirror } = (
+    options.resolveConfig ?? resolveGitHubMirrorRuntimeConfig
+  )();
   const result =
     configuration === "invalid_configuration"
       ? {
@@ -53,13 +65,17 @@ export async function syncGitHubMirrorBatch() {
           failed: 0,
         }
       : await consumeGitHubMirrorBatch({
-          store: createNeonGitHubMirrorOutboxStore(),
+          store: options.store ?? createNeonGitHubMirrorOutboxStore(),
           mirror,
-          leaseOwner: randomUUID(),
+          leaseOwner: options.leaseOwner ?? randomUUID(),
           batchSize: 3,
           maxRuntimeMs: 8_000,
+          now: options.now,
         });
-  return { result, status: await getGitHubMirrorStatus() };
+  return {
+    result,
+    status: await (options.getStatus ?? getGitHubMirrorStatus)(),
+  };
 }
 
 type ConsumeOneGitHubMirrorOptions = {
