@@ -1,8 +1,11 @@
 "use client";
 
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { integrationQueryKeys } from "@/client/query-keys";
 import {
+  githubMirrorStatusSchema,
   githubMirrorSyncResponseSchema,
   type GitHubMirrorStatus,
 } from "@/domain/github-mirror";
@@ -21,7 +24,17 @@ export function GitHubMirrorCard({
 }: {
   initialStatus: GitHubMirrorStatus;
 }) {
-  const [status, setStatus] = useState(initialStatus);
+  const queryClient = useQueryClient();
+  const statusQueryKey = integrationQueryKeys.githubMirrorStatus();
+  const { data: status } = useQuery({
+    queryKey: statusQueryKey,
+    queryFn: async () => {
+      const response = await fetch("/api/mirror/status");
+      if (!response.ok) throw new Error("mirror_status_failed");
+      return githubMirrorStatusSchema.parse(await response.json());
+    },
+    initialData: initialStatus,
+  });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -33,7 +46,7 @@ export function GitHubMirrorCard({
       const value: unknown = await response.json();
       if (!response.ok) throw new Error("sync_failed");
       const parsed = githubMirrorSyncResponseSchema.parse(value);
-      setStatus(parsed.status);
+      queryClient.setQueryData(statusQueryKey, parsed.status);
       setMessage(
         parsed.result.status === "not_configured"
           ? "尚未配置私人数据镜像。"

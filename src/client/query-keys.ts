@@ -11,3 +11,8 @@ export const trackerQueryKeys = {
   resumptionAssessment: (trackerKey: string, assessmentId: string) =>
     ["resumption-assessment", trackerKey, assessmentId] as const,
 };
+
+export const integrationQueryKeys = {
+  githubMirrorStatus: () =>
+    ["integrations", "github-mirror", "status"] as const,
+};

@@ -7,6 +7,8 @@ import { registerPrivateQueryStateCleaner } from "@/offline/clear-private-client
 import { PrivateOfflineIdentityProvider } from "@/offline/private-offline-context";
 import { OfflineCommandProvider } from "@/offline/offline-command-context";
 
+import { GitHubMirrorRecovery } from "./github-mirror-recovery";
+
 export function AppProviders({
   githubUserId,
   children,
@@ -38,6 +40,7 @@ export function AppProviders({
 
   return (
     <QueryClientProvider client={queryClient}>
+      <GitHubMirrorRecovery />
       <PrivateOfflineIdentityProvider githubUserId={githubUserId}>
         <OfflineCommandProvider githubUserId={githubUserId}>
           {children}

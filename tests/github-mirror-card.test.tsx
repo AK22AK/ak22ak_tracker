@@ -7,12 +7,15 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { integrationQueryKeys } from "@/client/query-keys";
 import { GitHubMirrorCard } from "@/components/github-mirror-card";
+import type { GitHubMirrorStatus } from "@/domain/github-mirror";
 
-const baseStatus = {
-  configuration: "configured" as const,
+const baseStatus: GitHubMirrorStatus = {
+  configuration: "configured",
   pendingCount: 2,
   processingCount: 0,
   failedCount: 0,
@@ -22,6 +25,19 @@ const baseStatus = {
   delayed: false,
 };
 
+function renderMirrorCard(
+  initialStatus = baseStatus,
+  queryClient = new QueryClient({
+    defaultOptions: { queries: { staleTime: Number.POSITIVE_INFINITY } },
+  }),
+) {
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <GitHubMirrorCard initialStatus={initialStatus} />
+    </QueryClientProvider>,
+  );
+}
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -29,7 +45,7 @@ afterEach(() => {
 
 describe("GitHub mirror status card", () => {
   it("shows operational counts without technical payloads", () => {
-    render(<GitHubMirrorCard initialStatus={baseStatus} />);
+    renderMirrorCard();
     expect(screen.getByText("待镜像 2 条")).toBeTruthy();
     expect(
       (screen.getByRole("button", { name: "立即同步" }) as HTMLButtonElement)
@@ -38,44 +54,34 @@ describe("GitHub mirror status card", () => {
   });
 
   it("shows a permission error immediately and a delayed queue as a weak reminder", () => {
-    const view = render(
-      <GitHubMirrorCard
-        initialStatus={{ ...baseStatus, failedCount: 1, permissionError: true }}
-      />,
-    );
+    const view = renderMirrorCard({
+      ...baseStatus,
+      failedCount: 1,
+      permissionError: true,
+    });
     expect(screen.getByRole("alert").textContent).toContain("权限");
     view.unmount();
-    render(
-      <GitHubMirrorCard initialStatus={{ ...baseStatus, delayed: true }} />,
-    );
+    renderMirrorCard({ ...baseStatus, delayed: true });
     expect(screen.getByRole("status").textContent).toContain("超过 24 小时");
   });
 
   it("treats every failed outbox item as needing attention", () => {
-    render(
-      <GitHubMirrorCard
-        initialStatus={{
-          ...baseStatus,
-          failedCount: 1,
-          permissionError: false,
-        }}
-      />,
-    );
+    renderMirrorCard({
+      ...baseStatus,
+      failedCount: 1,
+      permissionError: false,
+    });
     expect(screen.getByText("需要处理")).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toContain("部分记录需要处理");
     expect(screen.getByText("需要处理").className).toBe("integration-idle");
   });
 
   it("distinguishes invalid configuration from missing configuration", () => {
-    render(
-      <GitHubMirrorCard
-        initialStatus={{
-          ...baseStatus,
-          configuration: "invalid_configuration",
-          pendingCount: 0,
-        }}
-      />,
-    );
+    renderMirrorCard({
+      ...baseStatus,
+      configuration: "invalid_configuration",
+      pendingCount: 0,
+    });
     expect(screen.getByText("配置需处理")).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toContain("配置无效");
     expect(
@@ -104,7 +110,7 @@ describe("GitHub mirror status card", () => {
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
-    render(<GitHubMirrorCard initialStatus={baseStatus} />);
+    renderMirrorCard();
 
     fireEvent.click(screen.getByRole("button", { name: "立即同步" }));
     await waitFor(() => expect(screen.getByText("待镜像 0 条")).toBeTruthy());
@@ -129,12 +135,27 @@ describe("GitHub mirror status card", () => {
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
-    render(<GitHubMirrorCard initialStatus={baseStatus} />);
+    renderMirrorCard();
 
     fireEvent.click(screen.getByRole("button", { name: "立即同步" }));
     await waitFor(() =>
       expect(screen.getByRole("status").textContent).toContain("尚未确认"),
     );
     expect(screen.queryByText(/已镜像 0 条/)).toBeNull();
+  });
+
+  it("observes the same exact status cache updated by app recovery", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { staleTime: Number.POSITIVE_INFINITY } },
+    });
+    renderMirrorCard(baseStatus, queryClient);
+
+    queryClient.setQueryData(integrationQueryKeys.githubMirrorStatus(), {
+      ...baseStatus,
+      pendingCount: 0,
+      lastSucceededAt: "2026-07-23T05:00:00.000Z",
+    });
+
+    await waitFor(() => expect(screen.getByText("待镜像 0 条")).toBeTruthy());
   });
 });
