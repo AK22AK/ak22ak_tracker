@@ -231,6 +231,24 @@ async function measureTabClick(
   });
 }
 
+async function expectActiveTab(
+  page: Page,
+  href: string,
+  expectedPathname: string,
+  expectedSearch = "",
+) {
+  const link = page.locator(`nav[aria-label="主导航"] a[href="${href}"]`);
+  await expect(link).toHaveAttribute("aria-current", "page");
+  await expect
+    .poll(() =>
+      page.evaluate(() => ({
+        pathname: window.location.pathname,
+        search: window.location.search,
+      })),
+    )
+    .toEqual({ pathname: expectedPathname, search: expectedSearch });
+}
+
 test.beforeEach(async ({ context }) => {
   await authorize(context);
 });
@@ -303,4 +321,65 @@ test("warm Calendar and Settings content remains visible without aggregate refet
   expect(settingsReturn).toBeLessThan(100);
   await expect(page.getByLabel("API Key")).toHaveValue("anonymous-ui-draft");
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(640);
+});
+
+test("persistent tabs keep DOM, active state and browser history URLs aligned", async ({
+  page,
+}) => {
+  await mockPrivateReads(page, 0);
+  await page.goto("/");
+  await expect(page.getByText("Anonymous task").first()).toBeVisible();
+  await expectActiveTab(page, "/", "/");
+
+  await page.getByRole("link", { name: /日历/ }).click();
+  await expect(
+    page.locator('[data-tab-panel="calendar"] .calendar-shell'),
+  ).toBeVisible();
+  await expectActiveTab(page, "/calendar", "/calendar");
+  await page
+    .getByRole("button", { name: new RegExp(`^${localDate}，`) })
+    .click();
+  await expectActiveTab(page, "/calendar", "/calendar", `?date=${localDate}`);
+
+  await page.getByRole("link", { name: /设置/ }).click();
+  await expect(page.getByRole("main", { name: "设置页面" })).toBeVisible();
+  await expectActiveTab(page, "/settings", "/settings");
+
+  await page.getByRole("link", { name: /日历/ }).click();
+  await expect(
+    page.locator('[data-tab-panel="calendar"] .calendar-shell'),
+  ).toBeVisible();
+  await expectActiveTab(page, "/calendar", "/calendar", `?date=${localDate}`);
+
+  await page.reload();
+  await expect(
+    page.locator('[data-tab-panel="calendar"] .calendar-shell'),
+  ).toBeVisible();
+  await expectActiveTab(page, "/calendar", "/calendar", `?date=${localDate}`);
+
+  await page.getByRole("link", { name: /趋势/ }).click();
+  await expect(page.getByRole("main", { name: "趋势页面" })).toBeVisible();
+  await expectActiveTab(page, "/trends", "/trends");
+  await page.getByRole("link", { name: /今日/ }).click();
+  await expect(
+    page.locator('[data-tab-panel="today"]').getByText("Anonymous task"),
+  ).toBeVisible();
+  await expectActiveTab(page, "/", "/");
+
+  await page.goBack();
+  await expect(page.getByRole("main", { name: "趋势页面" })).toBeVisible();
+  await expectActiveTab(page, "/trends", "/trends");
+  await page.goBack();
+  await expect(
+    page.locator('[data-tab-panel="calendar"] .calendar-shell'),
+  ).toBeVisible();
+  await expectActiveTab(page, "/calendar", "/calendar", `?date=${localDate}`);
+  await page.goForward();
+  await expect(page.getByRole("main", { name: "趋势页面" })).toBeVisible();
+  await expectActiveTab(page, "/trends", "/trends");
+  await page.goForward();
+  await expect(
+    page.locator('[data-tab-panel="today"]').getByText("Anonymous task"),
+  ).toBeVisible();
+  await expectActiveTab(page, "/", "/");
 });

@@ -77,27 +77,31 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
     settings: 0,
   });
   const tabUrlsRef = useRef<Record<RootTab, string>>({ ...rootTabPaths });
-  const activateTab = useCallback((tab: RootTab, url: string) => {
-    const currentTab = activeTabRef.current;
-    scrollPositionsRef.current[currentTab] = window.scrollY;
-    tabUrlsRef.current[currentTab] =
-      `${window.location.pathname}${window.location.search}`;
-    tabUrlsRef.current[tab] = url;
-    activeTabRef.current = tab;
-    setVisitedTabs((current) => {
-      if (current.has(tab)) return current;
-      const next = new Set(current);
-      next.add(tab);
-      return next;
-    });
-    setActiveTab(tab);
-    window.requestAnimationFrame(() => {
-      const target = scrollPositionsRef.current[tab];
-      if (Math.abs(window.scrollY - target) > 1) {
-        window.scrollTo({ top: target, behavior: "auto" });
+  const activateTab = useCallback(
+    (tab: RootTab, url: string, previousTabUrl?: string) => {
+      const currentTab = activeTabRef.current;
+      scrollPositionsRef.current[currentTab] = window.scrollY;
+      if (previousTabUrl !== undefined) {
+        tabUrlsRef.current[currentTab] = previousTabUrl;
       }
-    });
-  }, []);
+      tabUrlsRef.current[tab] = url;
+      activeTabRef.current = tab;
+      setVisitedTabs((current) => {
+        if (current.has(tab)) return current;
+        const next = new Set(current);
+        next.add(tab);
+        return next;
+      });
+      setActiveTab(tab);
+      window.requestAnimationFrame(() => {
+        const target = scrollPositionsRef.current[tab];
+        if (Math.abs(window.scrollY - target) > 1) {
+          window.scrollTo({ top: target, behavior: "auto" });
+        }
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     shellRef.current?.setAttribute("data-app-shell-ready", "true");
@@ -130,9 +134,10 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
       if (!tab) return;
       if (tab === activeTabRef.current && exactRootTab(pathname) === tab)
         return;
+      const currentUrl = `${window.location.pathname}${window.location.search}`;
       const targetUrl = tabUrlsRef.current[tab] || href;
       window.history.pushState(null, "", targetUrl);
-      activateTab(tab, targetUrl);
+      activateTab(tab, targetUrl, currentUrl);
     },
     [activateTab, pathname],
   );
