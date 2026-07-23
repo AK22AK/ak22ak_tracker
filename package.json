@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:browser:offline": "pnpm build && playwright test --config=playwright.offline.config.ts",
+    "test:browser:performance": "pnpm build && playwright test --config=playwright.performance.config.ts",
     "test:watch": "vitest",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
     "format": "prettier --write .",

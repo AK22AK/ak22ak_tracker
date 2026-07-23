@@ -18,8 +18,10 @@
 | Garmin Provider | 活动、基础睡眠和步数输入               | 由 Adapter 读取后写入 PostgreSQL |
 | 训记            | 力量训练动作、组次与重量输入           | 只读 Adapter 写入 PostgreSQL     |
 
-正式地址为 `https://ak22ak-tracker.vercel.app`。Vercel Function 应与 Neon 部署在
-同一区域；区域变更必须先以生产追踪确认数据库往返是主要瓶颈，再进行对比和迁移。
+正式地址为 `https://ak22ak-tracker.vercel.app`。Neon 位于新加坡区域；P0b-r1a 通过
+`vercel.json` 的单一 `regions: ["sin1"]` 将 Vercel Functions 与数据源对齐。Hobby
+只使用一个区域。发布后必须从部署构建配置和只读响应/运行证据核对实际计算区域，
+不能只凭源码配置宣布生效。
 
 ## 环境配置
 
@@ -73,6 +75,10 @@ migration（如需要），再通过 `pnpm safety-policy:import -- <private-poli
    因策略缺失而拒绝反馈的新代码。
 5. 部署后执行生产冒烟：健康检查、身份门禁、今日读取和本次变更的最小旅程。
 6. 观察错误率、数据库延迟和相关集成状态，确认没有新增待处理积压。
+
+涉及导航性能的发布还需在同一生产部署至少重复五次“冷启动、首次日历、
+日历→设置→日历”，分别记录内容可见时间的中位数和最差值。若首次数据可见中位数
+仍高于 1.5 秒，只能把客户端导航返修记为完成，数据库聚合查询波次继续列为阻塞。
 
 Schema 快照的顺序是：公共代码 Schema 与 migration 先完成，数据库升级并验证后，
 再更新私有数据仓库中的 JSON Schema 快照。

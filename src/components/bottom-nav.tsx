@@ -39,6 +39,7 @@ export function BottomNav({
         <Link
           key={tab.href}
           href={tab.href}
+          prefetch={false}
           aria-current={isCurrentTab(activePath, tab.href) ? "page" : undefined}
           onClick={(event) => {
             if (shouldUseNativeNavigation(event)) return;

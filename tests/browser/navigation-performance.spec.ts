@@ -1,0 +1,306 @@
+import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { encode } from "next-auth/jwt";
+
+const baseURL = "http://127.0.0.1:4174";
+const localDate = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Shanghai",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+}).format(new Date());
+const taskId = "019c0000-0000-7000-8000-000000000002";
+
+const day = {
+  state: "ready",
+  trackerName: "Anonymous Tracker",
+  startDate: "2026-07-01",
+  planVersion: 1,
+  tasks: [
+    {
+      id: taskId,
+      title: "Anonymous task",
+      category: "general",
+      prescription: {
+        exercises: [{ name: "Anonymous movement", dose: "2 × 8" }],
+      },
+      status: "planned",
+      actual: null,
+      subjectiveNote: null,
+    },
+  ],
+  feedbackCount: 0,
+  feedbacks: [],
+  externalTrainingRecords: [],
+};
+
+const todayAggregate = {
+  tracker: {
+    key: "knee-rehab",
+    name: "Anonymous Tracker",
+    startedOn: "2026-07-01",
+    planningTimeZone: "Asia/Shanghai",
+  },
+  targetDate: localDate,
+  plan: {
+    id: "019c0000-0000-7000-8000-000000000001",
+    version: 1,
+    effectiveFrom: "2026-07-01",
+  },
+  day,
+  safetyPolicy: {
+    schemaVersion: "1.0.0",
+    policyId: "019c0000-0000-7000-8000-000000000003",
+    trackerKey: "knee-rehab",
+    version: 1,
+    effectiveFrom: "2026-07-01T00:00:00.000Z",
+    createdAt: "2026-07-01T00:00:00.000Z",
+    createdBy: "import",
+    rules: [
+      {
+        id: "anonymous-warning",
+        outcome: "yellow",
+        match: "all",
+        conditions: [{ operator: "number_gte", field: "score", value: 999 }],
+      },
+    ],
+    hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  },
+  execution: {
+    context: null,
+    day: null,
+    alternatives: [],
+    safety: { blocked: false, reason: null },
+  },
+};
+
+const calendarAggregate = {
+  trackerKey: "knee-rehab",
+  month: localDate.slice(0, 7),
+  days: [
+    {
+      date: localDate,
+      taskCount: 1,
+      completedCount: 0,
+      skippedCount: 0,
+      feedbackCount: 0,
+    },
+  ],
+};
+
+const dayAggregate = {
+  trackerKey: "knee-rehab",
+  targetDate: localDate,
+  plan: todayAggregate.plan,
+  day,
+};
+
+const integrationStatus = {
+  provider: "xunji",
+  configured: false,
+  maskedKey: null,
+  verifiedAt: null,
+  updatedAt: null,
+  sync: {
+    status: "idle",
+    lastAttemptAt: null,
+    lastSucceededAt: null,
+    lastSucceededDate: null,
+    lastErrorCode: null,
+  },
+};
+
+const mirrorStatus = {
+  configuration: "configured",
+  pendingCount: 0,
+  processingCount: 0,
+  failedCount: 0,
+  oldestPendingAt: null,
+  lastSucceededAt: null,
+  permissionError: false,
+  delayed: false,
+};
+
+type RequestCounters = {
+  today: number;
+  month: number;
+  day: number;
+  integration: number;
+  mirror: number;
+};
+
+async function authorize(context: BrowserContext) {
+  const token = await encode({
+    secret: "anonymous-navigation-browser-test-secret",
+    token: { sub: "10001", githubId: "10001", name: "Anonymous User" },
+  });
+  await context.addCookies([
+    {
+      name: "next-auth.session-token",
+      value: token,
+      url: baseURL,
+      httpOnly: true,
+      sameSite: "Lax",
+    },
+  ]);
+}
+
+async function mockPrivateReads(page: Page, delayMs: number) {
+  const counters: RequestCounters = {
+    today: 0,
+    month: 0,
+    day: 0,
+    integration: 0,
+    mirror: 0,
+  };
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    let body: unknown = null;
+    if (url.pathname.endsWith("/today")) {
+      counters.today += 1;
+      body = todayAggregate;
+    } else if (url.pathname.endsWith("/calendar")) {
+      counters.month += 1;
+      body = calendarAggregate;
+    } else if (url.pathname.endsWith(`/days/${localDate}`)) {
+      counters.day += 1;
+      body = dayAggregate;
+    } else if (url.pathname.endsWith("/integrations/xunji/credential")) {
+      counters.integration += 1;
+      body = integrationStatus;
+    } else if (url.pathname === "/api/mirror/status") {
+      counters.mirror += 1;
+      body = mirrorStatus;
+    } else if (url.pathname === "/api/mirror/sync") {
+      body = {
+        result: {
+          status: "idle",
+          processed: 0,
+          succeeded: 0,
+          failed: 0,
+        },
+        status: mirrorStatus,
+      };
+    }
+    if (body === null) {
+      await route.fulfill({ status: 404, json: { error: "not_found" } });
+      return;
+    }
+    if (delayMs > 0 && request.method() === "GET") {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    await route.fulfill({ status: 200, json: body });
+  });
+  return counters;
+}
+
+async function measureTabClick(
+  page: Page,
+  href: string,
+  visibleSelector: string,
+) {
+  await page.evaluate((targetHref) => {
+    const state = window as typeof window & {
+      __akNavigationStartedAt?: number;
+    };
+    const link = document.querySelector<HTMLAnchorElement>(
+      `nav[aria-label="主导航"] a[href="${targetHref}"]`,
+    );
+    if (!link) throw new Error(`missing tab ${targetHref}`);
+    link.addEventListener(
+      "click",
+      () => {
+        state.__akNavigationStartedAt = performance.now();
+      },
+      { once: true },
+    );
+  }, href);
+  await page.locator(`nav[aria-label="主导航"] a[href="${href}"]`).click();
+  await page.waitForFunction((selector) => {
+    const element = document.querySelector<HTMLElement>(selector);
+    return Boolean(element && element.getClientRects().length > 0);
+  }, visibleSelector);
+  return page.evaluate(() => {
+    const state = window as typeof window & {
+      __akNavigationStartedAt?: number;
+    };
+    if (state.__akNavigationStartedAt === undefined) {
+      throw new Error("missing navigation start mark");
+    }
+    return performance.now() - state.__akNavigationStartedAt;
+  });
+}
+
+test.beforeEach(async ({ context }) => {
+  await authorize(context);
+});
+
+test("cold uncached Calendar exposes a stable target shell within 100 ms", async ({
+  page,
+}) => {
+  await mockPrivateReads(page, 800);
+  await page.goto("/");
+  await expect(page.getByRole("navigation", { name: "主导航" })).toBeVisible();
+  await expect(page.locator('[data-app-shell-ready="true"]')).toBeVisible();
+
+  const elapsed = await measureTabClick(
+    page,
+    "/calendar",
+    '[data-tab-panel="calendar"] .calendar-shell',
+  );
+  expect(elapsed).toBeLessThan(100);
+  await expect(page.getByText("正在加载当天详情…")).toBeVisible();
+  await expect(page.getByText(/正在切换/)).toHaveCount(0);
+});
+
+test("warm Calendar and Settings content remains visible without aggregate refetch", async ({
+  page,
+}) => {
+  const counters = await mockPrivateReads(page, 80);
+  await page.goto("/");
+  await expect(page.getByText("Anonymous task").first()).toBeVisible();
+  await expect.poll(() => counters.month).toBe(1);
+  await expect.poll(() => counters.day).toBe(1);
+  await expect.poll(() => counters.integration).toBe(1);
+  await expect(page.getByText("Anonymous task").first()).toBeVisible();
+
+  const calendarFirst = await measureTabClick(
+    page,
+    "/calendar",
+    '[data-tab-panel="calendar"] .calendar-task',
+  );
+  expect(calendarFirst).toBeLessThan(100);
+  await page.evaluate(() => {
+    document.body.style.minHeight = "3000px";
+    window.scrollTo(0, 320);
+  });
+  const requestsAfterCalendar = { ...counters };
+
+  const settingsFirst = await measureTabClick(
+    page,
+    "/settings",
+    '[data-tab-panel="settings"] .integration-card',
+  );
+  expect(settingsFirst).toBeLessThan(100);
+  await page.getByLabel("API Key").fill("anonymous-ui-draft");
+  await page.evaluate(() => window.scrollTo(0, 640));
+
+  const calendarReturn = await measureTabClick(
+    page,
+    "/calendar",
+    '[data-tab-panel="calendar"] .calendar-task',
+  );
+  expect(calendarReturn).toBeLessThan(100);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(320);
+  expect(counters).toEqual(requestsAfterCalendar);
+  await expect(page.getByText(/正在切换/)).toHaveCount(0);
+
+  const settingsReturn = await measureTabClick(
+    page,
+    "/settings",
+    '[data-tab-panel="settings"] .integration-card',
+  );
+  expect(settingsReturn).toBeLessThan(100);
+  await expect(page.getByLabel("API Key")).toHaveValue("anonymous-ui-draft");
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(640);
+});

@@ -13,6 +13,8 @@ export const trackerQueryKeys = {
 };
 
 export const integrationQueryKeys = {
+  providerStatus: (trackerKey: string, provider: string) =>
+    ["integrations", trackerKey, provider, "status"] as const,
   githubMirrorStatus: () =>
     ["integrations", "github-mirror", "status"] as const,
 };

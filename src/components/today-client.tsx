@@ -1,10 +1,18 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
-import { trackerQueryKeys } from "@/client/query-keys";
-import { fetchTodayAggregate } from "@/client/tracker-api";
+import {
+  fetchGitHubMirrorStatus,
+  fetchIntegrationStatus,
+} from "@/client/integration-api";
+import { integrationQueryKeys, trackerQueryKeys } from "@/client/query-keys";
+import {
+  fetchCalendarAggregate,
+  fetchDayAggregate,
+  fetchTodayAggregate,
+} from "@/client/tracker-api";
 import type { TodayAggregate } from "@/domain/api-contracts";
 import type { ExternalRecordAssociation } from "@/domain/external-training";
 import { localDateInTimeZone } from "@/domain/planning-time";
@@ -25,6 +33,24 @@ import { DashboardShell } from "./dashboard-shell";
 const trackerKey = "knee-rehab";
 const planningTimeZone = "Asia/Shanghai";
 
+function scheduleIdlePrefetch(callback: () => void) {
+  const idleWindow = window as unknown as {
+    requestIdleCallback?: (
+      callback: () => void,
+      options: { timeout: number },
+    ) => number;
+    cancelIdleCallback?: (requestId: number) => void;
+  };
+  if (typeof idleWindow.requestIdleCallback === "function") {
+    const requestId = idleWindow.requestIdleCallback(callback, {
+      timeout: 2_000,
+    });
+    return () => idleWindow.cancelIdleCallback?.(requestId);
+  }
+  const timeoutId = globalThis.setTimeout(callback, 500);
+  return () => globalThis.clearTimeout(timeoutId);
+}
+
 function todayLabel(localDate: string) {
   return new Intl.DateTimeFormat("zh-CN", {
     timeZone: planningTimeZone,
@@ -42,6 +68,7 @@ export function TodayClient() {
   const { commands, replayNow } = useOfflineCommands();
   const localDate = localDateInTimeZone(new Date(), planningTimeZone);
   const queryKey = trackerQueryKeys.today(trackerKey, localDate);
+  const prefetchedDateRef = useRef<string | null>(null);
   const query = useQuery({
     queryKey,
     queryFn: ({ signal }) => fetchTodayAggregate(trackerKey, localDate, signal),
@@ -94,6 +121,43 @@ export function TodayClient() {
     query.dataUpdatedAt,
     queryClient,
   ]);
+
+  useEffect(() => {
+    if (!query.data || !navigator.onLine) return;
+    if (prefetchedDateRef.current === localDate) return;
+    prefetchedDateRef.current = localDate;
+    return scheduleIdlePrefetch(() => {
+      if (!navigator.onLine) return;
+      void Promise.allSettled([
+        queryClient.prefetchQuery({
+          queryKey: trackerQueryKeys.calendar(
+            trackerKey,
+            localDate.slice(0, 7),
+          ),
+          queryFn: ({ signal }) =>
+            fetchCalendarAggregate(trackerKey, localDate.slice(0, 7), signal),
+          staleTime: 5 * 60_000,
+        }),
+        queryClient.prefetchQuery({
+          queryKey: trackerQueryKeys.day(trackerKey, localDate),
+          queryFn: ({ signal }) =>
+            fetchDayAggregate(trackerKey, localDate, signal),
+          staleTime: 60_000,
+        }),
+        queryClient.prefetchQuery({
+          queryKey: integrationQueryKeys.providerStatus(trackerKey, "xunji"),
+          queryFn: ({ signal }) =>
+            fetchIntegrationStatus(trackerKey, "xunji", signal),
+          staleTime: 5 * 60_000,
+        }),
+        queryClient.prefetchQuery({
+          queryKey: integrationQueryKeys.githubMirrorStatus(),
+          queryFn: ({ signal }) => fetchGitHubMirrorStatus(signal),
+          staleTime: 60_000,
+        }),
+      ]);
+    });
+  }, [localDate, query.data, queryClient]);
 
   const baseAggregate = query.data ?? snapshotData?.data;
   const projected = baseAggregate

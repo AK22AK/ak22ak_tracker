@@ -227,6 +227,50 @@ describe("today background refresh", () => {
     expect(screen.queryByText(/全部已同步|待同步 0/)).toBeNull();
   });
 
+  it("prefetches calendar and settings reads once Today is ready and the browser is idle", async () => {
+    let idleCallback: (() => void) | null = null;
+    vi.stubGlobal(
+      "requestIdleCallback",
+      vi.fn((callback: () => void) => {
+        idleCallback = callback;
+        return 1;
+      }),
+    );
+    vi.stubGlobal("cancelIdleCallback", vi.fn());
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(aggregate("planned", 0)));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({
+            defaultOptions: { queries: { retry: false } },
+          })
+        }
+      >
+        <TodayClient />
+      </QueryClientProvider>,
+    );
+
+    await screen.findByText("当前在线");
+    expect(idleCallback).not.toBeNull();
+    act(() => idleCallback?.());
+
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map(([input]) => String(input));
+      expect(urls).toEqual(
+        expect.arrayContaining([
+          "/api/trackers/knee-rehab/calendar?month=2026-07",
+          "/api/trackers/knee-rehab/days/2026-07-19",
+          "/api/trackers/knee-rehab/integrations/xunji/credential",
+          "/api/mirror/status",
+        ]),
+      );
+    });
+  });
+
   it("shows an explicit offline state", async () => {
     vi.spyOn(window.navigator, "onLine", "get").mockReturnValue(false);
     vi.stubGlobal(
