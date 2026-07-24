@@ -49,6 +49,19 @@ class GarminLocalAuthorizerTests(unittest.TestCase):
                 "global",
             )
 
+    def test_guidance_treats_the_output_as_a_temporary_import_file(self):
+        default_output = Path.home() / ".ak22ak_tracker" / "garmin-token-bundle.json"
+        guidance = "\n".join(
+            AUTHORIZER.temporary_file_guidance(default_output, default_output)
+        )
+
+        self.assertIn("导入成功后删除", guidance)
+        self.assertIn("rm ~/.ak22ak_tracker/garmin-token-bundle.json", guidance)
+        self.assertIn("不要长期保留", guidance)
+        self.assertIn("iCloud 或云盘", guidance)
+        self.assertIn("不要发送到聊天", guidance)
+        self.assertIn("不要复制进仓库", guidance)
+
 
 if __name__ == "__main__":
     unittest.main()

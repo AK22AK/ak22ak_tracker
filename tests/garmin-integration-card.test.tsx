@@ -65,6 +65,10 @@ describe("Garmin token-only settings flow", () => {
 
     await screen.findByText("待验证");
     expect(screen.getByText(/Token 已加密保存/)).toBeTruthy();
+    expect(screen.getByText(/浏览器无法删除本机文件/)).toBeTruthy();
+    expect(
+      screen.getByText(/rm ~\/.ak22ak_tracker\/garmin-token-bundle.json/),
+    ).toBeTruthy();
     expect(document.body.textContent).not.toContain("anonymous-access-token");
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] ?? [];
@@ -73,6 +77,7 @@ describe("Garmin token-only settings flow", () => {
     );
     expect(init).toEqual(expect.objectContaining({ method: "PUT" }));
     expect(JSON.parse(String(init?.body))).toEqual({ credential });
+    expect(String(init?.body)).not.toContain(".ak22ak_tracker");
   });
 
   it("renders only the whitelisted single-day activity summary", async () => {

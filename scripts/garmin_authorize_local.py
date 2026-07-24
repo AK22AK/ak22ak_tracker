@@ -15,6 +15,7 @@ from typing import Any
 CLIENT_ID = "python-garminconnect"
 CLIENT_VERSION = "0.3.6"
 TOKEN_KEYS = {"di_token", "di_refresh_token", "di_client_id"}
+DEFAULT_OUTPUT = Path.home() / ".ak22ak_tracker" / "garmin-token-bundle.json"
 
 
 def build_envelope(token_bundle: str, region: str) -> dict[str, Any]:
@@ -77,6 +78,24 @@ def authorize(region: str) -> dict[str, Any]:
     return build_envelope(token_bundle, region)
 
 
+def temporary_file_guidance(
+    output: Path, default_output: Path = DEFAULT_OUTPUT
+) -> tuple[str, ...]:
+    messages = [
+        "这是临时导入凭证。请在设置页确认导入成功后删除本机文件。",
+    ]
+    if output.expanduser().absolute() == default_output.expanduser().absolute():
+        messages.append(
+            "默认文件可在导入成功后删除：rm ~/.ak22ak_tracker/garmin-token-bundle.json"
+        )
+    else:
+        messages.append("你使用了自定义输出位置，请在导入成功后手动删除该文件。")
+    messages.append(
+        "不要长期保留，不要同步到 iCloud 或云盘，不要发送到聊天，也不要复制进仓库。"
+    )
+    return tuple(messages)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="在本机登录 Garmin，并生成可导入 AK Tracker 的 token 文件。"
@@ -85,7 +104,7 @@ def main() -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path.home() / ".ak22ak_tracker" / "garmin-token-bundle.json",
+        default=DEFAULT_OUTPUT,
     )
     args = parser.parse_args()
     logging.disable(logging.CRITICAL)
@@ -96,7 +115,9 @@ def main() -> int:
         print("授权未完成。未生成或更新 token 文件。")
         return 1
     print(f"授权完成。token 文件已保存到：{args.output.expanduser().absolute()}")
-    print("请在 AK Tracker 设置页选择该文件；不要把文件内容发送到聊天。")
+    print("请在 AK Tracker 设置页选择该文件。")
+    for message in temporary_file_guidance(args.output):
+        print(message)
     return 0
 
 

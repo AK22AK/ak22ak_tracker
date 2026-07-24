@@ -115,7 +115,9 @@ export function GarminIntegrationCard({
       setStatus(nextStatus);
       setPreview(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
-      setMessage("Token 已加密保存。请继续验证一天的活动。");
+      setMessage(
+        "Token 已加密保存。浏览器无法删除本机文件，请手动运行 rm ~/.ak22ak_tracker/garmin-token-bundle.json 删除临时文件，再继续验证一天的活动。",
+      );
     } catch (error) {
       setMessage(
         safeFailureMessage(error instanceof Error ? error.message : null),
