@@ -392,8 +392,9 @@ worker 更新仍是人工发布验收项，不据自动化结果虚报完成。
 
 - 本机授权助手在使用者 Mac 的临时 Python 环境中处理账号、密码与 MFA，只生成固定
   `python-garminconnect==0.3.6` 的严格 token 文件；密码不进入网页、Vercel 或聊天。
-- 本机 Python 3.14 与 Vercel Python 3.12 分别固定使用已验证的 `cffi 2.0.0` 和
-  `cffi 2.1.0`，避免索引/CDN 短暂不同步使本机授权阻塞；Garmin 客户端版本不漂移。
+- 本机授权与 Vercel Runtime 使用职责分离的固定依赖清单：本机 Python 3.12–3.14
+  始终使用已验证的 `cffi 2.0.0`，Vercel 生产锁始终使用 `cffi 2.1.0`；不能再通过
+  Python 版本猜测运行环境，Garmin 客户端版本不漂移。
 - 设置页只允许导入该严格文件。后端结构校验后复用 AES-256-GCM、随机 nonce、版本和
   provider AAD 加密保存；浏览器只读取连接状态，不能取回 Token。
 - 单日预览使用独立 Secret 鉴权的 Vercel Python Runtime，只读取活动时间、类型、时长、
