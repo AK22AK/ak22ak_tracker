@@ -172,6 +172,32 @@ Vercel 官方仍将 Python Runtime 标为 Beta，长期 Token 生命周期、限
 - Garmin 记录只能提供关联建议，绝不能自动把康复任务改成完成。
 - 卡路里、身体成分、Body Battery、压力、血氧等当前无明确用途的数据不进入项目。
 
+## 增量同步与自动恢复
+
+Garmin activity 使用通用的日期同步、追赶游标和外部记录幂等边界：
+
+- 手工追赶和前台恢复每次最多处理五天；首次范围只从 Tracker 开始日到计划时区今天，
+  完成首次覆盖后使用两天重叠窗口检查近期修改。
+- 前台恢复只在受保护 App Shell 首次在线打开或离线恢复联网时触发；服务端使用 30 分钟
+  到期判断和两分钟原子租约，普通 Tab 切换、聚焦与 Query 刷新不会重复触发。
+- 每日 Cron 复用同一到期判断、租约、日期状态、游标和 Garmin Runtime，不建立第二套
+  队列。它固定只处理 `knee-rehab` 的 activity，每次最多三天，Route 总时限为 45 秒；
+  某日失败立即停批，不在同一次 Cron 中重试。
+- GitHub 镜像与 Garmin 使用两个独立 Cron，并安排在不同 UTC 小时。Garmin Cron 通过
+  Vercel 现有 `CRON_SECRET` 的 Bearer Header 鉴权，在任何数据库、凭证或 Provider
+  读取前失败关闭；它不使用用户 Session。
+- Cron 只返回跳过原因、本批日期范围、计数、游标和安全错误代码，不返回活动明细、
+  Provider 内部 ID、raw payload、Token、Authorization 或第三方错误原文。
+
+Vercel Hobby 当前每项目最多 100 个 Cron，但单个 Cron 最多每日一次，且只提供小时级
+精度：例如 `0 21 * * *` 可能在 21:00 至 21:59 UTC 之间运行。因此每日 Cron 是持久
+同步状态的尽力修复触发器，不是精确分钟调度、队列或自动重试系统。项目部署后只通过
+未授权 401、Route 注册和健康检查做人工门禁；首次授权平台调用必须等待 Vercel 自动
+触发并单独观察，不人工携带 Secret 调用。
+
+参考：[Vercel Cron 使用与计费](https://vercel.com/docs/cron-jobs/usage-and-pricing)、
+[Vercel Cron 管理与鉴权](https://vercel.com/docs/cron-jobs/manage-cron-jobs)。
+
 ## 错误与降级
 
 公开状态只允许以下安全分类，不展示第三方原始响应：

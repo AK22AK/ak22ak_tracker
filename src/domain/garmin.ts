@@ -132,6 +132,58 @@ export type GarminActivityRecoveryResponse = z.infer<
   typeof garminActivityRecoveryResponseSchema
 >;
 
+const garminDailyRecoverySummarySchema = z
+  .object({
+    succeeded: z.number().int().nonnegative().max(3),
+    failed: z.number().int().nonnegative().max(1),
+    created: z.number().int().nonnegative(),
+    changed: z.number().int().nonnegative(),
+    unchanged: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const garminDailyRecoveryCronResponseSchema = z.discriminatedUnion(
+  "status",
+  [
+    z
+      .object({
+        status: z.literal("skipped"),
+        reason: z.enum([
+          "not_connected",
+          "needs_validation",
+          "needs_refresh",
+          "invalid",
+          "not_due",
+          "in_progress",
+        ]),
+      })
+      .strict(),
+    z
+      .object({
+        status: z.literal("completed"),
+        sync: z
+          .object({
+            batch: z
+              .object({ from: localDateSchema, to: localDateSchema })
+              .strict()
+              .nullable(),
+            targetDate: localDateSchema,
+            summary: garminDailyRecoverySummarySchema,
+            nextCursor: localDateSchema.nullable(),
+            complete: z.boolean(),
+            lastSucceededDate: localDateSchema.nullable(),
+            errorCode: garminProviderErrorCodeSchema.nullable(),
+          })
+          .strict(),
+      })
+      .strict(),
+  ],
+);
+
+export type GarminDailyRecoveryCronResponse = z.infer<
+  typeof garminDailyRecoveryCronResponseSchema
+>;
+
 const garminActivityTypeLabels: Record<string, string> = {
   running: "跑步",
   walking: "步行",

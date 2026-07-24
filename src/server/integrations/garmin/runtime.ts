@@ -52,6 +52,7 @@ import { createGarminPythonRuntimeClient } from "./python-runtime-client";
 type Database = ReturnType<typeof getDatabase>;
 type Tracker = Awaited<ReturnType<typeof requireIntegrationTracker>>;
 type GenericStatus = IntegrationStatus;
+type GarminAutomaticRecoveryProfile = "foreground" | "daily_cron";
 
 export class GarminPreviewDateOutOfRangeError extends Error {
   constructor() {
@@ -275,7 +276,10 @@ export function createGarminRuntime({
     });
   }
 
-  async function syncActivityHistoryForTracker(tracker: Tracker) {
+  async function syncActivityHistoryForTracker(
+    tracker: Tracker,
+    batchSize: 3 | 5,
+  ) {
     const requestedAt = now();
     const today = localDateInTimeZone(requestedAt, tracker.planningTimeZone);
     return syncProviderCatchUpBatch({
@@ -284,7 +288,7 @@ export function createGarminRuntime({
       startedOn: tracker.startedOn,
       today,
       now: requestedAt,
-      batchSize: 5,
+      batchSize,
       overlapDays: 2,
       store: createCatchUpStore(),
       syncDate: (date) =>
@@ -355,10 +359,13 @@ export function createGarminRuntime({
 
     async syncActivityHistory(input: { trackerKey: string }) {
       const tracker = await store.requireTracker(input.trackerKey);
-      return syncActivityHistoryForTracker(tracker);
+      return syncActivityHistoryForTracker(tracker, 5);
     },
 
-    async recoverActivityHistory(input: { trackerKey: string }) {
+    async recoverActivityHistory(input: {
+      trackerKey: string;
+      profile?: GarminAutomaticRecoveryProfile;
+    }) {
       const initialConnection = connectionStatus(
         await store.getStatus(input.trackerKey),
       );
@@ -377,7 +384,11 @@ export function createGarminRuntime({
         minimumIntervalMs: automaticRecoveryMinimumIntervalMs,
         leaseMs: automaticRecoveryLeaseMs,
         store: automaticRecoveryStore,
-        recover: () => syncActivityHistoryForTracker(tracker),
+        recover: () =>
+          syncActivityHistoryForTracker(
+            tracker,
+            input.profile === "daily_cron" ? 3 : 5,
+          ),
       });
       const latestConnection = connectionStatus(
         await store.getStatus(input.trackerKey),

@@ -5,6 +5,10 @@
     {
       "path": "/api/cron/github-mirror",
       "schedule": "0 19 * * *"
+    },
+    {
+      "path": "/api/cron/garmin-activity",
+      "schedule": "0 21 * * *"
     }
   ]
 }

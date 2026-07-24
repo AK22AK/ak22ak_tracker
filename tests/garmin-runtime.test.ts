@@ -311,6 +311,10 @@ describe("P3b-2a Garmin token-only runtime", () => {
       date: "2026-07-24",
     });
     vi.mocked(client.fetchActivitiesForDate).mockClear();
+    vi.mocked(client.fetchActivitiesForDate).mockResolvedValue({
+      activities: [],
+      refreshedCredential: credential,
+    });
     vi.mocked(automaticRecoveryStore.claim).mockResolvedValueOnce("not_due");
 
     await expect(
@@ -328,6 +332,72 @@ describe("P3b-2a Garmin token-only runtime", () => {
         leaseMs: 2 * 60_000,
       }),
     );
+  });
+
+  it("uses the same automatic claim with a three-day daily Cron profile", async () => {
+    const { runtime, client, automaticRecoveryStore } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+    await runtime.previewActivities({
+      trackerKey: "knee-rehab",
+      date: "2026-07-24",
+    });
+    vi.mocked(client.fetchActivitiesForDate).mockClear();
+    vi.mocked(client.fetchActivitiesForDate).mockResolvedValue({
+      activities: [],
+      refreshedCredential: credential,
+    });
+
+    const result = await runtime.recoverActivityHistory({
+      trackerKey: "knee-rehab",
+      profile: "daily_cron",
+    });
+
+    expect(result).toMatchObject({
+      status: "completed",
+      sync: {
+        batch: { from: "2026-07-18", to: "2026-07-20" },
+        nextCursor: "2026-07-21",
+        complete: false,
+        summary: { succeeded: 3, failed: 0 },
+      },
+    });
+    expect(client.fetchActivitiesForDate).toHaveBeenCalledTimes(3);
+    expect(automaticRecoveryStore.claim).toHaveBeenCalledOnce();
+  });
+
+  it("stops a daily Cron batch on its first failed day", async () => {
+    const { runtime, client } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+    await runtime.previewActivities({
+      trackerKey: "knee-rehab",
+      date: "2026-07-24",
+    });
+    vi.mocked(client.fetchActivitiesForDate).mockReset();
+    vi.mocked(client.fetchActivitiesForDate)
+      .mockResolvedValueOnce({
+        activities: [],
+        refreshedCredential: credential,
+      })
+      .mockRejectedValueOnce(new GarminProviderError("timeout"));
+
+    const result = await runtime.recoverActivityHistory({
+      trackerKey: "knee-rehab",
+      profile: "daily_cron",
+    });
+
+    expect(result).toMatchObject({
+      status: "completed",
+      sync: {
+        nextCursor: "2026-07-19",
+        complete: false,
+        summary: { succeeded: 1, failed: 1 },
+        days: [
+          { date: "2026-07-18", status: "succeeded" },
+          { date: "2026-07-19", status: "failed", errorCode: "timeout" },
+        ],
+      },
+    });
+    expect(client.fetchActivitiesForDate).toHaveBeenCalledTimes(2);
   });
 
   it("does not automatically retry a credential that needs refresh", async () => {

@@ -32,17 +32,15 @@ function request(authorization?: string) {
 }
 
 describe("GitHub mirror daily Cron route", () => {
-  it("registers exactly one daily Vercel GET invocation", async () => {
+  it("keeps the GitHub mirror daily Vercel GET invocation", async () => {
     const config = JSON.parse(
       await readFile(new URL("../vercel.json", import.meta.url), "utf8"),
     ) as { crons?: Array<{ path?: string; schedule?: string }> };
 
-    expect(config.crons).toEqual([
-      {
-        path: "/api/cron/github-mirror",
-        schedule: "0 19 * * *",
-      },
-    ]);
+    expect(config.crons).toContainEqual({
+      path: "/api/cron/github-mirror",
+      schedule: "0 19 * * *",
+    });
   });
 
   it.each([
