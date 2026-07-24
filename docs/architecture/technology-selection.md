@@ -30,7 +30,7 @@ AK Tracker 第一版是单用户、手机优先的私人追踪应用。技术选
 | PWA 缓存       | Service Worker + Cache Storage                          | 公共离线壳、带内容哈希的静态资源              | 与私人 IndexedDB 分开；不缓存认证首页和 API 响应                   |
 | 私有数据镜像   | GitHub 私仓 + Octokit Contents API                      | 可读 JSON、版本追踪、供其他 AI 读取           | 只更新目标文件，不克隆笔记仓库；不承担在线数据库职责               |
 | AI             | DeepSeek OpenAI-compatible 接口 + `PlanAdvisor` Adapter | 生成结构化调整建议                            | 复用现有按量 API；模型只建议，不持有写权限，Provider 可替换        |
-| Garmin         | `GarminClient` Adapter + 独立同步作业                   | 活动、基础睡眠、同步游标和导入                | 非官方接口风险隔离；保留官方接口和 FIT/CSV 替代路径                |
+| Garmin         | `GarminClient` + 隔离 Python 候选 + 官方 FIT SDK        | 活动证据，后续基础睡眠/步数及文件导入         | Token-only、固定版本；官方 API 待审批，FIT 是无凭证兜底            |
 | 训记           | 训练数据 REST Adapter + 按日期同步作业                  | 力量训练明细、来源版本和人工关联              | 复用既有训练记录避免重复录入；只读能力隔离写接口和无关数据         |
 | 单元与契约测试 | Vitest                                                  | 领域规则、Module Interface、故障注入          | 运行快，适合每次提交                                               |
 | 交互测试       | Testing Library + Vitest                                | 表单、本地状态、慢网、迟到响应                | 验证用户可见行为，不依赖实现细节                                   |
