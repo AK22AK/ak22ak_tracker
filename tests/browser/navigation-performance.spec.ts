@@ -1,6 +1,8 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { encode } from "next-auth/jwt";
 
+import { aggregateEightWeekTrends } from "@/domain/trends";
+
 const baseURL = "http://127.0.0.1:4174";
 const localDate = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Asia/Shanghai",
@@ -147,6 +149,29 @@ const mirrorStatus = {
   delayed: false,
 };
 
+const trendsAggregate = aggregateEightWeekTrends({
+  trackerKey: "knee-rehab",
+  trackerStartedOn: "2026-07-01",
+  timeZone: "Asia/Shanghai",
+  currentDate: localDate,
+  generatedAt: new Date().toISOString(),
+  planVersions: [
+    {
+      id: todayAggregate.plan.id,
+      version: 1,
+      effectiveFrom: "2026-07-01",
+    },
+  ],
+  tasks: [
+    {
+      localDate,
+      planVersionId: todayAggregate.plan.id,
+      status: "planned",
+    },
+  ],
+  feedbacks: [],
+});
+
 type RequestCounters = {
   today: number;
   month: number;
@@ -154,6 +179,7 @@ type RequestCounters = {
   integration: number;
   garmin: number;
   mirror: number;
+  trends: number;
 };
 
 async function authorize(context: BrowserContext) {
@@ -180,6 +206,7 @@ async function mockPrivateReads(page: Page, delayMs: number) {
     integration: 0,
     garmin: 0,
     mirror: 0,
+    trends: 0,
   };
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -203,6 +230,9 @@ async function mockPrivateReads(page: Page, delayMs: number) {
     } else if (url.pathname === "/api/mirror/status") {
       counters.mirror += 1;
       body = mirrorStatus;
+    } else if (url.pathname.endsWith("/trends")) {
+      counters.trends += 1;
+      body = trendsAggregate;
     } else if (url.pathname === "/api/mirror/sync") {
       body = {
         result: {
@@ -224,6 +254,38 @@ async function mockPrivateReads(page: Page, delayMs: number) {
     await route.fulfill({ status: 200, json: body });
   });
   return counters;
+}
+
+for (const width of [320, 375, 390, 430]) {
+  test(`trend summaries remain accessible at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await mockPrivateReads(page, 0);
+    await page.goto("/trends");
+
+    await expect(page.getByRole("heading", { name: "本周完成" })).toBeVisible();
+    await expect(
+      page.getByRole("img", { name: /本周任务完成率 0%/ }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("img", { name: /本周没有身体反馈/ }),
+    ).toBeVisible();
+
+    const layout = await page.evaluate(() => {
+      const button = document.querySelector<HTMLElement>(
+        ".trend-refresh-button",
+      );
+      const rect = button?.getBoundingClientRect();
+      return {
+        clientWidth: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        buttonHeight: rect?.height ?? 0,
+        buttonRight: rect?.right ?? Number.POSITIVE_INFINITY,
+      };
+    });
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+    expect(layout.buttonHeight).toBeGreaterThanOrEqual(44);
+    expect(layout.buttonRight).toBeLessThanOrEqual(layout.clientWidth);
+  });
 }
 
 async function measureTabClick(

@@ -1,7 +1,15 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Activity, useCallback, useEffect, useRef, useState } from "react";
+import {
+  Activity,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { useOfflineCommands } from "@/offline/offline-command-context";
 
@@ -9,8 +17,33 @@ import { BottomNav } from "./bottom-nav";
 import { CalendarClient } from "./calendar-client";
 import { PwaUpdatePrompt } from "./service-worker-registration";
 import { SettingsClient } from "./settings-client";
-import { UnavailableFeaturePage } from "./tab-page-frame";
 import { TodayClient } from "./today-client";
+
+const TrendsClient = lazy(() =>
+  import("./trends-client").then((module) => ({
+    default: module.TrendsClient,
+  })),
+);
+
+function TrendsTabLoading() {
+  return (
+    <main
+      className="app-shell page-frame trends-page"
+      aria-label="趋势页面"
+      aria-busy="true"
+    >
+      <header className="trend-page-header">
+        <div>
+          <p className="eyebrow">最近 8 周</p>
+          <h1>趋势</h1>
+        </div>
+      </header>
+      <section className="surface-card page-section-loading" role="status">
+        正在整理最近记录…
+      </section>
+    </main>
+  );
+}
 
 type RootTab = "today" | "calendar" | "trends" | "settings";
 
@@ -47,13 +80,15 @@ function TabContent({
   if (tab === initialTab) return initialChildren;
   if (tab === "today") return <TodayClient />;
   if (tab === "calendar") return <CalendarClient />;
+  if (tab === "trends") {
+    return (
+      <Suspense fallback={<TrendsTabLoading />}>
+        <TrendsClient />
+      </Suspense>
+    );
+  }
   if (tab === "settings") return <SettingsClient />;
-  return (
-    <UnavailableFeaturePage
-      title="趋势"
-      description="你可以先在“今日”和“日历”查看记录。"
-    />
-  );
+  return null;
 }
 
 export function ProtectedAppShell({ children }: { children: React.ReactNode }) {

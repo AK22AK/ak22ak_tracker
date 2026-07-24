@@ -27,6 +27,7 @@ import {
   resumptionDecisionResultSchema,
   type ResumptionDecisionCommand,
 } from "@/domain/resumption";
+import { trendsAggregateSchema } from "@/domain/trends";
 
 async function getJson(url: string, signal?: AbortSignal) {
   const response = await fetch(url, {
@@ -71,6 +72,18 @@ export async function fetchDayAggregate(
   return dayAggregateSchema.parse(
     await getJson(
       `/api/trackers/${encodeURIComponent(trackerKey)}/days/${encodeURIComponent(localDate)}`,
+      signal,
+    ),
+  );
+}
+
+export async function fetchTrendsAggregate(
+  trackerKey: string,
+  signal?: AbortSignal,
+) {
+  return trendsAggregateSchema.parse(
+    await getJson(
+      `/api/trackers/${encodeURIComponent(trackerKey)}/trends`,
       signal,
     ),
   );

@@ -38,6 +38,10 @@ vi.mock("@/components/settings-client", () => ({
   ),
 }));
 
+vi.mock("@/components/trends-client", () => ({
+  TrendsClient: () => <main aria-label="趋势页面">趋势缓存内容</main>,
+}));
+
 vi.mock("next/navigation", () => ({
   usePathname: () => navigation.pathname,
   useRouter: () => ({ push: navigation.push }),
@@ -70,16 +74,10 @@ describe("protected app shell navigation (P0-05)", () => {
     expect(
       screen.getByRole("link", { name: /趋势/ }).getAttribute("aria-current"),
     ).toBe("page");
-    expect(screen.getByRole("main", { name: "趋势页面" })).toBeTruthy();
     const trendsPage = screen.getByRole("main", { name: "趋势页面" });
     expect(
-      within(trendsPage).getByRole("heading", { name: "趋势", level: 1 }),
+      within(trendsPage).getByRole("heading", { name: "趋势" }),
     ).toBeTruthy();
-    expect(within(trendsPage).getByText("暂未开放")).toBeTruthy();
-    expect(
-      within(trendsPage).getByText("你可以先在“今日”和“日历”查看记录。"),
-    ).toBeTruthy();
-    expect(within(trendsPage).queryByText("趋势图还没开放。")).toBeNull();
     expect(screen.queryByText(/正在切换/)).toBeNull();
     expect(screen.getByRole("navigation", { name: "主导航" })).toBeTruthy();
     expect(navigation.push).not.toHaveBeenCalled();
