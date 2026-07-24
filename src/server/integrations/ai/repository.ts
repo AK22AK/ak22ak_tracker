@@ -14,7 +14,6 @@ import { getDatabase } from "@/server/db/client";
 import {
   aiAnalysisJobs,
   planChangeProposals,
-  planVersions,
   trackers,
 } from "@/server/db/schema";
 
@@ -75,8 +74,10 @@ export type AiAnalysisStore = {
     responseHash: string;
     completedAt: Date;
   }): Promise<void>;
-  findTimelineHeadId(trackerId: string): Promise<string | null>;
-  expireProposal(proposalId: string): Promise<void>;
+  expireProposal(input: {
+    proposalId: string;
+    trackerId: string;
+  }): Promise<boolean>;
 };
 
 function parseSafetyLevel(value: string): PlanAdjustmentSafetyLevel {
@@ -264,20 +265,19 @@ export function createNeonAiAnalysisStore(
           ),
       ]);
     },
-    async findTimelineHeadId(trackerId) {
-      const [row] = await database
-        .select({ id: planVersions.id })
-        .from(planVersions)
-        .where(eq(planVersions.trackerId, trackerId))
-        .orderBy(desc(planVersions.version))
-        .limit(1);
-      return row?.id ?? null;
-    },
-    async expireProposal(proposalId) {
-      await database
+    async expireProposal(input) {
+      const rows = await database
         .update(planChangeProposals)
         .set({ status: "expired" })
-        .where(eq(planChangeProposals.id, proposalId));
+        .where(
+          and(
+            eq(planChangeProposals.id, input.proposalId),
+            eq(planChangeProposals.trackerId, input.trackerId),
+            eq(planChangeProposals.status, "proposed"),
+          ),
+        )
+        .returning({ id: planChangeProposals.id });
+      return rows.length === 1;
     },
   };
 }

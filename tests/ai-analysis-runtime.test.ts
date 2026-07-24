@@ -48,7 +48,6 @@ function prepared(): PreparedAiAnalysisContext {
 
 function memoryStore(order: string[]) {
   let job: AiAnalysisJobRecord | null = null;
-  let headId = planId;
   const store: AiAnalysisStore = {
     async createJob(input) {
       order.push("create-job");
@@ -117,24 +116,18 @@ function memoryStore(order: string[]) {
         proposal: input.proposal,
       };
     },
-    async findTimelineHeadId() {
-      return headId;
-    },
     async expireProposal() {
+      if (job?.proposal?.status !== "proposed") return false;
       order.push("expire-proposal");
-      if (job?.proposal) {
-        job = {
-          ...job,
-          proposal: { ...job.proposal, status: "expired" },
-        };
-      }
+      job = {
+        ...job,
+        proposal: { ...job.proposal, status: "expired" },
+      };
+      return true;
     },
   };
   return {
     store,
-    setHead(value: string) {
-      headId = value;
-    },
     getJob() {
       return job;
     },
@@ -258,9 +251,22 @@ describe("AI analysis runtime", () => {
   it("expires a generated suggestion when the plan timeline head changes", async () => {
     const order: string[] = [];
     const memory = memoryStore(order);
+    const original = prepared();
+    const changed = {
+      ...original,
+      timelineHeadPlanVersionId: "019c1000-0000-7000-8000-000000000199",
+      modelContext: {
+        ...original.modelContext,
+        timelineHeadPlanVersionId: "019c1000-0000-7000-8000-000000000199",
+      },
+    };
+    const prepareContext = vi
+      .fn()
+      .mockResolvedValueOnce(original)
+      .mockResolvedValue(changed);
     const runtime = createAiAnalysisRuntime({
       store: memory.store,
-      prepareContext: async () => prepared(),
+      prepareContext,
       readConfiguration: configured,
       createAdvisor: () => ({
         proposeAdjustment: async () => ({
@@ -274,10 +280,273 @@ describe("AI analysis runtime", () => {
       now: () => new Date("2026-07-24T08:00:00.000Z"),
     });
     await runtime.request({ trackerKey: "knee-rehab", commandId: jobId });
-    memory.setHead("019c1000-0000-7000-8000-000000000199");
     const result = await runtime.load("knee-rehab", jobId);
     expect(result.job?.proposal?.status).toBe("expired");
     expect(order).toContain("expire-proposal");
+  });
+
+  it("expires a suggestion when new feedback changes the recent context", async () => {
+    const order: string[] = [];
+    const memory = memoryStore(order);
+    const original = prepared();
+    const changed = {
+      ...original,
+      contextHash: "b".repeat(64),
+      modelContext: {
+        ...original.modelContext,
+        recentFeedback: [
+          {
+            localDate: "2026-07-24",
+            timing: "morning" as const,
+            leftPain: 1,
+            rightPain: 0,
+            swelling: "none" as const,
+            stiffness: false,
+            mechanicalSymptoms: false,
+            weightBearingIssue: false,
+            localizedBonePain: false,
+            nightOrRestPain: false,
+            safetyLevel: "green" as const,
+          },
+        ],
+      },
+    };
+    let current = original;
+    const prepareContext = vi.fn(async () => current);
+    const runtime = createAiAnalysisRuntime({
+      store: memory.store,
+      prepareContext,
+      readConfiguration: configured,
+      createAdvisor: () => ({
+        proposeAdjustment: async () => ({
+          summary: "No change",
+          safetyLevel: "green",
+          operations: [],
+          model: "anonymous-model",
+          responseHash: "d".repeat(64),
+        }),
+      }),
+      now: () => new Date("2026-07-24T08:00:00.000Z"),
+    });
+
+    await runtime.request({ trackerKey: "knee-rehab", commandId: jobId });
+    current = changed;
+    const result = await runtime.load("knee-rehab", jobId);
+
+    expect(result.job?.proposal?.status).toBe("expired");
+    expect(prepareContext).toHaveBeenCalledTimes(3);
+  });
+
+  it("expires a green suggestion after red feedback and reanalyzes with red context", async () => {
+    const order: string[] = [];
+    const memory = memoryStore(order);
+    const original = prepared();
+    const redContext: PreparedAiAnalysisContext = {
+      ...original,
+      contextHash: "c".repeat(64),
+      safetyLevel: "red",
+      modelContext: {
+        ...original.modelContext,
+        recentFeedback: [
+          {
+            localDate: "2026-07-24",
+            timing: "incident",
+            leftPain: 7,
+            rightPain: 2,
+            swelling: "obvious",
+            stiffness: true,
+            mechanicalSymptoms: true,
+            weightBearingIssue: false,
+            localizedBonePain: false,
+            nightOrRestPain: false,
+            safetyLevel: "red",
+          },
+        ],
+        safetyLevel: "red",
+      },
+    };
+    let current = original;
+    const proposeAdjustment = vi.fn<PlanAdvisor["proposeAdjustment"]>(
+      async (context) => ({
+        summary:
+          context.safetyLevel === "red" ? "Stop and reassess" : "No change",
+        safetyLevel: context.safetyLevel,
+        operations: [],
+        model: "anonymous-model",
+        responseHash: "e".repeat(64),
+      }),
+    );
+    const runtime = createAiAnalysisRuntime({
+      store: memory.store,
+      prepareContext: async () => current,
+      readConfiguration: configured,
+      createAdvisor: () => ({ proposeAdjustment }),
+      now: () => new Date("2026-07-24T08:00:00.000Z"),
+    });
+
+    await runtime.request({ trackerKey: "knee-rehab", commandId: jobId });
+    current = redContext;
+    const expired = await runtime.load("knee-rehab", jobId);
+    const redRuntime = createAiAnalysisRuntime({
+      store: memoryStore([]).store,
+      prepareContext: async () => redContext,
+      readConfiguration: configured,
+      createAdvisor: () => ({ proposeAdjustment }),
+      now: () => new Date("2026-07-24T08:01:00.000Z"),
+    });
+    const next = await redRuntime.request({
+      trackerKey: "knee-rehab",
+      commandId: "019c1000-0000-7000-8000-000000000111",
+    });
+
+    expect(expired.job?.proposal?.status).toBe("expired");
+    expect(next.job?.proposal).toMatchObject({
+      status: "proposed",
+      safetyLevel: "red",
+      operations: [],
+    });
+    expect(proposeAdjustment).toHaveBeenLastCalledWith(
+      expect.objectContaining({ safetyLevel: "red" }),
+    );
+  });
+
+  it("expires a suggestion when user-confirmed training changes", async () => {
+    const order: string[] = [];
+    const memory = memoryStore(order);
+    const original = prepared();
+    let current = original;
+    const runtime = createAiAnalysisRuntime({
+      store: memory.store,
+      prepareContext: async () => current,
+      readConfiguration: configured,
+      createAdvisor: () => ({
+        proposeAdjustment: async () => ({
+          summary: "No change",
+          safetyLevel: "green",
+          operations: [],
+          model: "anonymous-model",
+          responseHash: "f".repeat(64),
+        }),
+      }),
+      now: () => new Date("2026-07-24T08:00:00.000Z"),
+    });
+
+    await runtime.request({ trackerKey: "knee-rehab", commandId: jobId });
+    current = {
+      ...original,
+      contextHash: "1".repeat(64),
+      modelContext: {
+        ...original.modelContext,
+        confirmedTraining: [
+          {
+            taskDefinitionId: "anonymous-task",
+            localDate: "2026-07-24",
+            category: "training",
+            durationMinutes: 20,
+            distanceKm: null,
+          },
+        ],
+      },
+    };
+
+    const result = await runtime.load("knee-rehab", jobId);
+    expect(result.job?.proposal?.status).toBe("expired");
+  });
+
+  it("expires a suggestion when the rolling context date range changes", async () => {
+    const order: string[] = [];
+    const memory = memoryStore(order);
+    const original = prepared();
+    let current = original;
+    const runtime = createAiAnalysisRuntime({
+      store: memory.store,
+      prepareContext: async () => current,
+      readConfiguration: configured,
+      createAdvisor: () => ({
+        proposeAdjustment: async () => ({
+          summary: "No change",
+          safetyLevel: "green",
+          operations: [],
+          model: "anonymous-model",
+          responseHash: "2".repeat(64),
+        }),
+      }),
+      now: () => new Date("2026-07-24T08:00:00.000Z"),
+    });
+
+    await runtime.request({ trackerKey: "knee-rehab", commandId: jobId });
+    current = {
+      ...original,
+      contextHash: "3".repeat(64),
+      contextFrom: "2026-07-12",
+      contextThrough: "2026-07-25",
+      modelContext: {
+        ...original.modelContext,
+        range: { from: "2026-07-12", through: "2026-07-25" },
+      },
+    };
+
+    const result = await runtime.load("knee-rehab", jobId);
+    expect(result.job?.proposal?.status).toBe("expired");
+  });
+
+  it("keeps an unchanged suggestion current without writing expiration state", async () => {
+    const order: string[] = [];
+    const memory = memoryStore(order);
+    const runtime = createAiAnalysisRuntime({
+      store: memory.store,
+      prepareContext: async () => prepared(),
+      readConfiguration: configured,
+      createAdvisor: () => ({
+        proposeAdjustment: async () => ({
+          summary: "No change",
+          safetyLevel: "green",
+          operations: [],
+          model: "anonymous-model",
+          responseHash: "4".repeat(64),
+        }),
+      }),
+      now: () => new Date("2026-07-24T08:00:00.000Z"),
+    });
+
+    await runtime.request({ trackerKey: "knee-rehab", commandId: jobId });
+    const first = await runtime.load("knee-rehab", jobId);
+    const second = await runtime.load("knee-rehab", jobId);
+
+    expect(first.job?.proposal?.status).toBe("proposed");
+    expect(second.job?.proposal?.status).toBe("proposed");
+    expect(order.filter((item) => item === "expire-proposal")).toHaveLength(0);
+  });
+
+  it("fails closed when the current context cannot be reconstructed", async () => {
+    const order: string[] = [];
+    const memory = memoryStore(order);
+    let available = true;
+    const runtime = createAiAnalysisRuntime({
+      store: memory.store,
+      prepareContext: async () => {
+        if (!available) throw new Error("anonymous context failure");
+        return prepared();
+      },
+      readConfiguration: configured,
+      createAdvisor: () => ({
+        proposeAdjustment: async () => ({
+          summary: "No change",
+          safetyLevel: "green",
+          operations: [],
+          model: "anonymous-model",
+          responseHash: "5".repeat(64),
+        }),
+      }),
+      now: () => new Date("2026-07-24T08:00:00.000Z"),
+    });
+
+    await runtime.request({ trackerKey: "knee-rehab", commandId: jobId });
+    available = false;
+    const result = await runtime.load("knee-rehab", jobId);
+
+    expect(result.job?.proposal?.status).toBe("expired");
+    expect(JSON.stringify(result)).not.toContain("context failure");
   });
 
   it("does not reuse a failed job after its structured context changes", async () => {

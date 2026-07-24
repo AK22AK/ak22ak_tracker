@@ -37,18 +37,56 @@ function retryableError(code: AiAnalysisErrorCode | null) {
   );
 }
 
-async function expireIfTimelineChanged(
+function contextMatchesJob(
+  job: AiAnalysisJobRecord,
+  context: PreparedAiAnalysisContext,
+) {
+  return (
+    job.contextVersion === context.contextVersion &&
+    job.contextHash === context.contextHash &&
+    job.basePlanVersionId === context.basePlanVersionId &&
+    job.timelineHeadPlanVersionId === context.timelineHeadPlanVersionId &&
+    job.safetyLevel === context.safetyLevel
+  );
+}
+
+async function expireProposal(
   job: AiAnalysisJobRecord,
   store: AiAnalysisStore,
 ) {
   if (!job.proposal || job.proposal.status === "expired") return job;
-  const headId = await store.findTimelineHeadId(job.trackerId);
-  if (headId === job.timelineHeadPlanVersionId) return job;
-  await store.expireProposal(job.proposal.id);
+  await store.expireProposal({
+    proposalId: job.proposal.id,
+    trackerId: job.trackerId,
+  });
   return {
     ...job,
     proposal: { ...job.proposal, status: "expired" as const },
   };
+}
+
+async function ensureCurrentProposal(
+  job: AiAnalysisJobRecord,
+  store: AiAnalysisStore,
+  prepareContext: (
+    trackerKey: string,
+    now: Date,
+  ) => Promise<PreparedAiAnalysisContext>,
+  currentTime: Date,
+) {
+  if (
+    job.status !== "succeeded" ||
+    !job.proposal ||
+    job.proposal.status === "expired"
+  ) {
+    return job;
+  }
+  try {
+    const context = await prepareContext(job.trackerKey, currentTime);
+    return contextMatchesJob(job, context) ? job : expireProposal(job, store);
+  } catch {
+    return expireProposal(job, store);
+  }
 }
 
 function pageDto(
@@ -117,15 +155,18 @@ export function createAiAnalysisRuntime({
     const found = jobId
       ? await store.findJob(trackerKey, jobId)
       : await store.findLatestJob(trackerKey);
-    const job = found ? await expireIfTimelineChanged(found, store) : null;
-    return pageDto(configuration.status, job, now());
+    const currentTime = now();
+    const job = found
+      ? await ensureCurrentProposal(found, store, prepareContext, currentTime)
+      : null;
+    return pageDto(configuration.status, job, currentTime);
   }
 
   async function request(input: { trackerKey: string; commandId: string }) {
     const requestedAt = now();
     const configuration = readConfiguration();
     const context = await prepareContext(input.trackerKey, requestedAt);
-    let job = await store.createJob({
+    const job = await store.createJob({
       ...context,
       id: input.commandId,
       provider: "deepseek",
@@ -138,7 +179,9 @@ export function createAiAnalysisRuntime({
     if (job.status === "succeeded") {
       return pageDto(
         configuration.status,
-        await expireIfTimelineChanged(job, store),
+        contextMatchesJob(job, context)
+          ? job
+          : await expireProposal(job, store),
         now(),
       );
     }
@@ -208,8 +251,7 @@ export function createAiAnalysisRuntime({
         completedAt: now(),
       });
     }
-    job = (await store.findJob(input.trackerKey, job.id)) ?? job;
-    return pageDto(configuration.status, job, now());
+    return load(input.trackerKey, job.id);
   }
 
   return { load, request };

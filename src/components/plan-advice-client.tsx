@@ -54,6 +54,7 @@ export function PlanAdviceClient() {
     queryKey: trackerQueryKeys.planAdvice(trackerKey),
     queryFn: ({ signal }) => fetchPlanAdvice(trackerKey, signal),
     staleTime: 30_000,
+    refetchOnMount: "always",
   });
   const mutation = useMutation({
     mutationFn: (commandId: string) => requestPlanAdvice(trackerKey, commandId),
