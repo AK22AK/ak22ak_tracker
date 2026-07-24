@@ -91,6 +91,11 @@ Token 格式扩散到计划、任务和反馈领域。
 账号、隐藏输入密码并按需隐藏输入 MFA 验证码；完成后删除临时环境。默认只生成权限为
 `0600` 的 `~/.ak22ak_tracker/garmin-token-bundle.json`，终端不输出 Token 内容。
 
+本机助手与 Vercel Runtime 共用同一份固定依赖清单，但按 Python 版本选择已验证的
+`cffi`：Vercel Python 3.12 使用 `2.1.0`，Homebrew Python 3.14 使用 `2.0.0`；
+`garminconnect==0.3.6` 和 `curl_cffi==0.15.0` 保持不变。2026-07-24 已在 arm64 Mac 的
+Python 3.14.3 全新 venv 完整安装并完成中国区客户端匿名 Token 解析，未调用 Garmin。
+
 随后在设置页选择该 JSON 文件进行导入。网页只把严格 token 信封经 HTTPS 发送给已
 鉴权后端；后端重新校验客户端、版本、区域和三个 token 字段后加密保存。页面返回的
 状态只有“未连接、待验证、已连接、需要更新、需要处理”及安全错误分类，永不回传原值。
