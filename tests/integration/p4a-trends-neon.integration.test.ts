@@ -7,6 +7,8 @@ import { schemaVersion } from "@/domain/schemas";
 import { getDatabase } from "@/server/db/client";
 import {
   events,
+  externalRecordLinks,
+  externalRecords,
   planVersions,
   taskInstances,
   trackers,
@@ -24,6 +26,7 @@ integration("P4a weekly trends Neon aggregate", () => {
   const oldTaskId = randomUUID();
   const historicalTaskId = randomUUID();
   const currentTaskId = randomUUID();
+  const externalRecordId = randomUUID();
 
   beforeAll(async () => {
     process.env.DATABASE_URL = testDatabaseUrl;
@@ -93,9 +96,51 @@ integration("P4a weekly trends Neon aggregate", () => {
         planVersionId: secondPlanId,
         taskDefinitionId: "anonymous-current",
         scheduledOn: "2026-07-20",
-        status: "planned",
+        status: "completed",
+        confirmedByUser: true,
       },
     ]);
+
+    await database.insert(externalRecords).values({
+      id: externalRecordId,
+      trackerId,
+      provider: "xunji",
+      providerRecordId: "anonymous-trend-session",
+      kind: "strength_training",
+      localDate: "2026-07-20",
+      occurredAt: new Date("2026-07-20T10:00:00.000Z"),
+      fetchedAt: new Date("2026-07-20T11:00:00.000Z"),
+      contentHash: "a".repeat(64),
+      sourceVersion: 1,
+      document: {
+        schemaVersion,
+        id: externalRecordId,
+        trackerKey,
+        provider: "xunji",
+        providerRecordId: "anonymous-trend-session",
+        kind: "strength_training",
+        occurredAt: "2026-07-20T10:00:00.000Z",
+        localDate: "2026-07-20",
+        payload: {
+          datestr: "2026-07-20",
+          localid: "anonymous-trend-session",
+          start: 1_774_173_600_000,
+          end: 1_774_176_300_000,
+          movements: [],
+        },
+        fetchedAt: "2026-07-20T11:00:00.000Z",
+        contentHash: "a".repeat(64),
+        sourceVersion: 1,
+      },
+    });
+    await database.insert(externalRecordLinks).values({
+      externalRecordId,
+      taskInstanceId: currentTaskId,
+      status: "confirmed",
+      confirmedAt: new Date("2026-07-20T11:01:00.000Z"),
+      sourceVersion: 1,
+      needsReview: false,
+    });
 
     const feedbackDocument = (
       id: string,
@@ -171,9 +216,23 @@ integration("P4a weekly trends Neon aggregate", () => {
     const currentWeek = result.weeks.find((week) => week.isCurrentWeek);
     expect(previousWeek?.tasks).toMatchObject({ completed: 1, total: 1 });
     expect(currentWeek?.tasks).toMatchObject({
-      completed: 0,
-      planned: 1,
+      completed: 1,
+      planned: 0,
       total: 1,
+    });
+    expect(currentWeek?.load).toEqual({
+      completedTrainingDays: 1,
+      measuredDurationMinutes: 45,
+      durationCoveredTasks: 1,
+      completedTasks: 1,
+      measuredDistanceKm: null,
+      distanceCoveredTasks: 0,
+      sourceCoverage: {
+        manual: 0,
+        garmin: 0,
+        xunji: 1,
+        fallbackUnmeasured: 0,
+      },
     });
     expect(currentWeek?.symptoms).toMatchObject({
       feedbackDays: 1,

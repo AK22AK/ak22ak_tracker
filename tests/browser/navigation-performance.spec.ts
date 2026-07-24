@@ -164,12 +164,24 @@ const trendsAggregate = aggregateEightWeekTrends({
   ],
   tasks: [
     {
+      id: "019c0000-0000-7000-8000-000000000021",
       localDate,
       planVersionId: todayAggregate.plan.id,
       status: "planned",
+      confirmedByUser: false,
+      actual: null,
+    },
+    {
+      id: "019c0000-0000-7000-8000-000000000020",
+      localDate,
+      planVersionId: todayAggregate.plan.id,
+      status: "completed",
+      confirmedByUser: true,
+      actual: { durationMinutes: 35, distanceKm: null },
     },
   ],
   feedbacks: [],
+  externalRecords: [],
 });
 
 type RequestCounters = {
@@ -264,8 +276,14 @@ for (const width of [320, 375, 390, 430]) {
 
     await expect(page.getByRole("heading", { name: "本周完成" })).toBeVisible();
     await expect(
-      page.getByRole("img", { name: /本周任务完成率 0%/ }),
+      page.getByRole("img", { name: /本周任务完成率 50%/ }),
     ).toBeVisible();
+    await expect(
+      page.getByRole("img", {
+        name: /本周完成训练 1 项，共 1 天；时长 35 分钟，覆盖 1 项；距离 未测量/,
+      }),
+    ).toBeVisible();
+    await expect(page.getByText(/不表示两者存在因果关系/)).toBeVisible();
     await expect(
       page.getByRole("img", { name: /本周没有身体反馈/ }),
     ).toBeVisible();

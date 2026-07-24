@@ -44,6 +44,20 @@ const weeks = weekDates.map(([weekStart, weekEnd], index) => ({
       red: 0,
     },
   },
+  load: {
+    completedTrainingDays: index === 7 ? 2 : 1,
+    measuredDurationMinutes: index === 7 ? 75 : null,
+    durationCoveredTasks: index === 7 ? 1 : 0,
+    completedTasks: index === 7 ? 2 : 1,
+    measuredDistanceKm: index === 7 ? 5.2 : null,
+    distanceCoveredTasks: index === 7 ? 1 : 0,
+    sourceCoverage: {
+      manual: index === 7 ? 1 : 0,
+      garmin: 0,
+      xunji: 0,
+      fallbackUnmeasured: index === 7 ? 1 : 1,
+    },
+  },
 }));
 
 const aggregate = {
@@ -99,6 +113,13 @@ describe("P4a-1 TrendsClient", () => {
     expect(screen.getByText("2 / 4")).toBeTruthy();
     expect(screen.getByText("反馈 2 / 3 天")).toBeTruthy();
     expect(
+      screen.getByRole("img", {
+        name: /本周完成训练 2 项，共 2 天；时长 75 分钟，覆盖 1 项；距离 5.2 公里，覆盖 1 项/,
+      }),
+    ).toBeTruthy();
+    expect(screen.getAllByText("未测量").length).toBeGreaterThan(0);
+    expect(screen.getByText(/不表示两者存在因果关系/)).toBeTruthy();
+    expect(
       screen.getByRole("img", { name: /本周任务完成率 50%/ }),
     ).toBeTruthy();
     expect(
@@ -127,6 +148,20 @@ describe("P4a-1 TrendsClient", () => {
               expectedDays: week.symptoms.expectedDays,
               maxPain: null,
               safetyDays: { green: 0, yellow: 0, red: 0 },
+            },
+            load: {
+              completedTrainingDays: 0,
+              measuredDurationMinutes: null,
+              durationCoveredTasks: 0,
+              completedTasks: 0,
+              measuredDistanceKm: null,
+              distanceCoveredTasks: 0,
+              sourceCoverage: {
+                manual: 0,
+                garmin: 0,
+                xunji: 0,
+                fallbackUnmeasured: 0,
+              },
             },
           })),
         }),

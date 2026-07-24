@@ -1827,6 +1827,14 @@ summary:focus-visible {
   background: var(--color-surface-soft);
 }
 
+.trend-context-note {
+  margin: 0;
+  padding: 0 0.25rem;
+  color: var(--color-muted);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
 .trend-list {
   gap: 0;
 }
@@ -1877,6 +1885,45 @@ summary:focus-visible {
 .trend-safety-counts {
   color: var(--color-ink) !important;
   font-weight: 650;
+}
+
+.trend-load-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.625rem;
+}
+
+.trend-load-metrics p {
+  display: grid;
+  min-width: 0;
+  gap: 0.2rem;
+  padding: 0.75rem;
+  border-radius: var(--radius-control);
+  background: var(--color-surface-soft);
+}
+
+.trend-load-metrics strong,
+.trend-load-metrics span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.trend-load-metrics strong {
+  color: var(--color-ink);
+  font-size: 0.9375rem;
+  line-height: 1.25rem;
+}
+
+.trend-load-metrics span {
+  color: var(--color-muted);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+
+@media (max-width: 340px) {
+  .trend-load-metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .trend-empty-card {

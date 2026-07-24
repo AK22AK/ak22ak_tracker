@@ -24,6 +24,7 @@ describe("P4a-1 trends aggregate query orchestration", () => {
       getPlanVersions: vi.fn(async () => []),
       getTasks: vi.fn(async () => []),
       getFeedbacks: vi.fn(async () => []),
+      getLinkedTrainingRecords: vi.fn(async () => []),
     };
 
     const aggregatePromise = getTrendsAggregate({
@@ -44,6 +45,7 @@ describe("P4a-1 trends aggregate query orchestration", () => {
     );
     expect(store.getTasks).toHaveBeenCalledOnce();
     expect(store.getFeedbacks).toHaveBeenCalledOnce();
+    expect(store.getLinkedTrainingRecords).toHaveBeenCalledOnce();
     expect(store.getPlanVersions).toHaveBeenCalledWith(
       "019c0000-0000-7000-8000-000000000001",
       "2026-07-26",
@@ -54,6 +56,11 @@ describe("P4a-1 trends aggregate query orchestration", () => {
       "2026-07-26",
     );
     expect(store.getFeedbacks).toHaveBeenCalledWith(
+      "019c0000-0000-7000-8000-000000000001",
+      "2026-06-01",
+      "2026-07-20",
+    );
+    expect(store.getLinkedTrainingRecords).toHaveBeenCalledWith(
       "019c0000-0000-7000-8000-000000000001",
       "2026-06-01",
       "2026-07-20",

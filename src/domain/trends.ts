@@ -38,6 +38,24 @@ export const trendWeekSchema = z
         safetyDays: safetyCountsSchema,
       })
       .strict(),
+    load: z
+      .object({
+        completedTrainingDays: z.number().int().nonnegative().max(7),
+        measuredDurationMinutes: z.number().nonnegative().nullable(),
+        durationCoveredTasks: z.number().int().nonnegative(),
+        completedTasks: z.number().int().nonnegative(),
+        measuredDistanceKm: z.number().nonnegative().nullable(),
+        distanceCoveredTasks: z.number().int().nonnegative(),
+        sourceCoverage: z
+          .object({
+            manual: z.number().int().nonnegative(),
+            garmin: z.number().int().nonnegative(),
+            xunji: z.number().int().nonnegative(),
+            fallbackUnmeasured: z.number().int().nonnegative(),
+          })
+          .strict(),
+      })
+      .strict(),
   })
   .strict();
 
@@ -66,9 +84,28 @@ type TrendPlanVersionRow = {
 };
 
 type TrendTaskRow = {
+  id: string;
   localDate: string;
   planVersionId: string;
   status: "planned" | "completed" | "skipped";
+  confirmedByUser: boolean;
+  actual: {
+    durationMinutes: number | null;
+    distanceKm: number | null;
+  } | null;
+};
+
+type TrendLinkedExternalRecord = {
+  id: string;
+  taskInstanceId: string | null;
+  provider: "garmin" | "xunji";
+  localDate: string;
+  sourceVersion: number;
+  linkSourceVersion: number;
+  linkStatus: "suggested" | "confirmed" | "rejected";
+  needsReview: boolean;
+  durationMinutes: number;
+  distanceKm: number | null;
 };
 
 type TrendFeedbackRow = {
@@ -121,6 +158,7 @@ export function aggregateEightWeekTrends(input: {
   planVersions: readonly TrendPlanVersionRow[];
   tasks: readonly TrendTaskRow[];
   feedbacks: readonly TrendFeedbackRow[];
+  externalRecords: readonly TrendLinkedExternalRecord[];
 }): TrendsAggregate {
   const range = eightWeekNaturalRange(input.currentDate);
   const weeks = Array.from({ length: 8 }, (_, index) => {
@@ -148,6 +186,20 @@ export function aggregateEightWeekTrends(input: {
         maxPain: null as number | null,
         safetyDays: { green: 0, yellow: 0, red: 0 },
       },
+      load: {
+        completedTrainingDays: 0,
+        measuredDurationMinutes: null as number | null,
+        durationCoveredTasks: 0,
+        completedTasks: 0,
+        measuredDistanceKm: null as number | null,
+        distanceCoveredTasks: 0,
+        sourceCoverage: {
+          manual: 0,
+          garmin: 0,
+          xunji: 0,
+          fallbackUnmeasured: 0,
+        },
+      },
     };
   });
 
@@ -174,6 +226,114 @@ export function aggregateEightWeekTrends(input: {
   for (const week of weeks) {
     week.tasks.completionRate =
       week.tasks.total === 0 ? null : week.tasks.completed / week.tasks.total;
+  }
+
+  const validCompletedTasks = new Map<string, TrendTaskRow & { id: string }>();
+  for (const task of input.tasks) {
+    if (
+      task.status !== "completed" ||
+      task.confirmedByUser !== true ||
+      task.localDate < input.trackerStartedOn ||
+      task.localDate > input.currentDate
+    ) {
+      continue;
+    }
+    const effectivePlan = resolveEffectivePlanVersion(
+      input.planVersions,
+      task.localDate,
+    );
+    if (effectivePlan?.id !== task.planVersionId) continue;
+    if (!weekFor(task.localDate)) continue;
+    validCompletedTasks.set(task.id, { ...task, id: task.id });
+  }
+
+  const recordsByTask = new Map<string, TrendLinkedExternalRecord[]>();
+  const seenRecords = new Set<string>();
+  for (const record of input.externalRecords) {
+    const task = record.taskInstanceId
+      ? validCompletedTasks.get(record.taskInstanceId)
+      : null;
+    const deduplicationKey = `${record.provider}:${record.id}`;
+    if (
+      !task ||
+      record.localDate !== task.localDate ||
+      record.linkStatus !== "confirmed" ||
+      record.needsReview ||
+      record.linkSourceVersion !== record.sourceVersion ||
+      seenRecords.has(deduplicationKey)
+    ) {
+      continue;
+    }
+    seenRecords.add(deduplicationKey);
+    const records = recordsByTask.get(task.id) ?? [];
+    records.push(record);
+    recordsByTask.set(task.id, records);
+  }
+
+  const trainingDaysByWeek = new Map<string, Set<string>>();
+  for (const task of validCompletedTasks.values()) {
+    const week = weekFor(task.localDate);
+    if (!week) continue;
+    week.load.completedTasks += 1;
+    const trainingDays = trainingDaysByWeek.get(week.weekStart) ?? new Set();
+    trainingDays.add(task.localDate);
+    trainingDaysByWeek.set(week.weekStart, trainingDays);
+
+    const records = recordsByTask.get(task.id) ?? [];
+    const garmin = records.filter((record) => record.provider === "garmin");
+    const xunji = records.filter((record) => record.provider === "xunji");
+    const manualDuration = task.actual?.durationMinutes ?? null;
+    const manualDistance = task.actual?.distanceKm ?? null;
+    const duration =
+      manualDuration ??
+      (garmin.length > 0
+        ? garmin.reduce((sum, record) => sum + record.durationMinutes, 0)
+        : xunji.length > 0
+          ? xunji.reduce((sum, record) => sum + record.durationMinutes, 0)
+          : null);
+    const garminDistances = garmin.flatMap((record) =>
+      record.distanceKm === null ? [] : [record.distanceKm],
+    );
+    const distance =
+      manualDistance ??
+      (garminDistances.length > 0
+        ? garminDistances.reduce((sum, value) => sum + value, 0)
+        : null);
+
+    if (duration !== null) {
+      week.load.measuredDurationMinutes =
+        (week.load.measuredDurationMinutes ?? 0) + duration;
+      week.load.durationCoveredTasks += 1;
+    }
+    if (distance !== null) {
+      week.load.measuredDistanceKm =
+        (week.load.measuredDistanceKm ?? 0) + distance;
+      week.load.distanceCoveredTasks += 1;
+    }
+
+    if (manualDuration !== null || manualDistance !== null) {
+      week.load.sourceCoverage.manual += 1;
+    } else if (garmin.length > 0) {
+      week.load.sourceCoverage.garmin += 1;
+    } else if (xunji.length > 0) {
+      week.load.sourceCoverage.xunji += 1;
+    } else {
+      week.load.sourceCoverage.fallbackUnmeasured += 1;
+    }
+  }
+  for (const week of weeks) {
+    week.load.completedTrainingDays =
+      trainingDaysByWeek.get(week.weekStart)?.size ?? 0;
+    if (week.load.measuredDurationMinutes !== null) {
+      week.load.measuredDurationMinutes = Number(
+        week.load.measuredDurationMinutes.toFixed(1),
+      );
+    }
+    if (week.load.measuredDistanceKm !== null) {
+      week.load.measuredDistanceKm = Number(
+        week.load.measuredDistanceKm.toFixed(2),
+      );
+    }
   }
 
   const dailyFeedback = new Map<

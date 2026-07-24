@@ -128,6 +128,75 @@ function SymptomTrend({ data }: { data: TrendsAggregate }) {
   );
 }
 
+function formatDuration(value: number | null) {
+  return value === null ? "未测量" : `${Math.round(value)} 分钟`;
+}
+
+function formatDistance(value: number | null) {
+  return value === null ? "未测量" : `${value.toFixed(1)} 公里`;
+}
+
+function TrainingLoadTrend({ data }: { data: TrendsAggregate }) {
+  return (
+    <section
+      className="surface-card trend-card"
+      aria-labelledby="training-load-title"
+    >
+      <header className="trend-section-heading">
+        <div>
+          <p className="eyebrow">训练记录覆盖</p>
+          <h2 id="training-load-title">每周训练</h2>
+        </div>
+      </header>
+      <p className="trend-guidance">
+        时长和距离只统计已有记录的完成任务；未测量不会按 0 计算。
+      </p>
+      <div className="trend-list">
+        {data.weeks.map((week) => {
+          const load = week.load;
+          const source = load.sourceCoverage;
+          const ariaLabel = `${weekLabel(week)}完成训练 ${load.completedTasks} 项，共 ${load.completedTrainingDays} 天；时长 ${formatDuration(load.measuredDurationMinutes)}，覆盖 ${load.durationCoveredTasks} 项；距离 ${formatDistance(load.measuredDistanceKm)}，覆盖 ${load.distanceCoveredTasks} 项`;
+          return (
+            <div
+              className="trend-row trend-load-row"
+              key={week.weekStart}
+              role="img"
+              aria-label={ariaLabel}
+            >
+              <div className="trend-row-heading">
+                <strong>{weekLabel(week)}</strong>
+                <span>{load.completedTrainingDays} 天</span>
+              </div>
+              <div className="trend-load-metrics" aria-hidden="true">
+                <p>
+                  <strong>
+                    {formatDuration(load.measuredDurationMinutes)}
+                  </strong>
+                  <span>
+                    时长覆盖 {load.durationCoveredTasks} / {load.completedTasks}{" "}
+                    项
+                  </span>
+                </p>
+                <p>
+                  <strong>{formatDistance(load.measuredDistanceKm)}</strong>
+                  <span>距离覆盖 {load.distanceCoveredTasks} 项</span>
+                </p>
+              </div>
+              <p>
+                手工 {source.manual} · Garmin {source.garmin} · 训记{" "}
+                {source.xunji}
+                {source.fallbackUnmeasured > 0
+                  ? ` · 未测量 ${source.fallbackUnmeasured}`
+                  : ""}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export function TrendsClient() {
   const query = useQuery({
     queryKey: trackerQueryKeys.trends(trackerKey),
@@ -246,6 +315,10 @@ export function TrendsClient() {
       ) : null}
 
       <CompletionTrend data={query.data} />
+      <TrainingLoadTrend data={query.data} />
+      <p className="trend-context-note">
+        训练与身体反馈按同期展示，仅供回顾记录，不表示两者存在因果关系。
+      </p>
       <SymptomTrend data={query.data} />
     </main>
   );
