@@ -2,6 +2,7 @@ import "server-only";
 
 import {
   garminActivitySyncResponseSchema,
+  garminActivityRecoveryResponseSchema,
   garminActivityPreviewResponseSchema,
   garminConnectionStatusSchema,
   garminProviderErrorCodeSchema,
@@ -15,6 +16,11 @@ import { localDateInTimeZone } from "@/domain/planning-time";
 import { localDateSchema } from "@/domain/schemas";
 import { getDatabase } from "@/server/db/client";
 import { createNeonProviderCatchUpStore } from "@/server/integrations/core/neon-catch-up-store";
+import { createNeonAutomaticProviderRecoveryClaimStore } from "@/server/integrations/core/neon-automatic-recovery-store";
+import {
+  runAutomaticProviderRecovery,
+  type AutomaticProviderRecoveryClaimStore,
+} from "@/server/integrations/core/automatic-provider-recovery";
 import { createNeonProviderDateSyncStore } from "@/server/integrations/core/neon-date-sync-store";
 import {
   syncProviderCatchUpBatch,
@@ -159,6 +165,7 @@ export function createGarminRuntime({
   client,
   createDateSyncStore,
   createCatchUpStore,
+  automaticRecoveryStore,
   now = () => new Date(),
   assertEncryptionConfigured = () => void getIntegrationEncryptionConfig(),
 }: {
@@ -166,9 +173,12 @@ export function createGarminRuntime({
   client: GarminClient<GarminCredential>;
   createDateSyncStore: (trackerKey: string) => ProviderDateSyncStore;
   createCatchUpStore: () => ProviderCatchUpStore;
+  automaticRecoveryStore: AutomaticProviderRecoveryClaimStore;
   now?: () => Date;
   assertEncryptionConfigured?: () => void;
 }) {
+  const automaticRecoveryMinimumIntervalMs = 30 * 60_000;
+  const automaticRecoveryLeaseMs = 2 * 60_000;
   async function readActivities(input: {
     tracker: Tracker;
     date: string;
@@ -265,6 +275,23 @@ export function createGarminRuntime({
     });
   }
 
+  async function syncActivityHistoryForTracker(tracker: Tracker) {
+    const requestedAt = now();
+    const today = localDateInTimeZone(requestedAt, tracker.planningTimeZone);
+    return syncProviderCatchUpBatch({
+      trackerId: tracker.id,
+      provider: "garmin",
+      startedOn: tracker.startedOn,
+      today,
+      now: requestedAt,
+      batchSize: 5,
+      overlapDays: 2,
+      store: createCatchUpStore(),
+      syncDate: (date) =>
+        syncTrackerDate({ tracker, date, requestedAt: now() }),
+    });
+  }
+
   return {
     async status(trackerKey: string) {
       return connectionStatus(await store.getStatus(trackerKey));
@@ -328,20 +355,46 @@ export function createGarminRuntime({
 
     async syncActivityHistory(input: { trackerKey: string }) {
       const tracker = await store.requireTracker(input.trackerKey);
-      const requestedAt = now();
-      const today = localDateInTimeZone(requestedAt, tracker.planningTimeZone);
-      return syncProviderCatchUpBatch({
+      return syncActivityHistoryForTracker(tracker);
+    },
+
+    async recoverActivityHistory(input: { trackerKey: string }) {
+      const initialConnection = connectionStatus(
+        await store.getStatus(input.trackerKey),
+      );
+      if (initialConnection.state !== "connected") {
+        return garminActivityRecoveryResponseSchema.parse({
+          status: "skipped",
+          reason: initialConnection.state,
+          connection: initialConnection,
+        });
+      }
+      const tracker = await store.requireTracker(input.trackerKey);
+      const recovery = await runAutomaticProviderRecovery({
         trackerId: tracker.id,
         provider: "garmin",
-        startedOn: tracker.startedOn,
-        today,
-        now: requestedAt,
-        batchSize: 5,
-        overlapDays: 2,
-        store: createCatchUpStore(),
-        syncDate: (date) =>
-          syncTrackerDate({ tracker, date, requestedAt: now() }),
+        now: now(),
+        minimumIntervalMs: automaticRecoveryMinimumIntervalMs,
+        leaseMs: automaticRecoveryLeaseMs,
+        store: automaticRecoveryStore,
+        recover: () => syncActivityHistoryForTracker(tracker),
       });
+      const latestConnection = connectionStatus(
+        await store.getStatus(input.trackerKey),
+      );
+      return garminActivityRecoveryResponseSchema.parse(
+        recovery.status === "completed"
+          ? {
+              status: "completed",
+              sync: recovery.result,
+              connection: latestConnection,
+            }
+          : {
+              status: "skipped",
+              reason: recovery.reason,
+              connection: latestConnection,
+            },
+      );
     },
   };
 }
@@ -354,5 +407,8 @@ export function createDefaultGarminRuntime(database?: Database) {
       createNeonProviderDateSyncStore(trackerKey, database ?? getDatabase()),
     createCatchUpStore: () =>
       createNeonProviderCatchUpStore(database ?? getDatabase()),
+    automaticRecoveryStore: createNeonAutomaticProviderRecoveryClaimStore(
+      database ?? getDatabase(),
+    ),
   });
 }

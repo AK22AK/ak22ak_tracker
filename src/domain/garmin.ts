@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { localDateSchema } from "./schemas";
+import { integrationCatchUpResultSchema } from "./integrations";
 
 export const garminProviderErrorCodeSchema = z.enum([
   "invalid_token_bundle",
@@ -98,6 +99,37 @@ export const garminActivitySyncResponseSchema = z
 
 export type GarminActivitySyncResponse = z.infer<
   typeof garminActivitySyncResponseSchema
+>;
+
+export const garminActivityRecoveryResponseSchema = z.discriminatedUnion(
+  "status",
+  [
+    z
+      .object({
+        status: z.literal("skipped"),
+        reason: z.enum([
+          "not_connected",
+          "needs_validation",
+          "needs_refresh",
+          "invalid",
+          "not_due",
+          "in_progress",
+        ]),
+        connection: garminConnectionStatusSchema,
+      })
+      .strict(),
+    z
+      .object({
+        status: z.literal("completed"),
+        sync: integrationCatchUpResultSchema,
+        connection: garminConnectionStatusSchema,
+      })
+      .strict(),
+  ],
+);
+
+export type GarminActivityRecoveryResponse = z.infer<
+  typeof garminActivityRecoveryResponseSchema
 >;
 
 const garminActivityTypeLabels: Record<string, string> = {

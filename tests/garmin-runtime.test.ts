@@ -13,6 +13,7 @@ import {
 } from "@/server/integrations/garmin/runtime";
 import type { ProviderDateSyncStore } from "@/server/integrations/core/sync-provider-date";
 import type { ProviderCatchUpStore } from "@/server/integrations/core/sync-provider-catch-up";
+import type { AutomaticProviderRecoveryClaimStore } from "@/server/integrations/core/automatic-provider-recovery";
 
 const credential: GarminCredential = {
   schemaVersion: 1,
@@ -114,11 +115,15 @@ function fixture() {
     })),
     saveProgress: vi.fn(async () => undefined),
   };
+  const automaticRecoveryStore: AutomaticProviderRecoveryClaimStore = {
+    claim: vi.fn(async () => "claimed" as const),
+  };
   const runtime = createGarminRuntime({
     store,
     client,
     createDateSyncStore: () => dateSyncStore,
     createCatchUpStore: () => catchUpStore,
+    automaticRecoveryStore,
     now: () => new Date("2026-07-24T02:00:00.000Z"),
     assertEncryptionConfigured: vi.fn(),
   });
@@ -128,6 +133,7 @@ function fixture() {
     client,
     dateSyncStore,
     catchUpStore,
+    automaticRecoveryStore,
     committedRecords,
     getPlaintext: () => plaintext,
   };
@@ -281,6 +287,72 @@ describe("P3b-2a Garmin token-only runtime", () => {
     });
     expect(result.complete).toBe(true);
     expect(client.fetchActivitiesForDate).toHaveBeenCalledTimes(3);
+  });
+
+  it("skips automatic recovery before a credential is connected", async () => {
+    const { runtime, client, automaticRecoveryStore } = fixture();
+
+    await expect(
+      runtime.recoverActivityHistory({ trackerKey: "knee-rehab" }),
+    ).resolves.toMatchObject({
+      status: "skipped",
+      reason: "not_connected",
+      connection: { state: "not_connected" },
+    });
+    expect(automaticRecoveryStore.claim).not.toHaveBeenCalled();
+    expect(client.fetchActivitiesForDate).not.toHaveBeenCalled();
+  });
+
+  it("uses the server claim for automatic due checks without affecting manual sync", async () => {
+    const { runtime, client, automaticRecoveryStore } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+    await runtime.previewActivities({
+      trackerKey: "knee-rehab",
+      date: "2026-07-24",
+    });
+    vi.mocked(client.fetchActivitiesForDate).mockClear();
+    vi.mocked(automaticRecoveryStore.claim).mockResolvedValueOnce("not_due");
+
+    await expect(
+      runtime.recoverActivityHistory({ trackerKey: "knee-rehab" }),
+    ).resolves.toMatchObject({
+      status: "skipped",
+      reason: "not_due",
+      connection: { state: "connected" },
+    });
+    expect(client.fetchActivitiesForDate).not.toHaveBeenCalled();
+    expect(automaticRecoveryStore.claim).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "garmin",
+        minimumIntervalMs: 30 * 60_000,
+        leaseMs: 2 * 60_000,
+      }),
+    );
+  });
+
+  it("does not automatically retry a credential that needs refresh", async () => {
+    const { runtime, client, automaticRecoveryStore } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+    vi.mocked(client.fetchActivitiesForDate).mockRejectedValueOnce(
+      new GarminProviderError("authentication"),
+    );
+    await expect(
+      runtime.previewActivities({
+        trackerKey: "knee-rehab",
+        date: "2026-07-24",
+      }),
+    ).rejects.toMatchObject({ code: "authentication" });
+    vi.mocked(client.fetchActivitiesForDate).mockClear();
+
+    await expect(
+      runtime.recoverActivityHistory({ trackerKey: "knee-rehab" }),
+    ).resolves.toMatchObject({
+      status: "skipped",
+      reason: "needs_refresh",
+      connection: { state: "needs_refresh" },
+    });
+    expect(automaticRecoveryStore.claim).not.toHaveBeenCalled();
+    expect(client.fetchActivitiesForDate).not.toHaveBeenCalled();
   });
 
   it("stops on the first failed day and resumes from that date", async () => {

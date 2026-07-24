@@ -10,6 +10,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { integrationQueryKeys } from "@/client/query-keys";
 import { GarminIntegrationCard } from "@/components/garmin-integration-card";
 import {
   garminActivityTypeLabel,
@@ -56,6 +57,39 @@ function renderCard(initialStatus: GarminConnectionStatus = disconnected) {
 }
 
 describe("Garmin token-only settings flow", () => {
+  it("accepts canonical background status without clearing the selected date", async () => {
+    const queryClient = new QueryClient();
+    const connected: GarminConnectionStatus = {
+      ...disconnected,
+      state: "connected",
+    };
+    render(
+      <QueryClientProvider client={queryClient}>
+        <GarminIntegrationCard
+          trackerKey="anonymous-tracker"
+          initialStatus={connected}
+        />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("同步日期"), {
+      target: { value: "2026-07-13" },
+    });
+
+    queryClient.setQueryData(
+      integrationQueryKeys.providerStatus("anonymous-tracker", "garmin"),
+      {
+        ...connected,
+        state: "needs_refresh",
+        lastErrorCode: "authentication",
+      },
+    );
+
+    await waitFor(() => expect(screen.getByText("需要更新")).toBeTruthy());
+    expect((screen.getByLabelText("同步日期") as HTMLInputElement).value).toBe(
+      "2026-07-13",
+    );
+  });
+
   it("imports a local file without displaying or retaining its token", async () => {
     const connected = {
       ...disconnected,

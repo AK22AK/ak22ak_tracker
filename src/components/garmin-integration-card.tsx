@@ -1,6 +1,6 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 
 import { integrationQueryKeys, trackerQueryKeys } from "@/client/query-keys";
@@ -71,7 +71,21 @@ export function GarminIntegrationCard({
   initialStatus: GarminConnectionStatus;
 }) {
   const queryClient = useQueryClient();
-  const [status, setStatus] = useState(initialStatus);
+  const statusQueryKey = integrationQueryKeys.providerStatus(
+    trackerKey,
+    "garmin",
+  );
+  const { data: status } = useQuery({
+    queryKey: statusQueryKey,
+    queryFn: async () => initialStatus,
+    initialData: initialStatus,
+    enabled: false,
+  });
+  const setStatus = (
+    value:
+      | GarminConnectionStatus
+      | ((current: GarminConnectionStatus) => GarminConnectionStatus),
+  ) => queryClient.setQueryData(statusQueryKey, value);
   const [syncDate, setSyncDate] = useState(todayInPlanningTimeZone);
   const [busy, setBusy] = useState<"credential" | "sync" | "catch_up" | null>(
     null,
