@@ -147,4 +147,25 @@ describe("Garmin token-only settings flow", () => {
     expect(screen.getByText(/请在本机重新授权后导入/)).toBeTruthy();
     expect(document.body.textContent).not.toContain("private provider");
   });
+
+  it("explains a rejected future date without blaming Garmin", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({ error: "future_date_not_allowed" }, { status: 400 }),
+      ),
+    );
+    render(
+      <GarminIntegrationCard
+        trackerKey="anonymous-tracker"
+        initialStatus={{ ...disconnected, state: "connected" }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "预览这一天" }));
+
+    await screen.findByText("验证日期不能晚于今天。");
+    expect(screen.queryByText(/Garmin 暂时无法连接/)).toBeNull();
+    expect(screen.queryByText(/本次验证没有完成/)).toBeNull();
+  });
 });

@@ -156,7 +156,7 @@ export function createGarminRuntime({
       const tracker = await store.requireTracker(input.trackerKey);
       const requestedAt = now();
       const today = localDateInTimeZone(requestedAt, tracker.planningTimeZone);
-      if (date < tracker.startedOn || date > today) {
+      if (date > today) {
         throw new GarminPreviewDateOutOfRangeError();
       }
 

@@ -31,7 +31,7 @@ function fixture() {
   const tracker = {
     id: "019c0000-0000-7000-8000-000000000001",
     key: "knee-rehab",
-    startedOn: "2026-07-01",
+    startedOn: "2026-07-18",
     planningTimeZone: "Asia/Shanghai",
   };
   const status = (): IntegrationStatus => ({
@@ -212,16 +212,49 @@ describe("P3b-2a Garmin token-only runtime", () => {
     );
   });
 
-  it.each(["2026-06-30", "2026-07-25"])(
-    "rejects out-of-range date %s without calling Garmin",
-    async (date) => {
-      const { runtime, client } = fixture();
-      await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+  it("previews a user-selected historical day before the plan started", async () => {
+    const { runtime, client } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+    vi.mocked(client.fetchActivitiesForDate).mockResolvedValueOnce({
+      activities: [
+        {
+          providerRecordId: "anonymous-walking-activity",
+          activityType: "walking",
+          startedAt: "2026-07-13T00:30:00.000Z",
+          durationSeconds: 1_200,
+          distanceMeters: 1_400,
+          averagePaceSecondsPerKilometer: 857,
+          averageHeartRateBpm: 96,
+        },
+      ],
+      refreshedCredential: credential,
+    });
 
-      await expect(
-        runtime.previewActivities({ trackerKey: "knee-rehab", date }),
-      ).rejects.toThrow("garmin_preview_date_out_of_range");
-      expect(client.fetchActivitiesForDate).not.toHaveBeenCalled();
-    },
-  );
+    await expect(
+      runtime.previewActivities({
+        trackerKey: "knee-rehab",
+        date: "2026-07-13",
+      }),
+    ).resolves.toMatchObject({
+      date: "2026-07-13",
+      activities: [{ activityType: "walking" }],
+    });
+    expect(client.fetchActivitiesForDate).toHaveBeenCalledWith({
+      credential,
+      date: "2026-07-13",
+    });
+  });
+
+  it("rejects a future date without calling Garmin", async () => {
+    const { runtime, client } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+
+    await expect(
+      runtime.previewActivities({
+        trackerKey: "knee-rehab",
+        date: "2026-07-25",
+      }),
+    ).rejects.toThrow("garmin_preview_date_out_of_range");
+    expect(client.fetchActivitiesForDate).not.toHaveBeenCalled();
+  });
 });

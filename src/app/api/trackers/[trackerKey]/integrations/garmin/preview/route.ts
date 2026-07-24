@@ -53,12 +53,14 @@ export async function POST(
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
-    if (
-      error instanceof ZodError ||
-      error instanceof SyntaxError ||
-      error instanceof GarminPreviewDateOutOfRangeError
-    ) {
+    if (error instanceof ZodError || error instanceof SyntaxError) {
       return Response.json({ error: "invalid_request" }, { status: 400 });
+    }
+    if (error instanceof GarminPreviewDateOutOfRangeError) {
+      return Response.json(
+        { error: "future_date_not_allowed" },
+        { status: 400, headers: { "Cache-Control": "no-store" } },
+      );
     }
     if (error instanceof IntegrationCredentialNotFoundError) {
       return Response.json({ error: "credential_not_found" }, { status: 409 });

@@ -33,6 +33,9 @@ function statusCopy(state: GarminConnectionStatus["state"]) {
 }
 
 function safeFailureMessage(code: string | null) {
+  if (code === "future_date_not_allowed") {
+    return "验证日期不能晚于今天。";
+  }
   if (code === "authentication") {
     return "Garmin Token 已失效，请在本机重新授权后导入。";
   }
@@ -65,6 +68,7 @@ function paceLabel(seconds: number | null) {
 async function safeErrorCode(response: Response) {
   try {
     const value = (await response.json()) as { error?: unknown };
+    if (value.error === "future_date_not_allowed") return value.error;
     const parsed = garminProviderErrorCodeSchema.safeParse(value.error);
     return parsed.success ? parsed.data : null;
   } catch {
