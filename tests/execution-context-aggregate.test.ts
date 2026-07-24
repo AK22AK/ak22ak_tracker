@@ -47,6 +47,31 @@ function store(overrides: Record<string, unknown> = {}) {
 }
 
 describe("execution context aggregate", () => {
+  it("starts independent context reads before the red-feedback result settles", async () => {
+    let resolveRedFeedback!: (value: boolean) => void;
+    const redFeedback = new Promise<boolean>((resolve) => {
+      resolveRedFeedback = resolve;
+    });
+    const dataStore = store();
+
+    const resultPromise = getExecutionContextToday(
+      dataStore,
+      "2026-07-20",
+      redFeedback,
+    );
+
+    await vi.waitFor(() => {
+      expect(dataStore.findRelevantPause).toHaveBeenCalledOnce();
+      expect(dataStore.findRelevantContext).toHaveBeenCalledOnce();
+    });
+    expect(dataStore.findDayDecision).not.toHaveBeenCalled();
+
+    resolveRedFeedback(false);
+    await expect(resultPromise).resolves.toMatchObject({
+      safety: { blocked: false, reason: null },
+    });
+  });
+
   it("blocks alternatives while a resumption assessment is pending", async () => {
     const dataStore = store({
       findPendingResumption: vi.fn(async () => ({

@@ -79,6 +79,11 @@ export type EffectivePlanDashboardContext = {
   document: unknown;
 };
 
+export type TrackerAndEffectivePlanDashboardContext = {
+  tracker: TrackerDashboardContext;
+  plan: EffectivePlanDashboardContext | null;
+};
+
 export async function getTrackerDashboardContext(
   trackerKey: string,
 ): Promise<TrackerDashboardContext | null> {
@@ -117,6 +122,58 @@ export async function getEffectivePlanDashboardContext(
     .orderBy(desc(planVersions.effectiveFrom), desc(planVersions.version))
     .limit(1);
   return plan ?? null;
+}
+
+export async function getTrackerAndEffectivePlanDashboardContext(
+  trackerKey: string,
+  localDate: string,
+): Promise<TrackerAndEffectivePlanDashboardContext | null> {
+  const [row] = await getDatabase()
+    .select({
+      trackerId: trackers.id,
+      trackerKey: trackers.key,
+      trackerName: trackers.name,
+      trackerStartedOn: trackers.startedOn,
+      trackerPlanningTimeZone: trackers.planningTimeZone,
+      planId: planVersions.id,
+      planVersion: planVersions.version,
+      planEffectiveFrom: planVersions.effectiveFrom,
+      planDocument: planVersions.document,
+    })
+    .from(trackers)
+    .leftJoin(
+      planVersions,
+      and(
+        eq(planVersions.trackerId, trackers.id),
+        lte(planVersions.effectiveFrom, localDate),
+      ),
+    )
+    .where(and(eq(trackers.key, trackerKey), eq(trackers.active, true)))
+    .orderBy(desc(planVersions.effectiveFrom), desc(planVersions.version))
+    .limit(1);
+  if (!row) return null;
+
+  return {
+    tracker: {
+      id: row.trackerId,
+      key: row.trackerKey,
+      name: row.trackerName,
+      startedOn: row.trackerStartedOn,
+      planningTimeZone: row.trackerPlanningTimeZone,
+    },
+    plan:
+      row.planId &&
+      row.planVersion !== null &&
+      row.planEffectiveFrom &&
+      row.planDocument !== null
+        ? {
+            id: row.planId,
+            version: row.planVersion,
+            effectiveFrom: row.planEffectiveFrom,
+            document: row.planDocument,
+          }
+        : null,
+  };
 }
 
 export async function getTodayDashboard(
@@ -271,8 +328,8 @@ export async function getCalendarMonthForTracker(
     )
     .orderBy(asc(planVersions.effectiveFrom), asc(planVersions.version));
 
-  const taskRows = planRows.length
-    ? await database
+  const taskRowsPromise = planRows.length
+    ? database
         .select({
           date: taskInstances.scheduledOn,
           status: taskInstances.status,
@@ -290,8 +347,9 @@ export async function getCalendarMonthForTracker(
             lte(taskInstances.scheduledOn, end),
           ),
         )
-    : [];
-  const [feedbackRows, pauseRows] = await Promise.all([
+    : Promise.resolve([]);
+  const [taskRows, feedbackRows, pauseRows] = await Promise.all([
+    taskRowsPromise,
     database
       .select({ date: events.localDate })
       .from(events)

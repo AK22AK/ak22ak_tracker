@@ -12,6 +12,7 @@ import { instantAtLocalNoon } from "@/domain/planning-time";
 import {
   getCalendarMonthForTracker,
   getEffectivePlanDashboardContext,
+  getTrackerAndEffectivePlanDashboardContext,
   getTodayDashboardForTracker,
   getTrackerDashboardContext,
 } from "@/server/dashboard";
@@ -76,20 +77,34 @@ export async function getTodayAggregate(
   trackerKey: string,
   targetDate: string,
 ): Promise<TodayAggregate> {
-  const tracker = await requireTracker(trackerKey);
-  const plan = await getEffectivePlanDashboardContext(tracker.id, targetDate);
-  const [day, safetyPolicy] = await Promise.all([
-    dayWithExternalTraining(tracker, plan, trackerKey, targetDate),
-    getEffectiveTrackerSafetyPolicyByTrackerId(
-      tracker.id,
-      instantAtLocalNoon(targetDate, tracker.planningTimeZone),
-    ),
-  ]);
-  const execution = await getExecutionContextToday(
+  const context = await getTrackerAndEffectivePlanDashboardContext(
+    trackerKey,
+    targetDate,
+  );
+  if (!context) throw new AggregateTrackerNotFoundError();
+  const { tracker, plan } = context;
+  const safetyPolicyPromise = getEffectiveTrackerSafetyPolicyByTrackerId(
+    tracker.id,
+    instantAtLocalNoon(targetDate, tracker.planningTimeZone),
+  );
+  const dayPromise = dayWithExternalTraining(
+    tracker,
+    plan,
+    trackerKey,
+    targetDate,
+  );
+  const executionPromise = getExecutionContextToday(
     createNeonExecutionContextAggregateStore(tracker.id),
     targetDate,
-    day.feedbacks.some((feedback) => feedback.safetyLevel === "red"),
+    dayPromise.then((day) =>
+      day.feedbacks.some((feedback) => feedback.safetyLevel === "red"),
+    ),
   );
+  const [day, safetyPolicy, execution] = await Promise.all([
+    dayPromise,
+    safetyPolicyPromise,
+    executionPromise,
+  ]);
 
   return todayAggregateSchema.parse({
     tracker: {
@@ -110,8 +125,12 @@ export async function getDayAggregate(
   trackerKey: string,
   targetDate: string,
 ): Promise<DayAggregate> {
-  const tracker = await requireTracker(trackerKey);
-  const plan = await getEffectivePlanDashboardContext(tracker.id, targetDate);
+  const context = await getTrackerAndEffectivePlanDashboardContext(
+    trackerKey,
+    targetDate,
+  );
+  if (!context) throw new AggregateTrackerNotFoundError();
+  const { tracker, plan } = context;
   const day = await dayWithExternalTraining(
     tracker,
     plan,

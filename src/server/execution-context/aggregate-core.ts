@@ -49,7 +49,7 @@ export type ExecutionContextAggregateStore = {
 export async function getExecutionContextToday(
   store: ExecutionContextAggregateStore,
   targetDate: string,
-  hasRedFeedback: boolean,
+  hasRedFeedback: boolean | Promise<boolean>,
 ) {
   const [pause, context, resumption] = await Promise.all([
     store.findRelevantPause(targetDate),
@@ -98,6 +98,7 @@ export async function getExecutionContextToday(
   }
 
   const day = await store.findDayDecision(context.id, targetDate);
+  const resolvedHasRedFeedback = await hasRedFeedback;
   const conditionReason =
     day?.conditions.healthStatus === "illness"
       ? "illness"
@@ -108,7 +109,7 @@ export async function getExecutionContextToday(
     ? "resumption"
     : pause
       ? "pause"
-      : hasRedFeedback
+      : resolvedHasRedFeedback
         ? "red_feedback"
         : conditionReason;
   const blocked = reason !== null;

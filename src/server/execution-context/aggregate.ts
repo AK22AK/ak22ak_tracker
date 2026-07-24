@@ -81,33 +81,34 @@ export function createNeonExecutionContextAggregateStore(
       return row ?? null;
     },
     async findRelevantContext(targetDate) {
-      const [active] = await database
-        .select(selectContext)
-        .from(executionContexts)
-        .where(
-          and(
-            eq(executionContexts.trackerId, trackerId),
-            isNull(executionContexts.endedAt),
-            lte(executionContexts.startDate, targetDate),
-            gte(executionContexts.endDate, targetDate),
-          ),
-        )
-        .orderBy(asc(executionContexts.startDate))
-        .limit(1);
+      const [[active], [upcoming]] = await Promise.all([
+        database
+          .select(selectContext)
+          .from(executionContexts)
+          .where(
+            and(
+              eq(executionContexts.trackerId, trackerId),
+              isNull(executionContexts.endedAt),
+              lte(executionContexts.startDate, targetDate),
+              gte(executionContexts.endDate, targetDate),
+            ),
+          )
+          .orderBy(asc(executionContexts.startDate))
+          .limit(1),
+        database
+          .select(selectContext)
+          .from(executionContexts)
+          .where(
+            and(
+              eq(executionContexts.trackerId, trackerId),
+              isNull(executionContexts.endedAt),
+              gt(executionContexts.startDate, targetDate),
+            ),
+          )
+          .orderBy(asc(executionContexts.startDate))
+          .limit(1),
+      ]);
       if (active) return active;
-
-      const [upcoming] = await database
-        .select(selectContext)
-        .from(executionContexts)
-        .where(
-          and(
-            eq(executionContexts.trackerId, trackerId),
-            isNull(executionContexts.endedAt),
-            gt(executionContexts.startDate, targetDate),
-          ),
-        )
-        .orderBy(asc(executionContexts.startDate))
-        .limit(1);
       return upcoming ?? null;
     },
 
