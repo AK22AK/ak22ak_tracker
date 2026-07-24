@@ -8,6 +8,7 @@ import {
 } from "@/domain/ai-analysis";
 import {
   planChangeProposalSchema,
+  planVersionSchema,
   type PlanChangeProposal,
 } from "@/domain/schemas";
 import { getDatabase } from "@/server/db/client";
@@ -15,6 +16,7 @@ import {
   planChangeDecisions,
   aiAnalysisJobs,
   planChangeProposals,
+  planVersionRollbacks,
   planVersions,
   trackers,
 } from "@/server/db/schema";
@@ -28,6 +30,7 @@ export type AiAnalysisJobRecord = {
   id: string;
   trackerId: string;
   trackerKey: string;
+  planningTimeZone: string;
   basePlanVersionId: string;
   timelineHeadPlanVersionId: string;
   status: "pending" | "running" | "succeeded" | "failed";
@@ -52,6 +55,15 @@ export type AiAnalysisJobRecord = {
       id: string;
       version: number;
       effectiveFrom: string;
+    } | null;
+  } | null;
+  proposalRollback: {
+    targetBasePlan: ReturnType<typeof planVersionSchema.parse>;
+    sourceAppliedPlan: ReturnType<typeof planVersionSchema.parse>;
+    timelineHeadPlanVersionId: string;
+    existing: {
+      decidedAt: Date;
+      newPlanVersion: ReturnType<typeof planVersionSchema.parse>;
     } | null;
   } | null;
 };
@@ -101,6 +113,7 @@ function rowToJob(row: {
   job: typeof aiAnalysisJobs.$inferSelect;
   proposal: typeof planChangeProposals.$inferSelect | null;
   trackerKey: string;
+  planningTimeZone: string;
 }): AiAnalysisJobRecord {
   const proposalDocument = row.proposal
     ? planChangeProposalSchema.parse(row.proposal.document)
@@ -119,6 +132,7 @@ function rowToJob(row: {
     id: row.job.id,
     trackerId: row.job.trackerId,
     trackerKey: row.trackerKey,
+    planningTimeZone: row.planningTimeZone,
     basePlanVersionId: row.job.basePlanVersionId,
     timelineHeadPlanVersionId: row.job.timelineHeadPlanVersionId,
     status: aiAnalysisJobStatusSchema.parse(row.job.status),
@@ -148,6 +162,7 @@ function rowToJob(row: {
         ? { ...proposalDocument, status: proposalStatus }
         : proposalDocument,
     proposalDecision: null,
+    proposalRollback: null,
   };
 }
 
@@ -160,6 +175,7 @@ export function createNeonAiAnalysisStore(
         job: aiAnalysisJobs,
         proposal: planChangeProposals,
         trackerKey: trackers.key,
+        planningTimeZone: trackers.planningTimeZone,
       })
       .from(aiAnalysisJobs)
       .innerJoin(trackers, eq(aiAnalysisJobs.trackerId, trackers.id))
@@ -197,11 +213,42 @@ export function createNeonAiAnalysisStore(
             id: planVersions.id,
             version: planVersions.version,
             effectiveFrom: planVersions.effectiveFrom,
+            document: planVersions.document,
           })
           .from(planVersions)
           .where(eq(planVersions.id, decision.appliedPlanVersionId))
           .limit(1)
       : [];
+    const [base, head, rollback] =
+      decisionType === "accepted" && applied
+        ? await Promise.all([
+            database
+              .select({ document: planVersions.document })
+              .from(planVersions)
+              .where(eq(planVersions.id, rows[0].proposal!.basePlanVersionId))
+              .limit(1),
+            database
+              .select({ id: planVersions.id })
+              .from(planVersions)
+              .where(eq(planVersions.trackerId, job.trackerId))
+              .orderBy(desc(planVersions.version))
+              .limit(1),
+            database
+              .select({
+                decidedAt: planVersionRollbacks.decidedAt,
+                newPlanDocument: planVersions.document,
+              })
+              .from(planVersionRollbacks)
+              .innerJoin(
+                planVersions,
+                eq(planVersionRollbacks.newPlanVersionId, planVersions.id),
+              )
+              .where(
+                eq(planVersionRollbacks.sourceAppliedPlanVersionId, applied.id),
+              )
+              .limit(1),
+          ])
+        : [[], [], []];
     return {
       ...job,
       proposalDecision: {
@@ -209,6 +256,22 @@ export function createNeonAiAnalysisStore(
         decidedAt: decision.decidedAt,
         appliedPlanVersion: applied ?? null,
       },
+      proposalRollback:
+        decisionType === "accepted" && applied && base[0] && head[0]
+          ? {
+              targetBasePlan: planVersionSchema.parse(base[0].document),
+              sourceAppliedPlan: planVersionSchema.parse(applied.document),
+              timelineHeadPlanVersionId: head[0].id,
+              existing: rollback[0]
+                ? {
+                    decidedAt: rollback[0].decidedAt,
+                    newPlanVersion: planVersionSchema.parse(
+                      rollback[0].newPlanDocument,
+                    ),
+                  }
+                : null,
+            }
+          : null,
     };
   }
 

@@ -82,6 +82,7 @@ export const trackerEventSchema = z.object({
     "symptom_check_in",
     "subjective_note",
     "plan_change_decision",
+    "plan_version_rollback",
     "external_record_link_decision",
     "execution_context_started",
     "execution_context_ended",

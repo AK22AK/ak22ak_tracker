@@ -9,10 +9,12 @@ import {
   decidePlanChange,
   fetchPlanAdvice,
   requestPlanAdvice,
+  rollbackPlanVersion,
 } from "@/client/tracker-api";
 import type {
   AiAnalysisErrorCode,
   PlanChangeDecisionCommand,
+  PlanVersionRollbackCommand,
 } from "@/domain/ai-analysis";
 import {
   createOrReuseClientCommand,
@@ -67,6 +69,9 @@ export function PlanAdviceClient() {
   >(null);
   const [decisionError, setDecisionError] = useState<string | null>(null);
   const pendingDecision = useRef<PendingClientCommand | null>(null);
+  const [rollbackIntent, setRollbackIntent] = useState(false);
+  const [rollbackError, setRollbackError] = useState<string | null>(null);
+  const pendingRollback = useRef<PendingClientCommand | null>(null);
   const query = useQuery({
     queryKey: trackerQueryKeys.planAdvice(trackerKey),
     queryFn: ({ signal }) => fetchPlanAdvice(trackerKey, signal),
@@ -119,6 +124,46 @@ export function PlanAdviceClient() {
       setDecisionError("决定尚未保存，请检查网络后重试。你的选择仍然保留。");
     },
   });
+  const rollbackMutation = useMutation({
+    mutationFn: (command: PlanVersionRollbackCommand) =>
+      rollbackPlanVersion(trackerKey, command),
+    onSuccess: (result) => {
+      pendingRollback.current = null;
+      setRollbackIntent(false);
+      setRollbackError(null);
+      queryClient.setQueryData(
+        trackerQueryKeys.planAdvice(trackerKey),
+        result.page,
+      );
+      const months = new Set<string>();
+      for (const localDate of result.affectedDates) {
+        months.add(localDate.slice(0, 7));
+        void queryClient.invalidateQueries({
+          queryKey: trackerQueryKeys.today(trackerKey, localDate),
+          exact: true,
+        });
+        void queryClient.invalidateQueries({
+          queryKey: trackerQueryKeys.day(trackerKey, localDate),
+          exact: true,
+        });
+      }
+      for (const month of months) {
+        void queryClient.invalidateQueries({
+          queryKey: trackerQueryKeys.calendar(trackerKey, month),
+          exact: true,
+        });
+      }
+      if (result.status === "rolled_back") {
+        void queryClient.invalidateQueries({
+          queryKey: trackerQueryKeys.trends(trackerKey),
+          exact: true,
+        });
+      }
+    },
+    onError: () => {
+      setRollbackError("撤销尚未保存，请检查网络后重试。你的选择仍然保留。");
+    },
+  });
   const job = query.data?.job ?? null;
   const unavailable =
     query.data?.configuration === "not_configured" ||
@@ -157,6 +202,23 @@ export function PlanAdviceClient() {
     );
     pendingDecision.current = pending;
     decisionMutation.mutate({ ...payload, ...pending.metadata });
+  }
+
+  function cancelRollback() {
+    pendingRollback.current = null;
+    setRollbackIntent(false);
+    setRollbackError(null);
+  }
+
+  function confirmRollback() {
+    if (!proposal?.rollback || rollbackMutation.isPending) return;
+    const payload = { proposalId: proposal.id };
+    const pending = createOrReuseClientCommand(
+      pendingRollback.current,
+      payload,
+    );
+    pendingRollback.current = pending;
+    rollbackMutation.mutate({ ...payload, ...pending.metadata });
   }
 
   return (
@@ -259,6 +321,85 @@ export function PlanAdviceClient() {
                   第 {proposal.decision.appliedPlanVersion.version} 版将从
                   {proposal.decision.appliedPlanVersion.effectiveFrom} 生效。
                 </p>
+              ) : null}
+              {proposal.rollback?.status === "rolled_back" &&
+              proposal.rollback.newPlanVersion ? (
+                <div className="inline-notice">
+                  <p>这次更新已由你撤销，并创建了新的计划版本。</p>
+                  <p>
+                    第 {proposal.rollback.newPlanVersion.version} 版将从
+                    {proposal.rollback.newPlanVersion.effectiveFrom} 生效。
+                  </p>
+                </div>
+              ) : proposal.rollback?.status === "blocked" ? (
+                <p className="inline-notice">
+                  后续计划已经变化，这次更新不能直接撤销。
+                </p>
+              ) : proposal.rollback?.status === "available" ? (
+                <div className="plan-advice-rollback-preview">
+                  <h3>撤销这次更新</h3>
+                  <p>
+                    将恢复第 {proposal.rollback.targetBasePlanVersion.version}
+                    版的完整安排，并从 {proposal.rollback.effectiveFrom}
+                    创建新的计划版本。
+                  </p>
+                  <p>
+                    受影响的未来日期：
+                    {proposal.rollback.affectedDates.length > 0
+                      ? proposal.rollback.affectedDates.join("、")
+                      : "没有任务日期变化"}
+                  </p>
+                  {!rollbackIntent ? (
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => {
+                        setRollbackIntent(true);
+                        setRollbackError(null);
+                      }}
+                    >
+                      撤销这次计划更新
+                    </button>
+                  ) : (
+                    <div
+                      className="plan-advice-confirmation"
+                      role="group"
+                      aria-labelledby="plan-advice-rollback-title"
+                    >
+                      <h3 id="plan-advice-rollback-title">
+                        确认撤销并创建新版本？
+                      </h3>
+                      <p>
+                        历史记录和旧版本会保留；确认后由你创建一份新的计划版本。
+                      </p>
+                      {rollbackError ? (
+                        <p className="task-save-error" role="alert">
+                          {rollbackError}
+                        </p>
+                      ) : null}
+                      <div className="plan-advice-decision-actions">
+                        <button
+                          className="primary-button"
+                          type="button"
+                          disabled={rollbackMutation.isPending}
+                          onClick={confirmRollback}
+                        >
+                          {rollbackMutation.isPending
+                            ? "正在保存…"
+                            : "确认撤销并创建新版本"}
+                        </button>
+                        <button
+                          className="secondary-button"
+                          type="button"
+                          disabled={rollbackMutation.isPending}
+                          onClick={cancelRollback}
+                        >
+                          稍后
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               ) : null}
             </div>
           ) : proposal.status === "rejected" ? (

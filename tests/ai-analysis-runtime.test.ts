@@ -58,6 +58,7 @@ function memoryStore(order: string[]) {
         id: input.id,
         trackerId: input.trackerId,
         trackerKey: input.trackerKey,
+        planningTimeZone: input.modelContext.planningTimeZone,
         basePlanVersionId: input.basePlanVersionId,
         timelineHeadPlanVersionId: input.timelineHeadPlanVersionId,
         status: "pending",
@@ -76,6 +77,7 @@ function memoryStore(order: string[]) {
         completedAt: null,
         proposal: null,
         proposalDecision: null,
+        proposalRollback: null,
       };
       return job;
     },
@@ -136,6 +138,9 @@ function memoryStore(order: string[]) {
     getJob() {
       return job;
     },
+    setJob(value: AiAnalysisJobRecord) {
+      job = value;
+    },
   };
 }
 
@@ -153,6 +158,95 @@ function configured() {
 }
 
 describe("AI analysis runtime", () => {
+  it("exposes a rollback preview only while the applied AI plan is the timeline head", async () => {
+    const memory = memoryStore([]);
+    const context = prepared();
+    const appliedPlan = {
+      ...context.basePlan,
+      id: "019c1000-0000-7000-8000-000000000121",
+      version: 2,
+      effectiveFrom: "2026-07-25",
+      createdAt: "2026-07-24T08:00:03.000Z",
+      createdBy: "ai_accepted" as const,
+    };
+    memory.setJob({
+      id: jobId,
+      trackerId,
+      trackerKey: "knee-rehab",
+      planningTimeZone: "Asia/Shanghai",
+      basePlanVersionId: planId,
+      timelineHeadPlanVersionId: appliedPlan.id,
+      status: "succeeded",
+      model: "anonymous-model",
+      attemptCount: 1,
+      contextVersion: "1",
+      contextHash: "a".repeat(64),
+      contextRevision: 1,
+      contextFrom: "2026-07-11",
+      contextThrough: "2026-07-24",
+      safetyLevel: "green",
+      responseHash: "b".repeat(64),
+      lastErrorCode: null,
+      requestedAt: new Date("2026-07-24T08:00:00.000Z"),
+      startedAt: new Date("2026-07-24T08:00:01.000Z"),
+      completedAt: new Date("2026-07-24T08:00:02.000Z"),
+      proposal: {
+        schemaVersion,
+        id: jobId,
+        trackerKey: "knee-rehab",
+        basePlanVersionId: planId,
+        createdAt: "2026-07-24T08:00:02.000Z",
+        safetyLevel: "green",
+        summary: "Anonymous accepted adjustment",
+        operations: [],
+        status: "accepted",
+      },
+      proposalDecision: {
+        type: "accepted",
+        decidedAt: new Date("2026-07-24T08:00:03.000Z"),
+        appliedPlanVersion: {
+          id: appliedPlan.id,
+          version: 2,
+          effectiveFrom: "2026-07-25",
+        },
+      },
+      proposalRollback: {
+        targetBasePlan: context.basePlan,
+        sourceAppliedPlan: appliedPlan,
+        timelineHeadPlanVersionId: appliedPlan.id,
+        existing: null,
+      },
+    });
+    const runtime = createAiAnalysisRuntime({
+      store: memory.store,
+      prepareContext: async () => context,
+      readConfiguration: configured,
+      now: () => new Date("2026-07-24T08:00:00.000Z"),
+    });
+
+    const page = await runtime.load("knee-rehab", jobId);
+    expect(page.job?.proposal?.rollback).toMatchObject({
+      status: "available",
+      blockedReason: null,
+      targetBasePlanVersion: { id: planId, version: 1 },
+      sourceAppliedPlanVersion: { id: appliedPlan.id, version: 2 },
+      effectiveFrom: "2026-07-25",
+    });
+
+    memory.setJob({
+      ...memory.getJob()!,
+      proposalRollback: {
+        ...memory.getJob()!.proposalRollback!,
+        timelineHeadPlanVersionId: "019c1000-0000-7000-8000-000000000122",
+      },
+    });
+    const blocked = await runtime.load("knee-rehab", jobId);
+    expect(blocked.job?.proposal?.rollback).toMatchObject({
+      status: "blocked",
+      blockedReason: "later_plan_version",
+    });
+  });
+
   it("persists and claims the job before making one bounded advisor call", async () => {
     const order: string[] = [];
     const memory = memoryStore(order);

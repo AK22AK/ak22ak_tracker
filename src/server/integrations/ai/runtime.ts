@@ -7,7 +7,9 @@ import {
   type AiAnalysisPageDto,
 } from "@/domain/ai-analysis";
 import { applyAcceptedPlanChange } from "@/domain/plan-change";
+import { localDateInTimeZone } from "@/domain/planning-time";
 import { planChangeProposalSchema, schemaVersion } from "@/domain/schemas";
+import { rollbackAffectedDates } from "@/server/commands/plan-version-rollback-core";
 
 import { readDeepSeekConfiguration } from "./config";
 import {
@@ -170,6 +172,45 @@ function currentIsoForValidation(job: AiAnalysisJobRecord) {
   return (job.completedAt ?? job.requestedAt).toISOString();
 }
 
+function proposalRollback(job: AiAnalysisJobRecord, currentTime: Date) {
+  const rollback = job.proposalRollback;
+  if (!rollback) return null;
+  const effectiveFrom = nextLocalDate(
+    localDateInTimeZone(currentTime.toISOString(), job.planningTimeZone),
+  );
+  const existing = rollback.existing;
+  const available =
+    rollback.timelineHeadPlanVersionId === rollback.sourceAppliedPlan.id;
+  const targetPlan = existing?.newPlanVersion ?? rollback.targetBasePlan;
+  return {
+    status: existing ? "rolled_back" : available ? "available" : "blocked",
+    blockedReason: existing || available ? null : "later_plan_version",
+    targetBasePlanVersion: {
+      id: rollback.targetBasePlan.id,
+      version: rollback.targetBasePlan.version,
+    },
+    sourceAppliedPlanVersion: {
+      id: rollback.sourceAppliedPlan.id,
+      version: rollback.sourceAppliedPlan.version,
+      effectiveFrom: rollback.sourceAppliedPlan.effectiveFrom,
+    },
+    newPlanVersion: existing
+      ? {
+          id: existing.newPlanVersion.id,
+          version: existing.newPlanVersion.version,
+          effectiveFrom: existing.newPlanVersion.effectiveFrom,
+        }
+      : null,
+    effectiveFrom: existing?.newPlanVersion.effectiveFrom ?? effectiveFrom,
+    affectedDates: rollbackAffectedDates(
+      rollback.sourceAppliedPlan,
+      targetPlan,
+      existing?.newPlanVersion.effectiveFrom ?? effectiveFrom,
+    ),
+    decidedAt: existing?.decidedAt.toISOString() ?? null,
+  } as const;
+}
+
 function pageDto(
   configuration: ReturnType<typeof readDeepSeekConfiguration>["status"],
   job: AiAnalysisJobRecord | null,
@@ -211,6 +252,7 @@ function pageDto(
                         job.proposalDecision.appliedPlanVersion,
                     }
                   : null,
+                rollback: proposalRollback(job, currentTime),
               }
             : null,
         })

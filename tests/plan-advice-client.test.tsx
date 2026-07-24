@@ -28,6 +28,7 @@ type JobFixture = Record<string, unknown> & {
         operations: unknown[];
         application?: unknown;
         decision?: unknown;
+        rollback?: unknown;
       })
     | null;
 };
@@ -59,6 +60,7 @@ function page(job: JobFixture | null = null) {
                       : null,
             },
             decision: proposal.decision ?? null,
+            rollback: proposal.rollback ?? null,
           },
         }
       : job,
@@ -391,6 +393,121 @@ describe("plan advice UI", () => {
     expect(await screen.findByText("计划已由你确认更新。")).toBeTruthy();
     expect(queryClient.getQueryData(["anonymous-draft"])).toEqual({
       text: "keep",
+    });
+  });
+
+  it("previews and double-confirms an immutable rollback without clearing other cache", async () => {
+    const proposalId = "019c2000-0000-7000-8000-000000000201";
+    const rollbackId = "019c2000-0000-7000-8000-000000000202";
+    const accepted = page({
+      id: proposalId,
+      trackerKey: "knee-rehab",
+      status: "succeeded",
+      errorCode: null,
+      retryable: false,
+      requestedAt: "2026-07-24T08:00:00.000Z",
+      completedAt: "2026-07-24T08:00:02.000Z",
+      proposal: {
+        id: proposalId,
+        basePlanVersionId: "019c2000-0000-7000-8000-000000000203",
+        createdAt: "2026-07-24T08:00:02.000Z",
+        safetyLevel: "green",
+        summary: "Anonymous accepted adjustment",
+        operations: [],
+        status: "accepted",
+        decision: {
+          type: "accepted",
+          decidedAt: "2026-07-24T08:00:03.000Z",
+          appliedPlanVersion: {
+            id: "019c2000-0000-7000-8000-000000000204",
+            version: 2,
+            effectiveFrom: "2026-07-25",
+          },
+        },
+        rollback: {
+          status: "available",
+          blockedReason: null,
+          targetBasePlanVersion: {
+            id: "019c2000-0000-7000-8000-000000000203",
+            version: 1,
+          },
+          sourceAppliedPlanVersion: {
+            id: "019c2000-0000-7000-8000-000000000204",
+            version: 2,
+            effectiveFrom: "2026-07-25",
+          },
+          newPlanVersion: null,
+          effectiveFrom: "2026-07-25",
+          affectedDates: ["2026-07-26"],
+          decidedAt: null,
+        },
+      },
+    });
+    const acceptedProposal = (accepted.job as JobFixture).proposal!;
+    const rolledBack = page({
+      ...(accepted.job as JobFixture),
+      proposal: {
+        ...acceptedProposal,
+        rollback: {
+          ...(acceptedProposal.rollback as object),
+          status: "rolled_back",
+          newPlanVersion: {
+            id: "019c2000-0000-7000-8000-000000000205",
+            version: 3,
+            effectiveFrom: "2026-07-25",
+          },
+          decidedAt: "2026-07-24T08:01:00.000Z",
+        },
+      },
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(accepted))
+      .mockResolvedValueOnce(
+        response({
+          schemaVersion,
+          commandId: rollbackId,
+          proposalId,
+          replayed: false,
+          conflict: false,
+          status: "rolled_back",
+          blockedReason: null,
+          newPlanVersion: {
+            id: "019c2000-0000-7000-8000-000000000205",
+            version: 3,
+            effectiveFrom: "2026-07-25",
+          },
+          affectedDates: ["2026-07-26"],
+          page: rolledBack,
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(rollbackId);
+    const { queryClient } = renderClient();
+    queryClient.setQueryData(["unrelated-draft"], { text: "keep me" });
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "撤销这次计划更新" }),
+    );
+    expect(
+      screen.getByRole("heading", { name: "确认撤销并创建新版本？" }),
+    ).toBeTruthy();
+    expect(screen.getByText(/受影响的未来日期：2026-07-26/)).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(
+      screen.getByRole("button", { name: "确认撤销并创建新版本" }),
+    );
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)),
+    ).toMatchObject({
+      proposalId,
+      commandId: rollbackId,
+    });
+    expect(await screen.findByText(/已由你撤销/)).toBeTruthy();
+    expect(queryClient.getQueryData(["unrelated-draft"])).toEqual({
+      text: "keep me",
     });
   });
 

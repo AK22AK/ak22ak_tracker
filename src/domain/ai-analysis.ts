@@ -92,6 +92,34 @@ export const aiPlanChangeProposalDtoSchema = z
       })
       .strict()
       .nullable(),
+    rollback: z
+      .object({
+        status: z.enum(["available", "rolled_back", "blocked"]),
+        blockedReason: z.enum(["later_plan_version"]).nullable(),
+        targetBasePlanVersion: z
+          .object({ id: z.uuid(), version: z.number().int().positive() })
+          .strict(),
+        sourceAppliedPlanVersion: z
+          .object({
+            id: z.uuid(),
+            version: z.number().int().positive(),
+            effectiveFrom: localDateSchema,
+          })
+          .strict(),
+        newPlanVersion: z
+          .object({
+            id: z.uuid(),
+            version: z.number().int().positive(),
+            effectiveFrom: localDateSchema,
+          })
+          .strict()
+          .nullable(),
+        effectiveFrom: localDateSchema,
+        affectedDates: z.array(localDateSchema).max(500),
+        decidedAt: instantSchema.nullable(),
+      })
+      .strict()
+      .nullable(),
   })
   .strict();
 
@@ -144,6 +172,32 @@ export const planChangeDecisionResultSchema = z
   })
   .strict();
 
+export const planVersionRollbackCommandSchema = clientCommandMetadataSchema
+  .extend({ proposalId: z.uuid() })
+  .strict();
+
+export const planVersionRollbackResultSchema = z
+  .object({
+    schemaVersion: z.literal(schemaVersion),
+    commandId: z.uuid(),
+    proposalId: z.uuid(),
+    replayed: z.boolean(),
+    conflict: z.boolean(),
+    status: z.enum(["rolled_back", "blocked"]),
+    blockedReason: z.enum(["later_plan_version"]).nullable(),
+    newPlanVersion: z
+      .object({
+        id: z.uuid(),
+        version: z.number().int().positive(),
+        effectiveFrom: localDateSchema,
+      })
+      .strict()
+      .nullable(),
+    affectedDates: z.array(localDateSchema).max(500),
+    page: aiAnalysisPageDtoSchema,
+  })
+  .strict();
+
 export type AiConfigurationStatus = z.infer<typeof aiConfigurationStatusSchema>;
 export type AiAnalysisErrorCode = z.infer<typeof aiAnalysisErrorCodeSchema>;
 export type AiAnalysisJobDto = z.infer<typeof aiAnalysisJobDtoSchema>;
@@ -154,4 +208,10 @@ export type PlanChangeDecisionCommand = z.infer<
 >;
 export type PlanChangeDecisionResult = z.infer<
   typeof planChangeDecisionResultSchema
+>;
+export type PlanVersionRollbackCommand = z.infer<
+  typeof planVersionRollbackCommandSchema
+>;
+export type PlanVersionRollbackResult = z.infer<
+  typeof planVersionRollbackResultSchema
 >;

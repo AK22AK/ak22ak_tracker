@@ -223,6 +223,49 @@ const planAdvice = {
         blockedReason: null,
       },
       decision: null,
+      rollback: null,
+    },
+  },
+};
+
+const rollbackAdvice = {
+  ...planAdvice,
+  job: {
+    ...planAdvice.job,
+    proposal: {
+      ...planAdvice.job.proposal,
+      status: "accepted",
+      application: {
+        effectiveFrom: "2026-07-25",
+        canAccept: false,
+        blockedReason: null,
+      },
+      decision: {
+        type: "accepted",
+        decidedAt: "2026-07-24T08:00:03.000Z",
+        appliedPlanVersion: {
+          id: "019c0000-0000-7000-8000-000000000032",
+          version: 2,
+          effectiveFrom: "2026-07-25",
+        },
+      },
+      rollback: {
+        status: "available",
+        blockedReason: null,
+        targetBasePlanVersion: {
+          id: "019c0000-0000-7000-8000-000000000001",
+          version: 1,
+        },
+        sourceAppliedPlanVersion: {
+          id: "019c0000-0000-7000-8000-000000000032",
+          version: 2,
+          effectiveFrom: "2026-07-25",
+        },
+        newPlanVersion: null,
+        effectiveFrom: "2026-07-25",
+        affectedDates: ["2026-07-26"],
+        decidedAt: null,
+      },
     },
   },
 };
@@ -254,7 +297,11 @@ async function authorize(context: BrowserContext) {
   ]);
 }
 
-async function mockPrivateReads(page: Page, delayMs: number) {
+async function mockPrivateReads(
+  page: Page,
+  delayMs: number,
+  advice: unknown = planAdvice,
+) {
   const counters: RequestCounters = {
     today: 0,
     month: 0,
@@ -289,7 +336,7 @@ async function mockPrivateReads(page: Page, delayMs: number) {
       body = mirrorStatus;
     } else if (url.pathname.endsWith("/ai-analysis")) {
       counters.advice += 1;
-      body = planAdvice;
+      body = advice;
     } else if (url.pathname.endsWith("/trends")) {
       counters.trends += 1;
       body = trendsAggregate;
@@ -351,6 +398,48 @@ for (const width of [320, 375, 390, 430]) {
     expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
     expect(layout.buttonHeight).toBeGreaterThanOrEqual(44);
     expect(layout.buttonRight).toBeLessThanOrEqual(layout.clientWidth);
+  });
+}
+
+for (const width of [320, 375, 390, 430]) {
+  test(`plan rollback confirmation remains accessible at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await mockPrivateReads(page, 0, rollbackAdvice);
+    await page.goto("/trends/advice");
+
+    const rollback = page.getByRole("button", {
+      name: "撤销这次计划更新",
+    });
+    await expect(rollback).toBeVisible();
+    await rollback.click();
+    await expect(
+      page.getByRole("group", { name: "确认撤销并创建新版本？" }),
+    ).toBeVisible();
+
+    const layout = await page.evaluate(() => {
+      const controls = [
+        ...document.querySelectorAll<HTMLElement>(
+          ".plan-advice-page button, .plan-advice-page a",
+        ),
+      ];
+      return {
+        clientWidth: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        controls: controls.map((control) => {
+          const rect = control.getBoundingClientRect();
+          return { height: rect.height, left: rect.left, right: rect.right };
+        }),
+      };
+    });
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+    expect(
+      layout.controls.every(
+        ({ height, left, right }) =>
+          height >= 44 && left >= 0 && right <= layout.clientWidth,
+      ),
+    ).toBe(true);
   });
 }
 

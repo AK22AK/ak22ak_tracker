@@ -4,9 +4,12 @@ import { and, count, eq, like } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { PlanChangeDecisionCommand } from "@/domain/ai-analysis";
+import type { PlanVersionRollbackCommand } from "@/domain/ai-analysis";
 import { schemaVersion } from "@/domain/schemas";
 import { createNeonPlanChangeDecisionStore } from "@/server/commands/plan-change-decision";
 import { executePlanChangeDecision } from "@/server/commands/plan-change-decision-core";
+import { createNeonPlanVersionRollbackStore } from "@/server/commands/plan-version-rollback";
+import { executePlanVersionRollback } from "@/server/commands/plan-version-rollback-core";
 import { getDatabase } from "@/server/db/client";
 import {
   aiAnalysisJobs,
@@ -14,6 +17,7 @@ import {
   githubSyncOutbox,
   planChangeDecisions,
   planChangeProposals,
+  planVersionRollbacks,
   planVersions,
   taskInstances,
   trackers,
@@ -180,6 +184,30 @@ async function decide(
   );
 }
 
+function rollbackCommand(
+  fixture: Fixture,
+  commandId = randomUUID(),
+): PlanVersionRollbackCommand & { trackerKey: string } {
+  return {
+    trackerKey: fixture.trackerKey,
+    proposalId: fixture.proposalId,
+    commandId,
+    occurredAt: now.toISOString(),
+    occurredTimeZone: "Asia/Shanghai",
+    occurredUtcOffsetMinutes: 480,
+  };
+}
+
+async function rollback(
+  command: PlanVersionRollbackCommand & { trackerKey: string },
+) {
+  return executePlanVersionRollback(
+    createNeonPlanVersionRollbackStore(getDatabase()),
+    command,
+    now,
+  );
+}
+
 integration("P4b-2a plan change decision Neon transaction", () => {
   beforeAll(() => {
     process.env.DATABASE_URL = testDatabaseUrl;
@@ -231,6 +259,7 @@ integration("P4b-2a plan change decision Neon transaction", () => {
       replayed: false,
       appliedPlanVersion: { version: 2, effectiveFrom: "2026-07-25" },
     });
+
     expect(decisionCount?.value).toBe(1);
     expect(versionCount?.value).toBe(2);
     expect(projected).toEqual([
@@ -240,6 +269,131 @@ integration("P4b-2a plan change decision Neon transaction", () => {
       },
     ]);
     expect(historical?.status).toBe("completed");
+  }, 45_000);
+
+  it("rolls back an accepted head by creating one immutable future version", async () => {
+    const database = getDatabase();
+    const fixture = await createFixture();
+    const accepted = await decide(
+      fixture,
+      decisionCommand(fixture, "accepted"),
+    );
+    expect(accepted.status).toBe("accepted");
+
+    const command = rollbackCommand(fixture);
+    const result = await rollback(command);
+    const replay = await rollback(command);
+    const [rollbackCount] = await database
+      .select({ value: count() })
+      .from(planVersionRollbacks)
+      .where(eq(planVersionRollbacks.proposalId, fixture.proposalId));
+    const [versionCount] = await database
+      .select({ value: count() })
+      .from(planVersions)
+      .where(eq(planVersions.trackerId, fixture.trackerId));
+    const projected = await database
+      .select({
+        taskDefinitionId: taskInstances.taskDefinitionId,
+        scheduledOn: taskInstances.scheduledOn,
+      })
+      .from(taskInstances)
+      .where(
+        and(
+          eq(taskInstances.trackerId, fixture.trackerId),
+          eq(taskInstances.planVersionId, result.newPlanVersion!.id),
+        ),
+      );
+    const [historical] = await database
+      .select({ status: taskInstances.status })
+      .from(taskInstances)
+      .where(eq(taskInstances.id, fixture.historicalTaskInstanceId));
+
+    expect(result).toMatchObject({
+      status: "rolled_back",
+      replayed: false,
+      newPlanVersion: { version: 3, effectiveFrom: "2026-07-25" },
+    });
+    expect(replay).toMatchObject({ replayed: true, conflict: false });
+    expect(rollbackCount.value).toBe(1);
+    expect(versionCount.value).toBe(3);
+    expect(projected).toEqual([
+      { taskDefinitionId: "anonymous-future", scheduledOn: "2026-07-26" },
+    ]);
+    expect(historical?.status).toBe("completed");
+  }, 45_000);
+
+  it("allows only one concurrent rollback command for the applied version", async () => {
+    const fixture = await createFixture();
+    await decide(fixture, decisionCommand(fixture, "accepted"));
+    const results = await Promise.all([
+      rollback(rollbackCommand(fixture)),
+      rollback(rollbackCommand(fixture)),
+    ]);
+    expect(results.filter((result) => !result.replayed)).toHaveLength(1);
+    expect(results.filter((result) => result.conflict)).toHaveLength(1);
+  }, 45_000);
+
+  it("blocks a rollback when a later plan version is already scheduled", async () => {
+    const database = getDatabase();
+    const fixture = await createFixture();
+    const accepted = await decide(
+      fixture,
+      decisionCommand(fixture, "accepted"),
+    );
+    const laterId = randomUUID();
+    await database.insert(planVersions).values({
+      id: laterId,
+      trackerId: fixture.trackerId,
+      version: 3,
+      effectiveFrom: "2026-07-28",
+      document: {
+        schemaVersion,
+        id: laterId,
+        trackerKey: fixture.trackerKey,
+        version: 3,
+        effectiveFrom: "2026-07-28",
+        createdAt: "2026-07-24T09:00:00.000Z",
+        createdBy: "user",
+        tasks: [],
+      },
+    });
+
+    const result = await rollback(rollbackCommand(fixture));
+    expect(accepted.appliedPlanVersion?.version).toBe(2);
+    expect(result).toMatchObject({
+      status: "blocked",
+      blockedReason: "later_plan_version",
+    });
+  }, 45_000);
+
+  it("rolls back the whole transaction when the later outbox insert fails", async () => {
+    const database = getDatabase();
+    const fixture = await createFixture();
+    await decide(fixture, decisionCommand(fixture, "accepted"));
+    const command = rollbackCommand(fixture);
+    await database.insert(githubSyncOutbox).values({
+      aggregateType: "event",
+      aggregateId: command.commandId,
+      targetPath: `trackers/${fixture.trackerKey}/events/collision.json`,
+      payload: { anonymous: true },
+    });
+
+    await expect(rollback(command)).rejects.toThrow();
+    const [rollbackCount] = await database
+      .select({ value: count() })
+      .from(planVersionRollbacks)
+      .where(eq(planVersionRollbacks.proposalId, fixture.proposalId));
+    const [versionCount] = await database
+      .select({ value: count() })
+      .from(planVersions)
+      .where(eq(planVersions.trackerId, fixture.trackerId));
+    const [eventCount] = await database
+      .select({ value: count() })
+      .from(events)
+      .where(eq(events.id, command.commandId));
+    expect(rollbackCount.value).toBe(0);
+    expect(versionCount.value).toBe(2);
+    expect(eventCount.value).toBe(0);
   }, 45_000);
 
   it("replays the same command and lets only one concurrent decision win", async () => {

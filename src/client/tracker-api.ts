@@ -32,8 +32,11 @@ import {
   aiAnalysisPageDtoSchema,
   planChangeDecisionCommandSchema,
   planChangeDecisionResultSchema,
+  planVersionRollbackCommandSchema,
+  planVersionRollbackResultSchema,
   requestPlanAnalysisSchema,
   type PlanChangeDecisionCommand,
+  type PlanVersionRollbackCommand,
 } from "@/domain/ai-analysis";
 
 async function getJson(url: string, signal?: AbortSignal) {
@@ -147,6 +150,31 @@ export async function decidePlanChange(
     throw new Error(payload?.error ?? `request_failed_${response.status}`);
   }
   return planChangeDecisionResultSchema.parse(await response.json());
+}
+
+export async function rollbackPlanVersion(
+  trackerKey: string,
+  input: PlanVersionRollbackCommand,
+) {
+  const command = planVersionRollbackCommandSchema.parse(input);
+  const response = await fetch(
+    `/api/trackers/${encodeURIComponent(trackerKey)}/ai-analysis/${encodeURIComponent(command.proposalId)}/rollback`,
+    {
+      method: "PUT",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(command),
+    },
+  );
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(payload?.error ?? `request_failed_${response.status}`);
+  }
+  return planVersionRollbackResultSchema.parse(await response.json());
 }
 
 export async function saveExternalRecordAssociation(

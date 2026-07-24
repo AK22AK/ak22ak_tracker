@@ -649,6 +649,45 @@ export const planChangeDecisions = pgTable(
   ],
 );
 
+export const planVersionRollbacks = pgTable(
+  "plan_version_rollbacks",
+  {
+    id: uuid("id").primaryKey(),
+    trackerId: uuid("tracker_id")
+      .notNull()
+      .references(() => trackers.id, { onDelete: "cascade" }),
+    proposalId: uuid("proposal_id")
+      .notNull()
+      .references(() => planChangeProposals.id, { onDelete: "restrict" }),
+    sourceDecisionId: uuid("source_decision_id")
+      .notNull()
+      .references(() => planChangeDecisions.id, { onDelete: "restrict" }),
+    sourceAppliedPlanVersionId: uuid("source_applied_plan_version_id")
+      .notNull()
+      .references(() => planVersions.id, { onDelete: "restrict" }),
+    targetBasePlanVersionId: uuid("target_base_plan_version_id")
+      .notNull()
+      .references(() => planVersions.id, { onDelete: "restrict" }),
+    newPlanVersionId: uuid("new_plan_version_id")
+      .notNull()
+      .references(() => planVersions.id, { onDelete: "restrict" }),
+    effectiveFrom: date("effective_from").notNull(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("plan_version_rollbacks_source_applied_unique").on(
+      table.sourceAppliedPlanVersionId,
+    ),
+    uniqueIndex("plan_version_rollbacks_new_plan_unique").on(
+      table.newPlanVersionId,
+    ),
+    index("plan_version_rollbacks_tracker_index").on(table.trackerId),
+  ],
+);
+
 export const integrationSyncState = pgTable(
   "integration_sync_state",
   {

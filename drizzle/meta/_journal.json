@@ -99,6 +99,13 @@
       "when": 1784905627414,
       "tag": "0013_open_purple_man",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1784907989513,
+      "tag": "0014_secret_outlaw_kid",
+      "breakpoints": true
     }
   ]
 }
