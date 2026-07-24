@@ -14,7 +14,12 @@ import {
 import { localDateInTimeZone } from "@/domain/planning-time";
 import { localDateSchema } from "@/domain/schemas";
 import { getDatabase } from "@/server/db/client";
+import { createNeonProviderCatchUpStore } from "@/server/integrations/core/neon-catch-up-store";
 import { createNeonProviderDateSyncStore } from "@/server/integrations/core/neon-date-sync-store";
+import {
+  syncProviderCatchUpBatch,
+  type ProviderCatchUpStore,
+} from "@/server/integrations/core/sync-provider-catch-up";
 import {
   syncProviderDate,
   type ProviderDateSyncStore,
@@ -25,6 +30,7 @@ import {
   markIntegrationConnectionFailure,
   readIntegrationCredential,
   requireIntegrationTracker,
+  saveIntegrationCredential,
   saveIntegrationCredentialAndResetState,
 } from "@/server/integrations/credentials/repository";
 
@@ -58,6 +64,12 @@ export type GarminCredentialStore = {
     attemptedAt: Date | null;
     now: Date;
   }): Promise<void>;
+  saveRefreshed(input: {
+    trackerId: string;
+    plaintext: string;
+    verifiedAt: Date;
+    attemptedAt: Date;
+  }): Promise<void>;
   read(trackerId: string): Promise<string>;
   markFailure(
     trackerId: string,
@@ -84,6 +96,14 @@ function createNeonGarminCredentialStore(
         verifiedAt,
         attemptedAt,
         now,
+        database,
+      }),
+    saveRefreshed: ({ trackerId, plaintext, verifiedAt }) =>
+      saveIntegrationCredential({
+        trackerId,
+        provider: "garmin",
+        plaintext,
+        verifiedAt,
         database,
       }),
     read: (trackerId) =>
@@ -124,6 +144,13 @@ function connectionStatus(status: GenericStatus): GarminConnectionStatus {
     verifiedAt: status.verifiedAt,
     updatedAt: status.updatedAt,
     lastErrorCode,
+    sync: {
+      status: status.sync.status,
+      lastAttemptAt: status.sync.lastAttemptAt,
+      lastSucceededDate: status.sync.lastSucceededDate,
+      nextCursor: status.sync.nextCursor ?? null,
+      lastErrorCode,
+    },
   });
 }
 
@@ -131,12 +158,14 @@ export function createGarminRuntime({
   store,
   client,
   createDateSyncStore,
+  createCatchUpStore,
   now = () => new Date(),
   assertEncryptionConfigured = () => void getIntegrationEncryptionConfig(),
 }: {
   store: GarminCredentialStore;
   client: GarminClient<GarminCredential>;
   createDateSyncStore: (trackerKey: string) => ProviderDateSyncStore;
+  createCatchUpStore: () => ProviderCatchUpStore;
   now?: () => Date;
   assertEncryptionConfigured?: () => void;
 }) {
@@ -178,12 +207,11 @@ export function createGarminRuntime({
       ) {
         throw new GarminProviderError("invalid_response");
       }
-      await store.saveAndReset({
+      await store.saveRefreshed({
         trackerId: input.tracker.id,
         plaintext: JSON.stringify(result.refreshedCredential),
         verifiedAt: input.requestedAt,
         attemptedAt: input.requestedAt,
-        now: input.requestedAt,
       });
       return result.activities;
     } catch (error) {
@@ -209,6 +237,32 @@ export function createGarminRuntime({
     const today = localDateInTimeZone(requestedAt, tracker.planningTimeZone);
     if (date > today) throw new GarminPreviewDateOutOfRangeError();
     return { date, tracker, requestedAt };
+  }
+
+  async function syncTrackerDate(input: {
+    tracker: Tracker;
+    date: string;
+    requestedAt: Date;
+  }) {
+    return syncProviderDate({
+      trackerId: input.tracker.id,
+      provider: "garmin",
+      date: input.date,
+      now: input.requestedAt,
+      store: createDateSyncStore(input.tracker.key),
+      readSource: async () =>
+        normalizeGarminActivities({
+          activities: await readActivities({
+            tracker: input.tracker,
+            date: input.date,
+            requestedAt: input.requestedAt,
+            markCredentialFailure: false,
+          }),
+          localDate: input.date,
+          planningTimeZone: input.tracker.planningTimeZone,
+          fetchedAt: input.requestedAt,
+        }),
+    });
   }
 
   return {
@@ -263,30 +317,30 @@ export function createGarminRuntime({
         input.trackerKey,
         input.date,
       );
-      const sync = await syncProviderDate({
-        trackerId: tracker.id,
-        provider: "garmin",
-        date,
-        now: requestedAt,
-        store: createDateSyncStore(tracker.key),
-        readSource: async () =>
-          normalizeGarminActivities({
-            activities: await readActivities({
-              tracker,
-              date,
-              requestedAt,
-              markCredentialFailure: false,
-            }),
-            localDate: date,
-            planningTimeZone: tracker.planningTimeZone,
-            fetchedAt: requestedAt,
-          }),
-      });
+      const sync = await syncTrackerDate({ tracker, date, requestedAt });
       return garminActivitySyncResponseSchema.parse({
         provider: "garmin",
         date,
         sync,
         connection: connectionStatus(await store.getStatus(input.trackerKey)),
+      });
+    },
+
+    async syncActivityHistory(input: { trackerKey: string }) {
+      const tracker = await store.requireTracker(input.trackerKey);
+      const requestedAt = now();
+      const today = localDateInTimeZone(requestedAt, tracker.planningTimeZone);
+      return syncProviderCatchUpBatch({
+        trackerId: tracker.id,
+        provider: "garmin",
+        startedOn: tracker.startedOn,
+        today,
+        now: requestedAt,
+        batchSize: 5,
+        overlapDays: 2,
+        store: createCatchUpStore(),
+        syncDate: (date) =>
+          syncTrackerDate({ tracker, date, requestedAt: now() }),
       });
     },
   };
@@ -298,5 +352,7 @@ export function createDefaultGarminRuntime(database?: Database) {
     client: createGarminPythonRuntimeClient(),
     createDateSyncStore: (trackerKey) =>
       createNeonProviderDateSyncStore(trackerKey, database ?? getDatabase()),
+    createCatchUpStore: () =>
+      createNeonProviderCatchUpStore(database ?? getDatabase()),
   });
 }

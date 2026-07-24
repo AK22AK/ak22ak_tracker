@@ -2,6 +2,7 @@ import "server-only";
 
 import { and, desc, eq } from "drizzle-orm";
 
+import { localDateSchema } from "@/domain/schemas";
 import { getDatabase } from "@/server/db/client";
 import {
   integrationCredentials,
@@ -19,6 +20,21 @@ import { getIntegrationEncryptionConfig } from "./config";
 import { publicCredentialStatus } from "./public-status";
 
 type Database = ReturnType<typeof getDatabase>;
+
+function catchUpCursorDate(value: unknown) {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("kind" in value) ||
+    value.kind !== "date_catch_up_v1" ||
+    !("nextDate" in value) ||
+    typeof value.nextDate !== "string" ||
+    !localDateSchema.safeParse(value.nextDate).success
+  ) {
+    return null;
+  }
+  return value.nextDate;
+}
 
 export class IntegrationTrackerNotFoundError extends Error {
   constructor() {
@@ -89,6 +105,7 @@ export async function getIntegrationStatus(
         status: integrationSyncState.status,
         lastAttemptAt: integrationSyncState.lastAttemptAt,
         lastSucceededAt: integrationSyncState.lastSucceededAt,
+        cursor: integrationSyncState.cursor,
         lastErrorCode: integrationSyncState.lastErrorCode,
       })
       .from(integrationSyncState)
@@ -114,6 +131,7 @@ export async function getIntegrationStatus(
       lastAttemptAt: syncRow?.lastAttemptAt?.toISOString() ?? null,
       lastSucceededAt: syncRow?.lastSucceededAt?.toISOString() ?? null,
       lastSucceededDate: latestSuccessfulDate[0]?.localDate ?? null,
+      nextCursor: catchUpCursorDate(syncRow?.cursor),
       lastErrorCode: syncRow?.lastErrorCode ?? null,
     },
   };
@@ -170,6 +188,7 @@ export async function saveIntegrationCredentialAndResetState(input: {
   const reset = {
     status: "idle" as const,
     lastAttemptAt: input.attemptedAt,
+    cursor: null,
     lastErrorCode: null,
     updatedAt: input.now,
   };

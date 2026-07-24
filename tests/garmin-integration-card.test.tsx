@@ -143,6 +143,126 @@ describe("Garmin token-only settings flow", () => {
     expect(garminActivityTypeLabel("anonymous_provider_type")).toBe("其他活动");
   });
 
+  it("runs one bounded catch-up batch per click and offers an explicit continuation", async () => {
+    const configured = {
+      ...disconnected,
+      state: "connected" as const,
+      sync: {
+        status: "idle" as const,
+        lastAttemptAt: null,
+        lastSucceededDate: null,
+        nextCursor: null,
+        lastErrorCode: null,
+      },
+    };
+    const firstBatch = {
+      provider: "garmin",
+      batch: { from: "2026-07-18", to: "2026-07-22" },
+      targetDate: "2026-07-24",
+      days: [
+        {
+          date: "2026-07-18",
+          status: "succeeded",
+          cached: false,
+          created: 1,
+          changed: 0,
+          unchanged: 0,
+          recordCount: 1,
+          syncedAt: "2026-07-24T02:00:00.000Z",
+        },
+      ],
+      summary: {
+        succeeded: 5,
+        failed: 0,
+        created: 1,
+        changed: 0,
+        unchanged: 4,
+      },
+      nextCursor: "2026-07-23",
+      complete: false,
+      lastSucceededDate: "2026-07-22",
+    };
+    const finalBatch = {
+      ...firstBatch,
+      batch: { from: "2026-07-23", to: "2026-07-24" },
+      targetDate: "2026-07-24",
+      summary: {
+        succeeded: 2,
+        failed: 0,
+        created: 0,
+        changed: 0,
+        unchanged: 2,
+      },
+      nextCursor: null,
+      complete: true,
+      lastSucceededDate: "2026-07-24",
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(firstBatch))
+      .mockResolvedValueOnce(Response.json(finalBatch));
+    vi.stubGlobal("fetch", fetchMock);
+    renderCard(configured);
+
+    const dateInput = screen.getByLabelText("同步日期") as HTMLInputElement;
+    fireEvent.change(dateInput, { target: { value: "2026-07-13" } });
+    fireEvent.click(screen.getByRole("button", { name: "同步活动记录" }));
+
+    await screen.findByText(/已处理至 2026-07-22/);
+    expect(screen.getByText(/下一次从 2026-07-23 继续/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "继续同步" })).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "/api/trackers/anonymous-tracker/integrations/garmin/sync",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty("body");
+    expect(dateInput.value).toBe("2026-07-13");
+
+    fireEvent.click(screen.getByRole("button", { name: "继续同步" }));
+    await screen.findByText(/已同步到今天/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(dateInput.value).toBe("2026-07-13");
+  });
+
+  it("stops after a failed day and exposes a safe retry without Provider details", async () => {
+    const failedBatch = {
+      provider: "garmin",
+      batch: { from: "2026-07-19", to: "2026-07-19" },
+      targetDate: "2026-07-24",
+      days: [
+        {
+          date: "2026-07-19",
+          status: "failed",
+          errorCode: "rate_limited",
+        },
+      ],
+      summary: {
+        succeeded: 0,
+        failed: 1,
+        created: 0,
+        changed: 0,
+        unchanged: 0,
+      },
+      nextCursor: "2026-07-19",
+      complete: false,
+      lastSucceededDate: "2026-07-18",
+    };
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json(failedBatch),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    renderCard({ ...disconnected, state: "connected" });
+
+    fireEvent.click(screen.getByRole("button", { name: "同步活动记录" }));
+
+    await screen.findByText("Garmin 请求过于频繁，请稍后再试。");
+    expect(screen.getByText(/失败日期：2026-07-19/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "重试同步" })).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(document.body.textContent).not.toContain("private provider");
+  });
+
   it("shows a safe refresh action without exposing Provider errors", async () => {
     vi.stubGlobal(
       "fetch",

@@ -10,6 +10,10 @@ import {
   garminProviderErrorCodeSchema,
   type GarminConnectionStatus,
 } from "@/domain/garmin";
+import {
+  integrationCatchUpResultSchema,
+  type IntegrationCatchUpResult,
+} from "@/domain/integrations";
 
 const maxCredentialFileBytes = 140 * 1024;
 
@@ -69,8 +73,12 @@ export function GarminIntegrationCard({
   const queryClient = useQueryClient();
   const [status, setStatus] = useState(initialStatus);
   const [syncDate, setSyncDate] = useState(todayInPlanningTimeZone);
-  const [busy, setBusy] = useState<"credential" | "sync" | null>(null);
+  const [busy, setBusy] = useState<"credential" | "sync" | "catch_up" | null>(
+    null,
+  );
   const [message, setMessage] = useState<string | null>(null);
+  const [catchUpResult, setCatchUpResult] =
+    useState<IntegrationCatchUpResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const baseUrl = `/api/trackers/${encodeURIComponent(trackerKey)}/integrations/garmin`;
 
@@ -174,6 +182,105 @@ export function GarminIntegrationCard({
     }
   }
 
+  async function syncActivityHistory() {
+    setBusy("catch_up");
+    setMessage(null);
+    try {
+      const response = await fetch(
+        `/api/trackers/${encodeURIComponent(trackerKey)}/integrations/garmin/sync`,
+        { method: "POST" },
+      );
+      const body: unknown = await response.json();
+      if (!response.ok) {
+        throw new Error("sync_failed");
+      }
+      const result = integrationCatchUpResultSchema.parse(body);
+      setCatchUpResult(result);
+      const failedDay = result.days.find((day) => day.status === "failed");
+      setStatus((current) => ({
+        ...current,
+        state:
+          failedDay?.errorCode === "authentication"
+            ? "needs_refresh"
+            : result.summary.succeeded > 0
+              ? "connected"
+              : current.state,
+        lastErrorCode:
+          failedDay &&
+          garminProviderErrorCodeSchema.safeParse(failedDay.errorCode).success
+            ? garminProviderErrorCodeSchema.parse(failedDay.errorCode)
+            : null,
+        sync: {
+          status: failedDay
+            ? "failed"
+            : result.complete
+              ? "succeeded"
+              : "running",
+          lastAttemptAt: new Date().toISOString(),
+          lastSucceededDate:
+            result.lastSucceededDate ?? current.sync?.lastSucceededDate ?? null,
+          nextCursor: result.nextCursor,
+          lastErrorCode:
+            failedDay &&
+            garminProviderErrorCodeSchema.safeParse(failedDay.errorCode).success
+              ? garminProviderErrorCodeSchema.parse(failedDay.errorCode)
+              : null,
+        },
+      }));
+      const affectedDates = result.days
+        .filter((day) => day.status === "succeeded")
+        .map((day) => day.date);
+      const affectedMonths = [
+        ...new Set(affectedDates.map((date) => date.slice(0, 7))),
+      ];
+      void Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: integrationQueryKeys.providerStatus(trackerKey, "garmin"),
+          exact: true,
+        }),
+        ...affectedDates.flatMap((date) => [
+          queryClient.invalidateQueries({
+            queryKey: trackerQueryKeys.today(trackerKey, date),
+            exact: true,
+          }),
+          queryClient.invalidateQueries({
+            queryKey: trackerQueryKeys.day(trackerKey, date),
+            exact: true,
+          }),
+        ]),
+        ...affectedMonths.map((month) =>
+          queryClient.invalidateQueries({
+            queryKey: trackerQueryKeys.calendar(trackerKey, month),
+            exact: true,
+          }),
+        ),
+      ]).catch(() => undefined);
+      if (failedDay) {
+        setMessage(safeFailureMessage(failedDay.errorCode));
+      } else if (result.complete) {
+        setMessage(`已同步到今天：本批成功 ${result.summary.succeeded} 天。`);
+      } else {
+        setMessage(`本批成功 ${result.summary.succeeded} 天，可以继续同步。`);
+      }
+    } catch {
+      setMessage("同步没有完成，请稍后重试。");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const catchUpFailure = catchUpResult?.days.find(
+    (day) => day.status === "failed",
+  );
+  const catchUpButtonLabel =
+    busy === "catch_up"
+      ? "正在同步…"
+      : catchUpFailure || status.sync?.status === "failed"
+        ? "重试同步"
+        : catchUpResult?.nextCursor || status.sync?.nextCursor
+          ? "继续同步"
+          : "同步活动记录";
+
   return (
     <section className="feedback-card integration-card">
       <div className="integration-heading">
@@ -229,6 +336,40 @@ export function GarminIntegrationCard({
           {busy === "sync" ? "正在同步…" : "同步这一天"}
         </button>
       </div>
+      <div className="integration-actions garmin-catch-up-actions">
+        <button
+          type="button"
+          disabled={status.state === "not_connected" || busy !== null}
+          onClick={() => void syncActivityHistory()}
+        >
+          {catchUpButtonLabel}
+        </button>
+        <p>
+          最近成功日期：
+          {catchUpResult?.lastSucceededDate ??
+            status.sync?.lastSucceededDate ??
+            "暂无"}
+        </p>
+      </div>
+      {catchUpResult?.batch ? (
+        <div className="integration-progress" aria-label="活动同步进度">
+          <p>
+            本批范围：{catchUpResult.batch.from} 至 {catchUpResult.batch.to}；
+            已处理至 {catchUpResult.batch.to}。
+          </p>
+          {catchUpFailure ? (
+            <p>失败日期：{catchUpFailure.date}。处理后可从这一天重试。</p>
+          ) : catchUpResult.nextCursor ? (
+            <p>下一次从 {catchUpResult.nextCursor} 继续。</p>
+          ) : (
+            <p>已追赶到 {catchUpResult.targetDate}。</p>
+          )}
+        </div>
+      ) : status.sync?.nextCursor ? (
+        <p className="integration-progress">
+          下一次从 {status.sync.nextCursor} 继续。
+        </p>
+      ) : null}
       {message ? (
         <p role="status" className="integration-message">
           {message}

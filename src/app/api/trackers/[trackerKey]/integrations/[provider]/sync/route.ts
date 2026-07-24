@@ -62,7 +62,21 @@ export async function POST(
       if (Number.isFinite(contentLength) && contentLength > 1_024) {
         return Response.json({ error: "invalid_request" }, { status: 400 });
       }
-      const { date } = garminSyncInputSchema.parse(await request.json());
+      const text = await request.text();
+      if (Buffer.byteLength(text, "utf8") > 1_024) {
+        return Response.json({ error: "invalid_request" }, { status: 400 });
+      }
+      if (!text.trim()) {
+        return Response.json(
+          integrationCatchUpResultSchema.parse(
+            await createDefaultGarminRuntime().syncActivityHistory({
+              trackerKey: route.trackerKey,
+            }),
+          ),
+          { headers: { "Cache-Control": "no-store" } },
+        );
+      }
+      const { date } = garminSyncInputSchema.parse(JSON.parse(text));
       return Response.json(
         garminActivitySyncResponseSchema.parse(
           await createDefaultGarminRuntime().syncActivities({

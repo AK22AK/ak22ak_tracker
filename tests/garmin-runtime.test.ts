@@ -12,6 +12,7 @@ import {
   type GarminCredentialStore,
 } from "@/server/integrations/garmin/runtime";
 import type { ProviderDateSyncStore } from "@/server/integrations/core/sync-provider-date";
+import type { ProviderCatchUpStore } from "@/server/integrations/core/sync-provider-catch-up";
 
 const credential: GarminCredential = {
   schemaVersion: 1,
@@ -53,6 +54,11 @@ function fixture() {
     requireTracker: vi.fn(async () => tracker),
     getStatus: vi.fn(async () => status()),
     saveAndReset: vi.fn(async (input) => {
+      plaintext = input.plaintext;
+      verifiedAt = input.verifiedAt;
+      lastErrorCode = null;
+    }),
+    saveRefreshed: vi.fn(async (input) => {
       plaintext = input.plaintext;
       verifiedAt = input.verifiedAt;
       lastErrorCode = null;
@@ -100,10 +106,19 @@ function fixture() {
     }),
     markFailure: vi.fn(async () => undefined),
   };
+  const catchUpStore: ProviderCatchUpStore = {
+    loadProgress: vi.fn(async () => ({
+      cursorDate: null,
+      overallStatus: "idle" as const,
+      states: [],
+    })),
+    saveProgress: vi.fn(async () => undefined),
+  };
   const runtime = createGarminRuntime({
     store,
     client,
     createDateSyncStore: () => dateSyncStore,
+    createCatchUpStore: () => catchUpStore,
     now: () => new Date("2026-07-24T02:00:00.000Z"),
     assertEncryptionConfigured: vi.fn(),
   });
@@ -112,6 +127,7 @@ function fixture() {
     store,
     client,
     dateSyncStore,
+    catchUpStore,
     committedRecords,
     getPlaintext: () => plaintext,
   };
@@ -170,7 +186,7 @@ describe("P3b-2a Garmin token-only runtime", () => {
       credential,
       date: "2026-07-24",
     });
-    expect(store.saveAndReset).toHaveBeenLastCalledWith(
+    expect(store.saveRefreshed).toHaveBeenLastCalledWith(
       expect.objectContaining({
         verifiedAt: new Date("2026-07-24T02:00:00.000Z"),
         attemptedAt: new Date("2026-07-24T02:00:00.000Z"),
@@ -178,6 +194,130 @@ describe("P3b-2a Garmin token-only runtime", () => {
     );
     expect(JSON.stringify(result)).not.toContain("anonymous-activity-1");
     expect(JSON.stringify(result)).not.toContain("anonymous-access-token");
+  });
+
+  it("catches up from the tracker start in a bounded batch and carries refreshed credentials forward", async () => {
+    const { runtime, client, catchUpStore, store } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+    const refreshed = {
+      ...credential,
+      tokenBundle: JSON.stringify({
+        di_token: "anonymous-refreshed-token",
+        di_refresh_token: "anonymous-refresh-token-2",
+        di_client_id: "anonymous-client-id",
+      }),
+    };
+    vi.mocked(client.fetchActivitiesForDate).mockImplementation(
+      async ({ credential: current, date }) => ({
+        activities: [
+          {
+            providerRecordId: `anonymous-${date}`,
+            activityType: "walking",
+            startedAt: `${date}T00:30:00.000Z`,
+            durationSeconds: 900,
+            distanceMeters: 1_000,
+            averagePaceSecondsPerKilometer: 900,
+            averageHeartRateBpm: 100,
+          },
+        ],
+        refreshedCredential: date === "2026-07-18" ? refreshed : current,
+      }),
+    );
+
+    const result = await runtime.syncActivityHistory({
+      trackerKey: "knee-rehab",
+    });
+
+    expect(result).toMatchObject({
+      provider: "garmin",
+      batch: { from: "2026-07-18", to: "2026-07-22" },
+      targetDate: "2026-07-24",
+      nextCursor: "2026-07-23",
+      complete: false,
+      summary: { succeeded: 5, failed: 0 },
+    });
+    expect(client.fetchActivitiesForDate).toHaveBeenCalledTimes(5);
+    expect(client.fetchActivitiesForDate).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ credential: refreshed, date: "2026-07-19" }),
+    );
+    expect(store.saveRefreshed).toHaveBeenCalledTimes(5);
+    expect(catchUpStore.saveProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cursorDate: "2026-07-23",
+        status: "running",
+      }),
+    );
+  });
+
+  it("uses a two-day overlap after initial coverage is complete", async () => {
+    const { runtime, client, catchUpStore } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+    vi.mocked(catchUpStore.loadProgress).mockResolvedValueOnce({
+      cursorDate: null,
+      overallStatus: "succeeded",
+      states: [
+        "2026-07-18",
+        "2026-07-19",
+        "2026-07-20",
+        "2026-07-21",
+        "2026-07-22",
+        "2026-07-23",
+        "2026-07-24",
+      ].map((date) => ({ date, status: "succeeded" as const })),
+    });
+    vi.mocked(client.fetchActivitiesForDate).mockResolvedValue({
+      activities: [],
+      refreshedCredential: credential,
+    });
+
+    const result = await runtime.syncActivityHistory({
+      trackerKey: "knee-rehab",
+    });
+
+    expect(result.batch).toEqual({
+      from: "2026-07-22",
+      to: "2026-07-24",
+    });
+    expect(result.complete).toBe(true);
+    expect(client.fetchActivitiesForDate).toHaveBeenCalledTimes(3);
+  });
+
+  it("stops on the first failed day and resumes from that date", async () => {
+    const { runtime, client, catchUpStore } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+    vi.mocked(client.fetchActivitiesForDate)
+      .mockResolvedValueOnce({
+        activities: [],
+        refreshedCredential: credential,
+      })
+      .mockRejectedValueOnce(new GarminProviderError("rate_limited"));
+
+    const failed = await runtime.syncActivityHistory({
+      trackerKey: "knee-rehab",
+    });
+
+    expect(failed).toMatchObject({
+      nextCursor: "2026-07-19",
+      complete: false,
+      summary: { succeeded: 1, failed: 1 },
+      days: [
+        { date: "2026-07-18", status: "succeeded" },
+        {
+          date: "2026-07-19",
+          status: "failed",
+          errorCode: "rate_limited",
+        },
+      ],
+    });
+    expect(client.fetchActivitiesForDate).toHaveBeenCalledTimes(2);
+    expect(catchUpStore.saveProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cursorDate: "2026-07-19",
+        status: "failed",
+        lastErrorCode: "rate_limited",
+      }),
+    );
   });
 
   it("preserves the credential and marks a safe state when the Provider rejects it", async () => {

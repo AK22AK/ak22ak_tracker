@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getAuthorizedSession, syncActivities } = vi.hoisted(() => ({
-  getAuthorizedSession: vi.fn(),
-  syncActivities: vi.fn(),
-}));
+const { getAuthorizedSession, syncActivities, syncActivityHistory } =
+  vi.hoisted(() => ({
+    getAuthorizedSession: vi.fn(),
+    syncActivities: vi.fn(),
+    syncActivityHistory: vi.fn(),
+  }));
 
 vi.mock("@/server/auth/session", () => ({ getAuthorizedSession }));
 vi.mock("@/server/integrations/garmin/runtime", async (importOriginal) => {
@@ -13,7 +15,10 @@ vi.mock("@/server/integrations/garmin/runtime", async (importOriginal) => {
     >();
   return {
     ...original,
-    createDefaultGarminRuntime: () => ({ syncActivities }),
+    createDefaultGarminRuntime: () => ({
+      syncActivities,
+      syncActivityHistory,
+    }),
   };
 });
 
@@ -28,6 +33,12 @@ function request(body: unknown) {
   });
 }
 
+function emptyRequest() {
+  return new Request("https://anonymous.invalid/api/sync", {
+    method: "POST",
+  });
+}
+
 const params = Promise.resolve({
   trackerKey: "anonymous-tracker",
   provider: "garmin",
@@ -37,7 +48,50 @@ describe("P3b-2b Garmin single-date sync route", () => {
   beforeEach(() => {
     getAuthorizedSession.mockReset();
     syncActivities.mockReset();
+    syncActivityHistory.mockReset();
     getAuthorizedSession.mockResolvedValue({ user: { id: "1" } });
+  });
+
+  it("starts a bounded server-owned catch-up when the request has no body", async () => {
+    syncActivityHistory.mockResolvedValue({
+      provider: "garmin",
+      batch: { from: "2026-07-18", to: "2026-07-22" },
+      targetDate: "2026-07-24",
+      days: [],
+      summary: {
+        succeeded: 5,
+        failed: 0,
+        created: 1,
+        changed: 0,
+        unchanged: 4,
+      },
+      nextCursor: "2026-07-23",
+      complete: false,
+      lastSucceededDate: "2026-07-22",
+    });
+
+    const response = await POST(emptyRequest(), { params });
+
+    expect(response.status).toBe(200);
+    expect(syncActivityHistory).toHaveBeenCalledWith({
+      trackerKey: "anonymous-tracker",
+    });
+    expect(syncActivities).not.toHaveBeenCalled();
+    expect(await response.json()).toMatchObject({
+      provider: "garmin",
+      nextCursor: "2026-07-23",
+      complete: false,
+    });
+  });
+
+  it("rejects client-supplied catch-up boundaries", async () => {
+    const response = await POST(request({ startedOn: "2026-01-01" }), {
+      params,
+    });
+
+    expect(response.status).toBe(400);
+    expect(syncActivityHistory).not.toHaveBeenCalled();
+    expect(syncActivities).not.toHaveBeenCalled();
   });
 
   it("accepts only an authenticated local date and returns a strict safe result", async () => {

@@ -13,6 +13,7 @@ export const integrationStatusSchema = z.object({
     lastAttemptAt: z.string().datetime().nullable(),
     lastSucceededAt: z.string().datetime().nullable(),
     lastSucceededDate: localDateSchema.nullable(),
+    nextCursor: localDateSchema.nullable().optional(),
     lastErrorCode: z.string().nullable(),
   }),
 });

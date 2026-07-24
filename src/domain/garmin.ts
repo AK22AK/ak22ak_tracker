@@ -31,6 +31,16 @@ export const garminConnectionStatusSchema = z
     verifiedAt: z.string().datetime().nullable(),
     updatedAt: z.string().datetime().nullable(),
     lastErrorCode: garminProviderErrorCodeSchema.nullable(),
+    sync: z
+      .object({
+        status: z.enum(["idle", "running", "succeeded", "failed"]),
+        lastAttemptAt: z.string().datetime().nullable(),
+        lastSucceededDate: localDateSchema.nullable(),
+        nextCursor: localDateSchema.nullable(),
+        lastErrorCode: garminProviderErrorCodeSchema.nullable(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
