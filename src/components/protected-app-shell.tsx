@@ -51,7 +51,7 @@ function TabContent({
   return (
     <UnavailableFeaturePage
       title="趋势"
-      description="训练和反馈仍会正常保存。后续将在这里呈现疼痛、完成率与训练负荷的变化。"
+      description="趋势图还没开放。你可以先在“今日”和“日历”查看记录。"
     />
   );
 }

@@ -112,7 +112,7 @@ describe("calendar visual semantics", () => {
       }),
     ).toBeTruthy();
     expect(
-      screen.getByText("当天为暂停日，基础计划保留，任务状态没有自动改变。"),
+      screen.getByText("当天暂停训练，原任务仍保留为当时的状态。"),
     ).toBeTruthy();
     expect(
       screen.getByRole("button", {

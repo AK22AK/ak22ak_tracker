@@ -143,7 +143,7 @@ function ExternalTrainingCard({
       setMessage(
         result.association.status === "unrelated"
           ? "已记录为与计划无关"
-          : "关联已保存；任务完成状态没有改变",
+          : "已关联到任务",
       );
     } catch (error) {
       setMessage(
@@ -260,7 +260,7 @@ function ExternalTrainingCard({
           </button>
         </div>
         <p className="external-association-hint">
-          关联只归类训练来源，不会替你勾选任务完成。
+          确认后，这条训练会显示在所选任务下。
         </p>
         {message && <p role="status">{message}</p>}
       </div>

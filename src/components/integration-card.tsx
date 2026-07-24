@@ -68,7 +68,7 @@ export function IntegrationCard({
       if (!response.ok) throw new Error("credential_failed");
       setStatus(integrationStatusSchema.parse(body));
       setApiKey("");
-      setMessage("只读连接已验证并安全保存。");
+      setMessage(`${definition.displayName}已连接。`);
     } catch {
       setMessage("连接验证失败。原有凭证未被覆盖，请检查后重试。");
     } finally {
@@ -160,8 +160,8 @@ export function IntegrationCard({
         }));
         setMessage(
           reachedTarget
-            ? `追赶同步完成：成功 ${succeeded} 天，失败 ${failed} 天。`
-            : `本轮已处理：成功 ${succeeded} 天，失败 ${failed} 天；请继续同步。`,
+            ? `已同步到今天：成功 ${succeeded} 天，失败 ${failed} 天。`
+            : `本次已同步：成功 ${succeeded} 天，失败 ${failed} 天。请继续同步。`,
         );
       }
     } catch {
@@ -169,7 +169,7 @@ export function IntegrationCard({
         ...current,
         sync: { ...current.sync, status: "failed" },
       }));
-      setMessage("同步失败，但不会影响今日计划、反馈或手工记录。");
+      setMessage("同步没有完成，请稍后重试。");
     } finally {
       setBusy(null);
     }
@@ -179,7 +179,7 @@ export function IntegrationCard({
     <section className="feedback-card integration-card">
       <div className="integration-heading">
         <div>
-          <p className="eyebrow">只读数据源</p>
+          <p className="eyebrow">训练记录</p>
           <h2>{definition.displayName}</h2>
         </div>
         <span
@@ -202,7 +202,9 @@ export function IntegrationCard({
           value={apiKey}
           autoComplete="off"
           onChange={(event) => setApiKey(event.target.value)}
-          placeholder={status.maskedKey ?? "输入轮换后的 Key"}
+          placeholder={
+            status.maskedKey ?? `输入${definition.displayName} API Key`
+          }
         />
         <button type="submit" disabled={!apiKey || busy !== null}>
           {busy === "credential" ? "正在验证…" : "验证并保存"}
@@ -215,7 +217,7 @@ export function IntegrationCard({
           disabled={!status.configured || busy !== null}
           onClick={() => void syncToToday()}
         >
-          {busy === "sync" ? "正在追赶同步…" : "追赶同步至今天"}
+          {busy === "sync" ? "正在同步…" : "同步到今天"}
         </button>
         <p>
           最近成功日期：

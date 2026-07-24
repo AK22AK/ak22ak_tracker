@@ -371,7 +371,7 @@ describe("today background refresh", () => {
 
     expect(await screen.findByText("1 条需要人工处理")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "立即重试" })).toBeNull();
-    expect(await within(task).findByText(/本机记录需要人工处理/)).toBeTruthy();
+    expect(await within(task).findByText(/本机记录需要你处理/)).toBeTruthy();
     expect(within(task).queryByText(/使用上方重试入口/)).toBeNull();
   });
 
@@ -513,7 +513,7 @@ describe("today background refresh", () => {
     fireEvent.change(screen.getByLabelText("实际训练与主观感受"), {
       target: { value: "Draft survives context refresh" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "保存今天的执行方式" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存今天的安排" }));
 
     await waitFor(() =>
       expect(
@@ -645,7 +645,7 @@ describe("today background refresh", () => {
     );
 
     expect(checkbox.checked).toBe(false);
-    expect(screen.getByText("计划处方")).toBeTruthy();
+    expect(screen.getByText("训练内容")).toBeTruthy();
     expect(commandHarness.enqueue).not.toHaveBeenCalled();
 
     fireEvent.click(
@@ -655,7 +655,7 @@ describe("today background refresh", () => {
     await waitFor(() =>
       expect(commandHarness.enqueue).toHaveBeenCalledTimes(1),
     );
-    expect(screen.queryByText("计划处方")).toBeNull();
+    expect(screen.queryByText("训练内容")).toBeNull();
   });
 
   it("renders completed and skipped tasks as distinct visual states", async () => {

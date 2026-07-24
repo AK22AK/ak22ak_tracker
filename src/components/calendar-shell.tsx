@@ -202,7 +202,7 @@ function CalendarDayUnavailable({ dashboard }: { dashboard: TodayDashboard }) {
   return (
     <div className="calendar-detail-state empty">
       <strong>当天没有生效计划</strong>
-      <p>可查看相邻日期，或在设置中确认当前计划版本。</p>
+      <p>可以查看相邻日期，确认当天是否有训练安排。</p>
     </div>
   );
 }
@@ -300,7 +300,7 @@ export function CalendarShell({
       {writesDisabled ? (
         <section className="offline-cache-notice" role="status">
           <strong>
-            {readOnlyOffline ? "离线缓存 · 仅供查看" : "当前离线 · 仅供查看"}
+            {readOnlyOffline ? "本机内容 · 仅供查看" : "当前离线 · 仅供查看"}
           </strong>
           <span>
             最近更新：
@@ -341,12 +341,12 @@ export function CalendarShell({
         </div>
         {monthLoading && (
           <p className="calendar-month-status" role="status">
-            正在更新月摘要…
+            正在更新日历…
           </p>
         )}
         {monthError && !monthLoading && (
           <div className="calendar-month-status error" role="alert">
-            <span>月摘要暂时不可用</span>
+            <span>这个月的记录暂时无法加载</span>
             <button type="button" onClick={onRetryMonth}>
               重试
             </button>
@@ -491,7 +491,7 @@ export function CalendarShell({
             <>
               {summaries.get(selectedDate)?.paused ? (
                 <div className="calendar-pause-notice" role="status">
-                  当天为暂停日，基础计划保留，任务状态没有自动改变。
+                  当天暂停训练，原任务仍保留为当时的状态。
                 </div>
               ) : null}
               <div className="calendar-day-overview" aria-label="当天概览">
@@ -516,7 +516,7 @@ export function CalendarShell({
               <div className="calendar-task-list">
                 <div className="calendar-subsection-heading">
                   <div>
-                    <p className="eyebrow">计划与执行</p>
+                    <p className="eyebrow">训练安排</p>
                     <h3>当天任务</h3>
                   </div>
                   <span className="count-badge">{dashboard.tasks.length}</span>

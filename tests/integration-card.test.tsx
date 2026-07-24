@@ -165,7 +165,7 @@ describe("provider-neutral integration card", () => {
 
     const keyInput = screen.getByLabelText("更新 API Key") as HTMLInputElement;
     fireEvent.change(keyInput, { target: { value: "anonymous-draft-key" } });
-    fireEvent.click(screen.getByRole("button", { name: "追赶同步至今天" }));
+    fireEvent.click(screen.getByRole("button", { name: "同步到今天" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     await waitFor(() =>
@@ -227,7 +227,7 @@ describe("provider-neutral integration card", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "追赶同步至今天" }));
+    fireEvent.click(screen.getByRole("button", { name: "同步到今天" }));
 
     await waitFor(() =>
       expect(screen.getByText(new RegExp(text))).toBeTruthy(),

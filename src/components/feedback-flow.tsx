@@ -344,18 +344,18 @@ export function FeedbackFlowClient({
           >
             <p className="eyebrow">身体反馈</p>
             <h1 id="feedback-result-title" ref={resultHeadingRef} tabIndex={-1}>
-              {resultConfirmed ? "反馈已同步" : "反馈已保存在本机"}
+              {resultConfirmed ? "反馈已保存" : "反馈已保存在本机"}
             </h1>
             {displayedSafetyLevel ? (
               <StatusPill
                 tone={safetyTone(displayedSafetyLevel)}
                 icon={displayedSafetyLevel === "green" ? "✓" : "!"}
               >
-                {resultConfirmed ? "服务端确认" : "本机预判"}
+                {resultConfirmed ? "已确认" : "本机预估"}
               </StatusPill>
             ) : (
               <StatusPill tone="attention" icon="!">
-                等待服务端安全判断
+                等待联网确认
               </StatusPill>
             )}
             <div className="feedback-result-level">
@@ -367,18 +367,18 @@ export function FeedbackFlowClient({
               <p>
                 {displayedSafetyLevel
                   ? safetyGuidance(displayedSafetyLevel)
-                  : "本机没有与当前版本匹配的安全规则。请先停止升级训练，联网后获取服务端权威判断。"}
+                  : "当前无法预估安全级别。先不要增加训练量，联网保存后再查看结果。"}
               </p>
             </div>
             <p className="feedback-policy-note">
               {resultConfirmed
-                ? "服务端已按实际发生时刻重新校验安全策略。"
+                ? "已根据反馈发生时间确认安全级别。"
                 : resultCommand?.status === "syncing"
-                  ? "当前记录正在同步；服务端结果将作为最终判断。"
+                  ? "正在保存，完成后以页面结果为准。"
                   : resultCommand?.status === "waiting_auth" ||
                       resultCommand?.status === "needs_attention"
-                    ? "当前记录仍在本机，需要联网后处理。原始反馈不会被自动丢弃。"
-                    : "当前记录尚未由服务端确认；联网后会自动同步。"}
+                    ? "当前记录仍在本机，需要联网后处理。这条反馈会继续保留。"
+                    : "当前记录尚未确认，联网后会自动保存。"}
             </p>
             <div className="feedback-result-actions">
               <button
@@ -531,7 +531,7 @@ export function FeedbackFlowClient({
                   <span>4</span>
                   <div>
                     <h2>需要留意的症状</h2>
-                    <p>已选异常会持续保持展开并参与安全判断。</p>
+                    <p>勾选现在出现的情况。</p>
                   </div>
                 </div>
                 <div className="feedback-symptom-list">
@@ -586,14 +586,14 @@ export function FeedbackFlowClient({
                 {clientSafetyLevel ? (
                   <>
                     <StatusPill tone={safetyTone(clientSafetyLevel)}>
-                      本机预判：{safetyLabel(clientSafetyLevel)}
+                      当前预估：{safetyLabel(clientSafetyLevel)}
                     </StatusPill>
-                    <p>联网后由服务端按实际生效规则给出权威结果。</p>
+                    <p>保存后确认；结果出来前不要据此增加训练量。</p>
                   </>
                 ) : (
                   <>
-                    <StatusPill tone="attention">等待安全规则</StatusPill>
-                    <p>仍可保存原始反馈；联网前不会显示未经依据的绿灯。</p>
+                    <StatusPill tone="attention">暂无法预估</StatusPill>
+                    <p>仍可保存反馈；联网前不会显示未经确认的绿灯。</p>
                   </>
                 )}
               </section>

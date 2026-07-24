@@ -139,7 +139,7 @@ describe("P2 offline snapshot UI", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
     renderPrivate(<TodayClient />);
 
-    expect(await screen.findByText("离线缓存")).toBeTruthy();
+    expect(await screen.findByText("本机内容")).toBeTruthy();
     expect(screen.getByText("Anonymous offline task")).toBeTruthy();
     expect(
       (
@@ -168,7 +168,7 @@ describe("P2 offline snapshot UI", () => {
     renderPrivate(<TodayClient />, "10002");
 
     expect((await screen.findByRole("alert")).textContent).toMatch(
-      /没有可用缓存|无法加载/,
+      /本机没有可用内容|无法加载/,
     );
     expect(screen.queryByText("Anonymous offline task")).toBeNull();
     await waitFor(async () =>
@@ -216,7 +216,7 @@ describe("P2 offline snapshot UI", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
     renderPrivate(<CalendarClient initialDate="2026-07-21" />);
 
-    expect(await screen.findByText("离线缓存 · 仅供查看")).toBeTruthy();
+    expect(await screen.findByText("本机内容 · 仅供查看")).toBeTruthy();
     expect(screen.getByText("Anonymous offline task")).toBeTruthy();
     expect(
       (

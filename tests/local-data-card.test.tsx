@@ -37,7 +37,7 @@ describe("local private data controls (P0-08/P2a)", () => {
     await waitFor(() =>
       expect(clearCurrentUserClientState).toHaveBeenCalledOnce(),
     );
-    expect(await screen.findByText("本机私人缓存已清除")).toBeTruthy();
+    expect(await screen.findByText("本机数据已清除")).toBeTruthy();
   });
 
   it("requires explicit confirmation before discarding pending commands", async () => {

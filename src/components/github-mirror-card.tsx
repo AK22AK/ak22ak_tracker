@@ -11,12 +11,12 @@ import {
 } from "@/domain/github-mirror";
 
 function statusLabel(status: GitHubMirrorStatus) {
-  if (status.configuration === "not_configured") return "未配置";
-  if (status.configuration === "invalid_configuration") return "配置需处理";
+  if (status.configuration === "not_configured") return "未设置";
+  if (status.configuration === "invalid_configuration") return "设置有误";
   if (status.permissionError || status.failedCount > 0) return "需要处理";
-  if (status.processingCount > 0) return "同步中";
-  if (status.pendingCount > 0) return "等待同步";
-  return "运行正常";
+  if (status.processingCount > 0) return "备份中";
+  if (status.pendingCount > 0) return "等待备份";
+  return "已就绪";
 }
 
 export function GitHubMirrorCard({
@@ -49,30 +49,30 @@ export function GitHubMirrorCard({
       queryClient.setQueryData(statusQueryKey, parsed.status);
       setMessage(
         parsed.result.status === "not_configured"
-          ? "尚未配置私人数据镜像。"
+          ? "尚未设置 GitHub 备份。"
           : parsed.result.status === "invalid_configuration"
-            ? "服务器镜像配置无效，需要处理后再同步。"
+            ? "GitHub 备份设置有误，请检查后重试。"
             : parsed.result.status === "unconfirmed"
-              ? "本轮结果尚未确认，系统会保留记录并重新核对。"
+              ? "这次备份尚未确认，记录会保留并稍后重试。"
               : parsed.result.failed > 0
-                ? "本轮未能完成，已保留记录供后续处理。"
+                ? "部分记录没有备份成功，请稍后处理。"
                 : parsed.result.processed > 0
-                  ? `本轮已镜像 ${parsed.result.succeeded} 条。`
-                  : "当前没有到期的待镜像记录。",
+                  ? `本次已备份 ${parsed.result.succeeded} 条。`
+                  : "当前没有待备份记录。",
       );
     } catch {
-      setMessage("镜像服务暂时不可用，不影响已保存的训练和反馈。可稍后重试。");
+      setMessage("GitHub 备份暂时不可用，请稍后重试。");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <section className="feedback-card mirror-card" aria-label="私人数据镜像">
+    <section className="feedback-card mirror-card" aria-label="GitHub 数据备份">
       <div className="integration-heading">
         <div>
-          <p className="eyebrow">数据归档</p>
-          <h2>GitHub 私人镜像</h2>
+          <p className="eyebrow">数据备份</p>
+          <h2>GitHub 私人仓库</h2>
         </div>
         <span
           className={
@@ -87,20 +87,20 @@ export function GitHubMirrorCard({
         </span>
       </div>
       <p className="integration-description">
-        将已保存的结构化记录异步归档到私人数据仓库。镜像失败不会影响今日计划、训练或反馈。
+        将训练和反馈备份到你的私人 GitHub 仓库。
       </p>
       <div className="mirror-summary">
-        <strong>待镜像 {status.pendingCount} 条</strong>
-        <span>处理中 {status.processingCount} 条</span>
+        <strong>待备份 {status.pendingCount} 条</strong>
+        <span>备份中 {status.processingCount} 条</span>
         <span>需要处理 {status.failedCount} 条</span>
       </div>
       {status.configuration === "invalid_configuration" ? (
         <p role="alert" className="task-save-message error">
-          服务器镜像配置无效，需要检查环境变量后再同步。
+          GitHub 备份设置有误，请检查设置后重试。
         </p>
       ) : status.permissionError ? (
         <p role="alert" className="task-save-message error">
-          私人数据仓库权限需要处理，请检查服务端配置。
+          无法写入私人仓库，请检查仓库访问权限。
         </p>
       ) : status.failedCount > 0 ? (
         <p role="alert" className="task-save-message error">

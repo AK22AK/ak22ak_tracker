@@ -94,14 +94,14 @@ describe("execution context card", () => {
     );
 
     expect(screen.getByText("正常计划")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "安排出差或受限模式" }));
+    fireEvent.click(screen.getByRole("button", { name: "安排出差或器械受限" }));
     fireEvent.change(screen.getByLabelText("开始日期"), {
       target: { value: "2026-07-20" },
     });
     fireEvent.change(screen.getByLabelText("结束日期"), {
       target: { value: "2026-07-24" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "保存执行上下文" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存这段安排" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     const [url, init] = fetchMock.mock.calls[0]!;
@@ -145,7 +145,7 @@ describe("execution context card", () => {
       />,
     );
 
-    expect(screen.getByText("基础计划 v3 保持不变")).toBeTruthy();
+    expect(screen.queryByText(/当前计划 v3/)).toBeNull();
     fireEvent.change(screen.getByLabelText("可用时间（分钟）"), {
       target: { value: "20" },
     });
@@ -156,7 +156,7 @@ describe("execution context card", () => {
     fireEvent.click(
       screen.getByRole("radio", { name: /Anonymous private option/ }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "保存今天的执行方式" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存今天的安排" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     const [url, init] = fetchMock.mock.calls[0]!;
@@ -230,7 +230,7 @@ describe("execution context card", () => {
     fireEvent.change(screen.getByLabelText("当天条件补充"), {
       target: { value: "Anonymous draft" },
     });
-    const save = screen.getByRole("button", { name: "保存今天的执行方式" });
+    const save = screen.getByRole("button", { name: "保存今天的安排" });
     fireEvent.click(save);
 
     expect(await screen.findByText("尚未保存，请重试")).toBeTruthy();

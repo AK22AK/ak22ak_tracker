@@ -223,7 +223,7 @@ export function PwaUpdatePrompt({
         <p>
           {pendingCommandCount > 0
             ? `更新不会删除 ${pendingCommandCount} 条仅保存在本机的记录。`
-            : "更新会重新载入应用，但不会清除本机离线数据。"}
+            : "更新会重新打开应用，但不会清除本机记录。"}
         </p>
         <small>如正在编辑，请先完成当前内容或选择稍后。</small>
       </div>

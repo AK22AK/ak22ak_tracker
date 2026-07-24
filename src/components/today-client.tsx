@@ -191,9 +191,11 @@ export function TodayClient() {
       <main className="app-shell page-frame today-page">
         <section className="surface-card today-error-card" role="alert">
           <h1>
-            {query.isError ? "今日数据暂时无法加载" : "当前离线且没有可用缓存"}
+            {query.isError
+              ? "今日内容暂时无法加载"
+              : "当前离线且本机没有可用内容"}
           </h1>
-          <p>你的任务和草稿不会因此改变；联网后可以重新加载。</p>
+          <p>请检查网络后重试。离线时可以查看最近保存在本机的内容。</p>
           <button
             className="primary-button"
             type="button"

@@ -277,7 +277,7 @@ describe("feedback full-screen flow", () => {
         );
       }
 
-      expect(screen.getByText(`本机预判：${label}`)).toBeTruthy();
+      expect(screen.getByText(`当前预估：${label}`)).toBeTruthy();
       fireEvent.click(screen.getByRole("button", { name: "保存反馈" }));
 
       expect(
@@ -325,9 +325,9 @@ describe("feedback full-screen flow", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "反馈已同步" }),
+      await screen.findByRole("heading", { name: "反馈已保存" }),
     ).toBeTruthy();
-    expect(screen.getByText("服务端确认")).toBeTruthy();
+    expect(screen.getByText("已确认")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "绿灯" })).toBeTruthy();
   });
 

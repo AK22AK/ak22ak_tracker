@@ -15,9 +15,9 @@ export function LocalDataCard() {
   return (
     <section className="feedback-card local-data-card" aria-label="本机数据">
       <p className="eyebrow">隐私与离线</p>
-      <h2>本机缓存</h2>
+      <h2>本机保存的数据</h2>
       <p>
-        保存当前账号的白名单快照、安全规则和待同步任务/反馈。清除后不会删除云端数据。
+        包括离线可查看的计划，以及尚未同步的任务和反馈。清除后不会删除已经上传的数据。
       </p>
       <Link className="secondary-button" href="/settings/pending">
         查看待同步记录{commands.length > 0 ? `（${commands.length}）` : ""}
@@ -43,7 +43,7 @@ export function LocalDataCard() {
           try {
             await clearCurrentUserClientState();
             setConfirming(false);
-            setMessage("本机私人缓存已清除");
+            setMessage("本机数据已清除");
           } catch {
             setMessage("清除失败，请关闭并重新打开应用后再试");
           } finally {

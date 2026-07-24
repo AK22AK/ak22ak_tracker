@@ -476,7 +476,7 @@
     const tasks = safeTasks(day);
     const list = element("div", "task-list");
     if (tasks.length === 0) {
-      list.append(element("p", "", "这一天没有缓存到训练任务。"));
+      list.append(element("p", "", "这一天没有保存在本机的训练任务。"));
       return list;
     }
     const labels = {
@@ -561,7 +561,7 @@
       element(
         "p",
         "",
-        count > 0 ? `已缓存 ${count} 次反馈。` : "这一天没有缓存到反馈。",
+        count > 0 ? `这一天有 ${count} 次反馈。` : "这一天没有反馈记录。",
       ),
     );
     if (localCount > 0) {
@@ -654,11 +654,7 @@
     section.append(
       element("p", "eyebrow", "身体反馈"),
       element("h2", "", "记录身体反馈"),
-      element(
-        "p",
-        "",
-        "反馈会先完整保存在本机；联网后由服务器按权威安全策略判断。",
-      ),
+      element("p", "", "反馈会先完整保存在本机，联网保存后再确认安全级别。"),
       back,
     );
     const form = element("form", "offline-feedback-form");
@@ -829,7 +825,7 @@
       element(
         "strong",
         "offline-feedback-result-status",
-        "安全级别等待联网后由服务器判断",
+        "安全级别等待联网确认",
       ),
       element(
         "p",
@@ -898,12 +894,12 @@
     const row = rowFor("today", today);
     const data = validTodayData(row, today);
     savedAtLabel.textContent =
-      row && data ? formatSavedAt(row.savedAt) : "没有当前日期的有效缓存";
+      row && data ? formatSavedAt(row.savedAt) : "本机没有今天的内容";
     if (!state.identity || !state.trackerKey || !data) {
       replaceContent(
         emptyState(
-          "当前没有可用的今日缓存",
-          "请在联网并完成身份验证后打开今日页，让设备保存一份只读快照。",
+          "本机没有可查看的今日内容",
+          "请联网登录并打开一次今日页，以便之后离线查看。",
         ),
       );
       return;
@@ -980,7 +976,7 @@
     if (row && data) heading.append(badge("离线详情"));
     section.append(heading);
     if (!data) {
-      section.append(element("p", "", "这一天没有有效的本机详情缓存。"));
+      section.append(element("p", "", "本机没有这一天的详细记录。"));
       return section;
     }
     const projectedDay = projectDay(data.day, date);
@@ -1001,7 +997,7 @@
     const row = rowFor("calendar-month", state.month);
     const data = validCalendarData(row, state.month);
     savedAtLabel.textContent =
-      row && data ? formatSavedAt(row.savedAt) : "当前月份没有有效缓存";
+      row && data ? formatSavedAt(row.savedAt) : "本机没有这个月的记录";
 
     const calendar = element("section", "surface-card");
     const toolbar = element("div", "month-toolbar");
@@ -1037,6 +1033,16 @@
       weekdays.append(element("span", "", day));
     }
     calendar.append(weekdays);
+
+    if (!data) {
+      calendar.append(
+        element(
+          "p",
+          "empty-state-copy",
+          "本机没有可查看的本月记录。请联网打开一次日历后再试。",
+        ),
+      );
+    }
 
     const summaries = new Map();
     if (data) {
@@ -1080,7 +1086,7 @@
       button.type = "button";
       button.setAttribute(
         "aria-label",
-        `${date}${summary ? `，${numberValue(summary.taskCount) ?? 0} 项任务${summary.localPendingCount ? `，${summary.localPendingCount} 条本机待同步` : ""}` : "，无缓存摘要"}`,
+        `${date}${summary ? `，${numberValue(summary.taskCount) ?? 0} 项任务${summary.localPendingCount ? `，${summary.localPendingCount} 条本机待同步` : ""}` : "，无本机记录"}`,
       );
       if (summary?.localPendingCount) {
         button.append(element("span", "local-pending-marker", "本"));

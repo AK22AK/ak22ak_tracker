@@ -16,7 +16,7 @@ const trackerKey = "knee-rehab";
 const xunjiDefinition = {
   provider: "xunji",
   displayName: "训记",
-  description: "只读同步力量训练动作、重量、组次与训练备注。",
+  description: "同步力量训练的动作、重量、组次和备注。",
 } as const;
 
 function SettingsSectionState({
@@ -33,7 +33,7 @@ function SettingsSectionState({
       className="feedback-card page-section-loading"
       role={error ? "alert" : "status"}
     >
-      <p>{error ? `${label}暂时无法加载。` : `正在加载${label}…`}</p>
+      <p>{error ? `${label}暂时无法加载。` : `正在加载：${label}…`}</p>
       {error ? (
         <button className="secondary-button" type="button" onClick={onRetry}>
           重试
@@ -81,7 +81,7 @@ export function SettingsClient() {
         <GitHubMirrorCard initialStatus={mirrorQuery.data} />
       ) : (
         <SettingsSectionState
-          label="私人数据镜像"
+          label="GitHub 数据备份"
           error={mirrorQuery.isError}
           onRetry={() => void mirrorQuery.refetch()}
         />

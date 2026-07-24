@@ -201,19 +201,17 @@ function TaskCard({
     if (confirmedCommandIds?.includes(commandId)) {
       pendingCommand.current = null;
       setSaveFailed(false);
-      setSaveMessage(
-        task.status === "completed" ? "已同步并完成" : "已同步到服务器",
-      );
+      setSaveMessage(task.status === "completed" ? "已保存并完成" : "已保存");
       return;
     }
     const command = commands.find((item) => item.id === commandId);
     if (!command) return;
     if (command.status === "needs_attention") {
       setSaveFailed(true);
-      setSaveMessage("本机记录需要人工处理；自动重试已停止，记录不会丢失");
+      setSaveMessage("本机记录需要你处理，已停止自动重试");
     } else if (command.status === "waiting_auth") {
       setSaveFailed(true);
-      setSaveMessage("本机记录等待重新验证；可使用上方重试入口");
+      setSaveMessage("请重新登录后重试，本机记录仍保留");
     } else if (command.status === "syncing") {
       setSaveFailed(false);
       setSaveMessage("已保存在本机，正在同步");
@@ -322,7 +320,7 @@ function TaskCard({
       {expanded ? (
         <div className="task-card-details" id={detailsId}>
           <div className="task-detail-block">
-            <h3>计划处方</h3>
+            <h3>训练内容</h3>
             {task.description ? (
               <p className="task-description">{task.description}</p>
             ) : null}
@@ -691,7 +689,7 @@ export function DashboardShell({
 
       {writesDisabled ? (
         <section className="offline-cache-notice" role="status">
-          <strong>{readOnlyOffline ? "离线缓存" : "当前离线"}</strong>
+          <strong>{readOnlyOffline ? "本机内容" : "当前离线"}</strong>
           <span>
             最近更新：
             {offlineSavedAt
@@ -727,9 +725,7 @@ export function DashboardShell({
                     : `${pendingSummary.localOnly} 条仅保存在本机`}
           </strong>
           {pendingSummary.headStatus === "needs_attention" ? (
-            <span>
-              队首记录存在冲突或目标已变化，需要人工处理；自动重试已停止，记录不会丢失。
-            </span>
+            <span>最早一条记录需要你处理，后面的记录会暂时等待。</span>
           ) : null}
           {pendingSummary.unclassifiedFeedback > 0 ? (
             <span>身体反馈尚未完成安全判断，请先按保守原则处理。</span>
@@ -781,9 +777,7 @@ export function DashboardShell({
               </StatusPill>
             }
           />
-          <p>
-            基础计划尚未改变。请先查看中断摘要和未来日期差异，再决定按原计划继续或顺延。
-          </p>
+          <p>查看中断情况和后续日期变化，再决定按原计划继续或顺延。</p>
           {writesDisabled ? (
             <span className="secondary-button" aria-disabled="true">
               联网后处理接续评估
@@ -824,7 +818,7 @@ export function DashboardShell({
         />
         {missing ? (
           <p className="empty-state-copy">
-            认证和数据库已连接，等待导入第一份私人计划。
+            还没有训练计划。完成设置后，今天的安排会显示在这里。
           </p>
         ) : null}
         {notStarted ? (
@@ -932,7 +926,7 @@ export function DashboardShell({
           </div>
         ) : (
           <p className="empty-state-copy">
-            同步记录和关联建议会出现在这里；来源关联不会自动完成任务。
+            有待确认的训练记录时，会显示在这里。
           </p>
         )}
         {unassignedRecords.length > 0 ? (
@@ -949,8 +943,6 @@ export function DashboardShell({
 
       <footer className="today-technical-status" aria-label="应用状态">
         <span>{online ? "网络可用" : "当前离线"}</span>
-        <span aria-hidden="true">·</span>
-        <div>外部集成状态请在“设置”查看</div>
       </footer>
     </main>
   );

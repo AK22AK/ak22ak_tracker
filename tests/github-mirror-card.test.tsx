@@ -46,7 +46,7 @@ afterEach(() => {
 describe("GitHub mirror status card", () => {
   it("shows operational counts without technical payloads", () => {
     renderMirrorCard();
-    expect(screen.getByText("待镜像 2 条")).toBeTruthy();
+    expect(screen.getByText("待备份 2 条")).toBeTruthy();
     expect(
       (screen.getByRole("button", { name: "立即同步" }) as HTMLButtonElement)
         .disabled,
@@ -82,8 +82,8 @@ describe("GitHub mirror status card", () => {
       configuration: "invalid_configuration",
       pendingCount: 0,
     });
-    expect(screen.getByText("配置需处理")).toBeTruthy();
-    expect(screen.getByRole("alert").textContent).toContain("配置无效");
+    expect(screen.getByText("设置有误")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("设置有误");
     expect(
       (screen.getByRole("button", { name: "立即同步" }) as HTMLButtonElement)
         .disabled,
@@ -113,7 +113,7 @@ describe("GitHub mirror status card", () => {
     renderMirrorCard();
 
     fireEvent.click(screen.getByRole("button", { name: "立即同步" }));
-    await waitFor(() => expect(screen.getByText("待镜像 0 条")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("待备份 0 条")).toBeTruthy());
     expect(fetchMock).toHaveBeenCalledWith("/api/mirror/sync", {
       method: "POST",
     });
@@ -141,7 +141,7 @@ describe("GitHub mirror status card", () => {
     await waitFor(() =>
       expect(screen.getByRole("status").textContent).toContain("尚未确认"),
     );
-    expect(screen.queryByText(/已镜像 0 条/)).toBeNull();
+    expect(screen.queryByText(/已备份 0 条/)).toBeNull();
   });
 
   it("observes the same exact status cache updated by app recovery", async () => {
@@ -156,6 +156,6 @@ describe("GitHub mirror status card", () => {
       lastSucceededAt: "2026-07-23T05:00:00.000Z",
     });
 
-    await waitFor(() => expect(screen.getByText("待镜像 0 条")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("待备份 0 条")).toBeTruthy());
   });
 });

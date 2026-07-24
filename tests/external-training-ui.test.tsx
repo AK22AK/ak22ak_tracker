@@ -245,9 +245,9 @@ describe("external training association UI", () => {
     expect(taskCheckbox.checked).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "关联到此任务" }));
 
-    expect(
-      await screen.findByText("关联已保存；任务完成状态没有改变"),
-    ).toBeTruthy();
+    expect((await screen.findByRole("status", { name: "" })).textContent).toBe(
+      "已关联到任务",
+    );
     expect(taskCheckbox.checked).toBe(false);
     expect(
       (screen.getByLabelText("实际训练与主观感受") as HTMLTextAreaElement)
@@ -269,7 +269,7 @@ describe("external training association UI", () => {
     expect(
       fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH"),
     ).toBe(false);
-    await waitFor(() => expect(screen.getByText(/已关联/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("已关联到任务")).toBeTruthy());
   });
 
   it("shows a reviewed link as needing confirmation without completing the task", async () => {

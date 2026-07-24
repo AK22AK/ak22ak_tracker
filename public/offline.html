@@ -11,7 +11,7 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
     />
-    <title>AK Tracker · 离线缓存</title>
+    <title>AK Tracker · 离线模式</title>
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icons/icon-192.png" />
     <link rel="stylesheet" href="/offline.css" />
@@ -23,22 +23,22 @@
       <header class="offline-header">
         <div>
           <p class="eyebrow">AK Tracker</p>
-          <h1 id="page-title">离线缓存</h1>
+          <h1 id="page-title">离线模式</h1>
         </div>
         <span class="offline-pill" role="status">当前离线</span>
       </header>
 
       <section class="offline-notice" aria-labelledby="offline-notice-title">
-        <strong id="offline-notice-title">离线缓存 · 今日记录可保存</strong>
-        <span id="offline-saved-at">正在读取本机缓存…</span>
+        <strong id="offline-notice-title">本机内容 · 今日记录可保存</strong>
+        <span id="offline-saved-at">正在读取本机内容…</span>
         <small
-          >今日任务和身体反馈可先保存在本机；其他内容仅供查看，联网后由受保护应用同步。</small
+          >今日任务和身体反馈可先保存在本机，联网后自动同步；其他内容仅供查看。</small
         >
       </section>
 
       <main id="offline-content" tabindex="-1" aria-live="polite">
         <section class="surface-card loading-state" role="status">
-          正在读取本机缓存…
+          正在读取本机内容…
         </section>
       </main>
 
@@ -53,6 +53,6 @@
         </button>
       </nav>
     </div>
-    <noscript>离线缓存需要启用 JavaScript。</noscript>
+    <noscript>离线模式需要启用 JavaScript。</noscript>
   </body>
 </html>

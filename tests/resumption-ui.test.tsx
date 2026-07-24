@@ -110,7 +110,7 @@ describe("resumption assessment UI", () => {
     expect(await screen.findByText("确认中断后怎样继续")).toBeTruthy();
     expect(
       screen.getByText(
-        "暂停日不会被当作普通漏练；受限期间选择的备选训练也不会自动标记基础任务完成。",
+        "暂停和受限日期不会计为漏练，替代训练也不会直接勾选原任务。",
       ),
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: /顺延后续安排/ }));
@@ -216,7 +216,9 @@ describe("resumption assessment UI", () => {
       name: /顺延后续安排/,
     });
     expect((shift as HTMLInputElement).disabled).toBe(true);
-    expect(screen.getByText(/已有后续计划版本，暂时不能顺延/)).toBeTruthy();
+    expect(
+      screen.getByText(/后面的训练已有单独安排，暂时不能顺延/),
+    ).toBeTruthy();
     expect(
       (
         screen.getByRole("radio", {

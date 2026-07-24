@@ -18,13 +18,13 @@ test("pending-command status and confirmation fit a mobile viewport", async ({
             <a class="text-button" href="/settings">返回设置</a>
           </header>
           <section class="surface-card pending-command-intro">
-            <div><strong>2 条本机记录</strong><p>系统严格按创建顺序处理；队首未解决时，后续记录不会越过它。</p></div>
+            <div><strong>2 条本机记录</strong><p>最早一条处理完成后，后面的记录会继续同步。</p></div>
             <span class="status-pill" data-tone="success">当前在线</span>
           </section>
           <section class="pending-command-list" aria-label="待同步队列">
             <article class="surface-card pending-command-card">
               <div class="pending-command-card-heading">
-                <div><span class="queue-position">队首</span><h2>任务更新</h2></div>
+                <div><span class="queue-position">最早一条</span><h2>任务更新</h2></div>
                 <span class="status-pill" data-tone="attention">需要人工处理</span>
               </div>
               <dl class="pending-command-facts">
@@ -32,10 +32,10 @@ test("pending-command status and confirmation fit a mobile viewport", async ({
                 <div><dt>发生时间</dt><dd>18:00</dd></div>
               </dl>
               <p class="pending-command-summary">标记任务完成</p>
-              <p class="pending-command-explanation">服务器中的记录已变化，需要人工决定如何处理这条本机记录。</p>
+              <p class="pending-command-explanation">这条记录暂时无法自动同步，需要你决定如何处理。</p>
               <div class="pending-command-confirmation" role="alert">
-                <strong>确认放弃队首本机记录？</strong>
-                <p>系统会先在线确认服务器状态，再移除这一条；后续记录不会被删除。</p>
+                <strong>确认放弃这条本机记录？</strong>
+                <p>确认当前记录后再移除这一条；后续记录不会被删除。</p>
                 <div>
                   <button class="secondary-button" type="button">取消</button>
                   <button class="primary-button" type="button">确认放弃</button>
@@ -44,10 +44,10 @@ test("pending-command status and confirmation fit a mobile viewport", async ({
             </article>
             <article class="surface-card pending-command-card">
               <div class="pending-command-card-heading">
-                <div><span class="queue-position">被队首阻塞</span><h2>身体反馈</h2></div>
+                <div><span class="queue-position">等待前一条</span><h2>身体反馈</h2></div>
                 <span class="status-pill" data-tone="warning">等待重试</span>
               </div>
-              <p class="pending-command-summary">训练后反馈 · 本机预判绿灯</p>
+              <p class="pending-command-summary">训练后反馈 · 本机预估绿灯</p>
             </article>
           </section>
         </main>

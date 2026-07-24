@@ -72,7 +72,7 @@ function safetyReason(reason: ExecutionContextToday["safety"]["reason"]) {
   if (reason === "illness") return "当前记录为生病状态";
   if (reason === "acute_symptom") return "当前记录为急性症状";
   if (reason === "pause") return "当前处于暂停或待接续评估状态";
-  return "当前状态不适合使用普通出差降级方案";
+  return "当前状态不适合继续安排替代训练";
 }
 
 export function ExecutionPauseCard({
@@ -114,7 +114,7 @@ export function ExecutionPauseCard({
       });
       pendingStart.current = null;
       setOpen(false);
-      setMessage("暂停已记录，基础计划和任务状态保持不变");
+      setMessage("今天的训练已暂停");
       await onChanged();
     } catch {
       setMessage("暂停尚未保存，请重试");
@@ -173,7 +173,7 @@ export function ExecutionPauseCard({
           <p className="execution-supporting-copy">{pause.note}</p>
         ) : null}
         <p className="execution-supporting-copy">
-          基础计划仍然保留，今天的任务不会自动标记为完成或跳过。
+          今天的任务仍保留为原状态，结束暂停后再确认接下来怎么练。
         </p>
         {!pending ? (
           <button
@@ -266,7 +266,6 @@ export function ExecutionContextCard(props: ExecutionContextCardProps) {
 function ExecutionContextCardState({
   trackerKey,
   localDate,
-  planVersion,
   execution,
   onChanged,
 }: ExecutionContextCardProps) {
@@ -327,7 +326,7 @@ function ExecutionContextCardState({
         contextId: pending.contextId,
       });
       pendingCreate.current = null;
-      setMessage("执行上下文已保存");
+      setMessage("临时训练安排已保存");
       setCreateOpen(false);
       await onChanged();
     } catch {
@@ -407,7 +406,7 @@ function ExecutionContextCardState({
         ...pending.command.metadata,
       });
       pendingEnd.current = null;
-      setMessage("执行上下文已结束");
+      setMessage("临时训练安排已结束");
       await onChanged();
     } catch {
       setFailed(true);
@@ -419,14 +418,14 @@ function ExecutionContextCardState({
 
   if (!execution.context) {
     return (
-      <SurfaceCard className="execution-context-card" aria-label="执行环境">
+      <SurfaceCard className="execution-context-card" aria-label="训练条件">
         <SectionHeading
-          eyebrow="执行环境"
+          eyebrow="训练条件"
           title="正常计划"
           aside={<StatusPill tone="neutral">未启用临时模式</StatusPill>}
         />
         <p className="execution-supporting-copy">
-          出差或器械受限时，可临时记录当天条件；基础计划不会因此被改写。
+          出差或器械受限时，可以调整今天的训练安排。
         </p>
         {!createOpen ? (
           <button
@@ -434,12 +433,12 @@ function ExecutionContextCardState({
             type="button"
             onClick={() => setCreateOpen(true)}
           >
-            安排出差或受限模式
+            安排出差或器械受限
           </button>
         ) : (
           <div className="execution-context-form">
             <label>
-              执行情形
+              当前情况
               <select
                 value={contextKind}
                 onChange={(event) =>
@@ -477,7 +476,7 @@ function ExecutionContextCardState({
                 disabled={saving}
                 onClick={() => void saveCreate()}
               >
-                {saving ? "保存中…" : "保存执行上下文"}
+                {saving ? "保存中…" : "保存这段安排"}
               </button>
               <button
                 className="text-button"
@@ -505,9 +504,9 @@ function ExecutionContextCardState({
   const { context } = execution;
   if (context.status === "upcoming") {
     return (
-      <SurfaceCard className="execution-context-card" aria-label="执行环境">
+      <SurfaceCard className="execution-context-card" aria-label="训练条件">
         <SectionHeading
-          eyebrow="执行环境"
+          eyebrow="训练条件"
           title={`已安排${contextKindLabel(context.kind)}`}
           aside={<StatusPill tone="brand">即将开始</StatusPill>}
         />
@@ -515,8 +514,7 @@ function ExecutionContextCardState({
           {context.startDate} 至 {context.endDate}
         </p>
         <p className="execution-supporting-copy">
-          到达开始日期后再记录当天条件和选择方案；计划日仍按 Asia/Shanghai
-          计算。
+          到达开始日期后，可以记录当天条件并选择训练方案。
         </p>
         <button
           className="text-button"
@@ -524,7 +522,7 @@ function ExecutionContextCardState({
           disabled={saving}
           onClick={() => void endContext()}
         >
-          取消这个上下文
+          取消这段安排
         </button>
         {message ? (
           <p
@@ -541,20 +539,16 @@ function ExecutionContextCardState({
   return (
     <SurfaceCard
       className="execution-context-card active"
-      aria-label="执行环境"
+      aria-label="训练条件"
     >
       <SectionHeading
-        eyebrow="执行环境"
+        eyebrow="训练条件"
         title={contextKindLabel(context.kind)}
-        aside={<StatusPill tone="brand">当前生效</StatusPill>}
+        aside={<StatusPill tone="brand">今天使用</StatusPill>}
       />
       <p className="execution-context-range">
         {context.startDate} 至 {context.endDate}
       </p>
-      <p className="execution-plan-invariant">
-        基础计划{planVersion ? ` v${planVersion}` : ""} 保持不变
-      </p>
-
       <div className="execution-day-form">
         <h3>今天的实际条件</h3>
         <div className="execution-condition-grid">
@@ -650,13 +644,13 @@ function ExecutionContextCardState({
             <p>
               {execution.safety.blocked
                 ? safetyReason(execution.safety.reason)
-                : "生病或新的急性症状不使用普通出差降级方案。"}
+                : "生病或新的急性症状时不使用替代训练。"}
               先以恢复和安全评估为主，必要时联系专业人员。
             </p>
           </div>
         ) : (
           <fieldset className="execution-alternative-list">
-            <legend>选择今天采用的私人备选方案</legend>
+            <legend>选择今天的训练方案</legend>
             {execution.alternatives.length > 0 ? (
               execution.alternatives.map((option) => (
                 <label key={option.id} className="execution-alternative-option">
@@ -682,7 +676,7 @@ function ExecutionContextCardState({
                 </label>
               ))
             ) : (
-              <p className="empty-state-copy">私人备选方案尚未配置。</p>
+              <p className="empty-state-copy">今天没有可选的替代训练。</p>
             )}
           </fieldset>
         )}
@@ -694,7 +688,7 @@ function ExecutionContextCardState({
             disabled={saving}
             onClick={() => void saveDay()}
           >
-            {saving ? "保存中…" : "保存今天的执行方式"}
+            {saving ? "保存中…" : "保存今天的安排"}
           </button>
           <button
             className="text-button"
@@ -702,7 +696,7 @@ function ExecutionContextCardState({
             disabled={saving}
             onClick={() => void endContext()}
           >
-            结束这个上下文
+            结束这段安排
           </button>
         </div>
       </div>

@@ -39,7 +39,7 @@ function commandSummary(command: PendingCommand) {
   if (command.kind === "symptom_check_in") {
     const timing = timingLabels[command.payload.checkIn.timing] ?? "身体反馈";
     const safety = command.payload.localSafetyLevel
-      ? ` · 本机预判${command.payload.localSafetyLevel === "green" ? "绿灯" : command.payload.localSafetyLevel === "yellow" ? "黄灯" : "红灯"}`
+      ? ` · 本机预估${command.payload.localSafetyLevel === "green" ? "绿灯" : command.payload.localSafetyLevel === "yellow" ? "黄灯" : "红灯"}`
       : " · 等待安全判断";
     return `${timing}${safety}`;
   }
@@ -51,13 +51,13 @@ function commandSummary(command: PendingCommand) {
 function safeErrorMessage(command: PendingCommand) {
   switch (command.lastErrorCode) {
     case "version_conflict":
-      return "服务器中的记录已变化，需要人工决定如何处理这条本机记录。";
+      return "线上记录已经变化，请决定是否放弃这条本机修改。";
     case "invalid_command":
       return "这条本机记录无法按原意提交，需要人工处理。";
     case "target_not_found":
       return "对应的计划项目已不可用，需要人工处理。";
     case "invalid_response":
-      return "服务器返回无法确认，记录仍安全保留在本机。";
+      return "这次保存结果无法确认，记录仍保留在本机。";
     case "authentication_required":
     case "forbidden":
       return "登录状态需要重新验证，记录仍保留在本机。";
@@ -68,7 +68,7 @@ function safeErrorMessage(command: PendingCommand) {
       return "上次同步未完成，可以重新尝试。";
     default:
       return command.status === "needs_attention"
-        ? "这条记录需要人工处理，系统不会自动丢弃。"
+        ? "这条记录需要你处理，本机内容会继续保留。"
         : null;
   }
 }
@@ -125,9 +125,9 @@ export function PendingCommandCenter({ trackerKey }: { trackerKey: string }) {
     try {
       await discardNeedsAttentionHead(commandId);
       setConfirmingId(null);
-      setMessage("队首本机记录已放弃；页面已按服务器状态和剩余记录重新计算。");
+      setMessage("最早一条本机记录已放弃，页面已按最新数据更新。");
     } catch {
-      setMessage("尚未放弃这条记录；服务器状态未能确认，本机记录保持不变。");
+      setMessage("这条记录尚未放弃，本机内容保持不变，请稍后重试。");
     } finally {
       setProcessing(false);
     }
@@ -148,7 +148,7 @@ export function PendingCommandCenter({ trackerKey }: { trackerKey: string }) {
       <section className="surface-card pending-command-intro">
         <div>
           <strong>{relevant.length} 条本机记录</strong>
-          <p>系统严格按创建顺序处理；队首未解决时，后续记录不会越过它。</p>
+          <p>最早一条处理完成后，后面的记录会继续同步。</p>
         </div>
         <StatusPill tone={online ? "success" : "warning"}>
           {online ? "当前在线" : "当前离线"}
@@ -158,10 +158,10 @@ export function PendingCommandCenter({ trackerKey }: { trackerKey: string }) {
       {relevant.length === 0 ? (
         <section className="surface-card pending-command-empty" role="status">
           <h2>没有待同步记录</h2>
-          <p>任务和身体反馈都已由服务器确认。</p>
+          <p>任务和身体反馈都已保存。</p>
         </section>
       ) : (
-        <section className="pending-command-list" aria-label="待同步队列">
+        <section className="pending-command-list" aria-label="待同步记录">
           {relevant.map((command, index) => {
             const isHead = index === 0;
             const presentation = statusPresentation[command.status];
@@ -170,12 +170,12 @@ export function PendingCommandCenter({ trackerKey }: { trackerKey: string }) {
               <article
                 className="surface-card pending-command-card"
                 key={command.id}
-                aria-label={`${commandTitle(command)}，${isHead ? "队首" : "被队首阻塞"}`}
+                aria-label={`${commandTitle(command)}，${isHead ? "最早一条" : "等待前一条处理"}`}
               >
                 <div className="pending-command-card-heading">
                   <div>
                     <span className="queue-position">
-                      {isHead ? "队首" : "被队首阻塞"}
+                      {isHead ? "最早一条" : "等待前一条"}
                     </span>
                     <h2>{commandTitle(command)}</h2>
                   </div>
@@ -234,16 +234,14 @@ export function PendingCommandCenter({ trackerKey }: { trackerKey: string }) {
                       放弃本机记录
                     </button>
                     {!online ? (
-                      <small>联网确认服务器状态后才能放弃。</small>
+                      <small>联网取得最新数据后才能放弃。</small>
                     ) : null}
                   </div>
                 ) : null}
                 {confirmingId === command.id ? (
                   <div className="pending-command-confirmation" role="alert">
-                    <strong>确认放弃队首本机记录？</strong>
-                    <p>
-                      系统会先在线确认服务器状态，再移除这一条；后续记录不会被删除。
-                    </p>
+                    <strong>确认放弃这条本机记录？</strong>
+                    <p>会先取得最新数据，再移除这一条。后面的记录不会删除。</p>
                     <div>
                       <button
                         className="secondary-button"

@@ -91,8 +91,8 @@ describe("P2b-2 pending command center", () => {
     render(<PendingCommandCenter trackerKey="knee-rehab" />);
 
     const records = screen.getAllByRole("article");
-    expect(within(records[0]!).getByText("队首")).toBeTruthy();
-    expect(within(records[1]!).getByText("被队首阻塞")).toBeTruthy();
+    expect(within(records[0]!).getByText("最早一条")).toBeTruthy();
+    expect(within(records[1]!).getByText("等待前一条")).toBeTruthy();
     expect(
       within(records[0]!).queryByRole("button", { name: "立即重试" }),
     ).toBeNull();
@@ -100,7 +100,7 @@ describe("P2b-2 pending command center", () => {
       within(records[0]!).getByRole("button", { name: "放弃本机记录" }),
     ).toBeTruthy();
     expect(within(records[1]!).queryByRole("button")).toBeNull();
-    expect(screen.getByText(/服务器中的记录已变化，需要人工决定/)).toBeTruthy();
+    expect(screen.getByText(/线上记录已经变化，请决定是否放弃/)).toBeTruthy();
     expect(screen.queryByText("version_conflict")).toBeNull();
     expect(screen.queryByText(headId)).toBeNull();
     expect(screen.queryByText("Private note must not be rendered")).toBeNull();
@@ -140,7 +140,7 @@ describe("P2b-2 pending command center", () => {
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
-    expect(screen.getByText(/联网确认服务器状态后才能放弃/)).toBeTruthy();
+    expect(screen.getByText(/联网取得最新数据后才能放弃/)).toBeTruthy();
   });
 
   it.each([
@@ -171,8 +171,8 @@ describe("P2b-2 pending command center", () => {
   it.each([
     ["invalid_command", "这条本机记录无法按原意提交"],
     ["target_not_found", "对应的计划项目已不可用"],
-    ["version_conflict", "服务器中的记录已变化"],
-    ["invalid_response", "服务器返回无法确认"],
+    ["version_conflict", "线上记录已经变化"],
+    ["invalid_response", "这次保存结果无法确认"],
   ] as const)(
     "explains %s without exposing its internal code",
     (code, copy) => {

@@ -77,12 +77,12 @@ export function ResumptionAssessmentClient({
               ? "将按原计划继续"
               : result.status === "shifted"
                 ? "后续安排已顺延"
-                : "基础计划已变化"}
+                : "训练安排已更新"}
           </h1>
           <p>
             {result.status === "expired"
-              ? "旧评估没有覆盖新计划，系统已基于最新版本重新生成。"
-              : "这次决定已记录，历史训练、反馈和任务状态保持不变。"}
+              ? "训练安排已经更新，请重新确认接下来怎么练。"
+              : "接下来会按你的选择安排。"}
           </p>
           <div className="resumption-actions">
             {result.replacementAssessmentId ? (
@@ -117,7 +117,7 @@ export function ResumptionAssessmentClient({
       <main className="app-shell page-frame resumption-page">
         <SurfaceCard role="alert">
           <h1>接续评估暂时无法加载</h1>
-          <p>基础计划和今天任务都没有改变，可以稍后重试。</p>
+          <p>请稍后重试，或先返回今日查看当前安排。</p>
           <button
             className="primary-button"
             type="button"
@@ -180,8 +180,8 @@ export function ResumptionAssessmentClient({
       <main className="app-shell page-frame resumption-page">
         <SurfaceCard>
           <StatusPill tone="success">已处理</StatusPill>
-          <h1>这份接续评估已经完成</h1>
-          <p>历史决定仍可审计，今天页面会按当前有效计划显示。</p>
+          <h1>这次接续安排已经完成</h1>
+          <p>返回今日查看当前训练安排。</p>
           <Link className="primary-button" href="/" scroll={false}>
             返回今日
           </Link>
@@ -196,7 +196,7 @@ export function ResumptionAssessmentClient({
         <div>
           <p className="eyebrow">计划接续</p>
           <h1>确认中断后怎样继续</h1>
-          <p>确认前不会修改今天任务或基础计划。</p>
+          <p>保存前，今天的任务不会改变。</p>
         </div>
         <Link className="text-button" href="/" scroll={false}>
           返回今日
@@ -221,7 +221,7 @@ export function ResumptionAssessmentClient({
             <dd>{assessment.trigger.interruptionDays} 天</dd>
           </div>
           <div>
-            <dt>基础计划</dt>
+            <dt>当前计划</dt>
             <dd>v{assessment.basePlanVersion.version}</dd>
           </div>
           <div>
@@ -234,7 +234,7 @@ export function ResumptionAssessmentClient({
           </div>
         </dl>
         <p className="supporting-copy">
-          暂停日不会被当作普通漏练；受限期间选择的备选训练也不会自动标记基础任务完成。
+          暂停和受限日期不会计为漏练，替代训练也不会直接勾选原任务。
         </p>
       </SurfaceCard>
 
@@ -250,7 +250,7 @@ export function ResumptionAssessmentClient({
           />
           <span>
             <strong>按原计划继续</strong>
-            <small>只记录决定，不创建新的计划版本。</small>
+            <small>保持接下来的训练日期不变。</small>
           </span>
         </label>
         <label className="resumption-option">
@@ -264,9 +264,7 @@ export function ResumptionAssessmentClient({
           />
           <span>
             <strong>顺延后续安排</strong>
-            <small>
-              只顺延生效日起尚未执行的未来任务，并创建不可变计划版本。
-            </small>
+            <small>把还没有完成的后续训练整体往后排。</small>
           </span>
         </label>
 
@@ -274,8 +272,8 @@ export function ResumptionAssessmentClient({
           <p className="form-message attention" role="note">
             {assessment.shiftAvailability.reason ===
             "future_plan_version_exists"
-              ? "已有后续计划版本，暂时不能顺延；请先处理计划时间线。你仍可选择按原计划继续。"
-              : "这份较早的评估缺少完整计划时间线，不能安全顺延；你仍可选择按原计划继续。"}
+              ? "后面的训练已有单独安排，暂时不能顺延。你仍可选择按原计划继续。"
+              : "这份较早的记录暂时不能顺延。你仍可选择按原计划继续。"}
           </p>
         ) : null}
 

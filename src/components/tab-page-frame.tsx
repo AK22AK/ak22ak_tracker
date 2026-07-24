@@ -50,8 +50,8 @@ export function UnavailableFeaturePage({
         </div>
       </header>
       <section className="feedback-card empty-tab-state">
-        <p className="eyebrow">功能状态</p>
-        <h2>{title}功能正在建设</h2>
+        <p className="eyebrow">{title}</p>
+        <h2>暂未开放</h2>
         <p>{description}</p>
       </section>
     </main>

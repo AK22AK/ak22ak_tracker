@@ -389,7 +389,7 @@ async function openOfflineColdStart(
 ) {
   const page = await context.newPage();
   await page.goto(path, { waitUntil: "domcontentloaded" });
-  await expect(page.getByText("离线缓存 · 今日记录可保存")).toBeVisible();
+  await expect(page.getByText("本机内容 · 今日记录可保存")).toBeVisible();
   return page;
 }
 
@@ -399,7 +399,7 @@ test("online direct access returns to the protected identity path", async ({
   await page.goto("/offline.html");
 
   await expect(page).toHaveURL(/\/login(?:\?|$)/);
-  await expect(page.getByText("离线缓存 · 今日记录可保存")).toHaveCount(0);
+  await expect(page.getByText("本机内容 · 今日记录可保存")).toHaveCount(0);
 });
 
 test("cold starts from the public shell after the old document is destroyed", async ({
@@ -431,7 +431,7 @@ test("cold starts from the public shell after the old document is destroyed", as
   await expect(coldStart.getByText(/最近更新：/)).toBeVisible();
   await expect(
     coldStart.getByText(
-      "今日任务和身体反馈可先保存在本机；其他内容仅供查看，联网后由受保护应用同步。",
+      "今日任务和身体反馈可先保存在本机，联网后自动同步；其他内容仅供查看。",
     ),
   ).toBeVisible();
   expect(
@@ -467,7 +467,7 @@ test("cold starts from the public shell after the old document is destroyed", as
   const emptyColdStart = await context.newPage();
   await emptyColdStart.goto("/", { waitUntil: "domcontentloaded" });
   await expect(
-    emptyColdStart.getByText("当前没有可用的今日缓存"),
+    emptyColdStart.getByText("本机没有可查看的今日内容"),
   ).toBeVisible();
   await expect(
     emptyColdStart.getByText("Anonymous browser cache task"),
@@ -668,9 +668,7 @@ test("cold-start shell appends an unclassified feedback before updating the UI",
   await firstStart.getByRole("button", { name: "保存反馈" }).click();
 
   await expect(firstStart.getByText("反馈已保存在本机")).toBeVisible();
-  await expect(
-    firstStart.getByText("安全级别等待联网后由服务器判断"),
-  ).toBeVisible();
+  await expect(firstStart.getByText("安全级别等待联网确认")).toBeVisible();
   await expect(firstStart.getByText("1 条仅保存在本机")).toBeVisible();
   await expect(
     firstStart.getByRole("button", { name: "返回今日" }),
@@ -1029,7 +1027,7 @@ test("cold-start shell projects a task and two append-only feedback commands", a
     coldStart.getByText("身体反馈尚未完成安全判断，请联网前按保守原则处理。"),
   ).toBeVisible();
   await expect(coldStart.getByText("已完成")).toBeVisible();
-  await expect(coldStart.getByText("已缓存 3 次反馈。")).toBeVisible();
+  await expect(coldStart.getByText("这一天有 3 次反馈。")).toBeVisible();
 
   await coldStart.getByRole("button", { name: "日历" }).click();
   await expect(
@@ -1049,8 +1047,10 @@ test("corrupt today, month, and day snapshots never render as real zero data", a
   await page.close();
 
   const corruptToday = await openOfflineColdStart(context, "/");
-  await expect(corruptToday.getByText("当前没有可用的今日缓存")).toBeVisible();
-  await expect(corruptToday.getByText("已缓存 0 次反馈。")).toHaveCount(0);
+  await expect(
+    corruptToday.getByText("本机没有可查看的今日内容"),
+  ).toBeVisible();
+  await expect(corruptToday.getByText("这一天有 0 次反馈。")).toHaveCount(0);
   await expect(
     corruptToday.getByRole("button", { name: "添加身体反馈" }),
   ).toHaveCount(0);
@@ -1063,7 +1063,11 @@ test("corrupt today, month, and day snapshots never render as real zero data", a
   await corruptToday.close();
 
   const corruptMonth = await openOfflineColdStart(context, "/calendar");
-  await expect(corruptMonth.getByText("当前月份没有有效缓存")).toBeVisible();
+  await expect(
+    corruptMonth.getByText(
+      "本机没有可查看的本月记录。请联网打开一次日历后再试。",
+    ),
+  ).toBeVisible();
   await expect(
     corruptMonth.getByRole("button", { name: `${today}，1 项任务` }),
   ).toHaveCount(0);
@@ -1074,7 +1078,7 @@ test("corrupt today, month, and day snapshots never render as real zero data", a
 
   const corruptDay = await openOfflineColdStart(context, "/calendar");
   await expect(
-    corruptDay.getByText("这一天没有有效的本机详情缓存。"),
+    corruptDay.getByText("本机没有这一天的详细记录。"),
   ).toBeVisible();
   await expect(
     corruptDay.getByText("Anonymous browser cache task"),
