@@ -2,10 +2,22 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { useRef, useState } from "react";
 
 import { trackerQueryKeys } from "@/client/query-keys";
-import { fetchPlanAdvice, requestPlanAdvice } from "@/client/tracker-api";
-import type { AiAnalysisErrorCode } from "@/domain/ai-analysis";
+import {
+  decidePlanChange,
+  fetchPlanAdvice,
+  requestPlanAdvice,
+} from "@/client/tracker-api";
+import type {
+  AiAnalysisErrorCode,
+  PlanChangeDecisionCommand,
+} from "@/domain/ai-analysis";
+import {
+  createOrReuseClientCommand,
+  type PendingClientCommand,
+} from "@/domain/client-command";
 import type { PlanChangeOperation } from "@/domain/schemas";
 
 const trackerKey = "knee-rehab";
@@ -50,6 +62,11 @@ function operationLabel(operation: PlanChangeOperation) {
 
 export function PlanAdviceClient() {
   const queryClient = useQueryClient();
+  const [decisionIntent, setDecisionIntent] = useState<
+    "accepted" | "rejected" | null
+  >(null);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
+  const pendingDecision = useRef<PendingClientCommand | null>(null);
   const query = useQuery({
     queryKey: trackerQueryKeys.planAdvice(trackerKey),
     queryFn: ({ signal }) => fetchPlanAdvice(trackerKey, signal),
@@ -60,6 +77,46 @@ export function PlanAdviceClient() {
     mutationFn: (commandId: string) => requestPlanAdvice(trackerKey, commandId),
     onSuccess: (data) => {
       queryClient.setQueryData(trackerQueryKeys.planAdvice(trackerKey), data);
+    },
+  });
+  const decisionMutation = useMutation({
+    mutationFn: (command: PlanChangeDecisionCommand) =>
+      decidePlanChange(trackerKey, command),
+    onSuccess: (result) => {
+      pendingDecision.current = null;
+      setDecisionIntent(null);
+      setDecisionError(null);
+      queryClient.setQueryData(
+        trackerQueryKeys.planAdvice(trackerKey),
+        result.page,
+      );
+      const months = new Set<string>();
+      for (const localDate of result.affectedDates) {
+        months.add(localDate.slice(0, 7));
+        void queryClient.invalidateQueries({
+          queryKey: trackerQueryKeys.today(trackerKey, localDate),
+          exact: true,
+        });
+        void queryClient.invalidateQueries({
+          queryKey: trackerQueryKeys.day(trackerKey, localDate),
+          exact: true,
+        });
+      }
+      for (const month of months) {
+        void queryClient.invalidateQueries({
+          queryKey: trackerQueryKeys.calendar(trackerKey, month),
+          exact: true,
+        });
+      }
+      if (result.status === "accepted") {
+        void queryClient.invalidateQueries({
+          queryKey: trackerQueryKeys.trends(trackerKey),
+          exact: true,
+        });
+      }
+    },
+    onError: () => {
+      setDecisionError("决定尚未保存，请检查网络后重试。你的选择仍然保留。");
     },
   });
   const job = query.data?.job ?? null;
@@ -77,6 +134,30 @@ export function PlanAdviceClient() {
   const start = () => {
     mutation.mutate(retryId ?? globalThis.crypto.randomUUID());
   };
+
+  const proposal = job?.proposal ?? null;
+
+  function chooseDecision(decision: "accepted" | "rejected") {
+    setDecisionIntent(decision);
+    setDecisionError(null);
+  }
+
+  function cancelDecision() {
+    pendingDecision.current = null;
+    setDecisionIntent(null);
+    setDecisionError(null);
+  }
+
+  function confirmDecision() {
+    if (!proposal || !decisionIntent || decisionMutation.isPending) return;
+    const payload = { proposalId: proposal.id, decision: decisionIntent };
+    const pending = createOrReuseClientCommand(
+      pendingDecision.current,
+      payload,
+    );
+    pendingDecision.current = pending;
+    decisionMutation.mutate({ ...payload, ...pending.metadata });
+  }
 
   return (
     <main
@@ -151,32 +232,50 @@ export function PlanAdviceClient() {
         </section>
       ) : null}
 
-      {job?.proposal ? (
+      {proposal ? (
         <section
-          className={`surface-card plan-advice-result safety-${job.proposal.safetyLevel}`}
+          className={`surface-card plan-advice-result safety-${proposal.safetyLevel}`}
           aria-labelledby="plan-advice-result-title"
         >
           <div>
             <p className="eyebrow">
-              {job.proposal.safetyLevel === "red"
+              {proposal.safetyLevel === "red"
                 ? "停止并重新评估"
-                : job.proposal.status === "expired"
+                : proposal.status === "expired"
                   ? "计划已经更新"
-                  : "本次建议"}
+                  : proposal.status === "accepted"
+                    ? "已更新计划"
+                    : proposal.status === "rejected"
+                      ? "已拒绝"
+                      : "本次建议"}
             </p>
-            <h2 id="plan-advice-result-title">{job.proposal.summary}</h2>
+            <h2 id="plan-advice-result-title">{proposal.summary}</h2>
           </div>
-          {job.proposal.status === "expired" ? (
+          {proposal.status === "accepted" && proposal.decision ? (
+            <div className="plan-advice-decision-result" role="status">
+              <p>计划已由你确认更新。</p>
+              {proposal.decision.appliedPlanVersion ? (
+                <p>
+                  第 {proposal.decision.appliedPlanVersion.version} 版将从
+                  {proposal.decision.appliedPlanVersion.effectiveFrom} 生效。
+                </p>
+              ) : null}
+            </div>
+          ) : proposal.status === "rejected" ? (
+            <p className="inline-notice" role="status">
+              这份建议已拒绝，当前计划没有改变。
+            </p>
+          ) : proposal.status === "expired" ? (
             <p className="inline-notice" role="status">
               这份建议基于较早的计划，不能继续使用。请重新分析。
             </p>
-          ) : job.proposal.safetyLevel === "red" ? (
+          ) : proposal.safetyLevel === "red" ? (
             <p>先暂停相关训练；症状稳定或完成专业评估后，再决定后续安排。</p>
-          ) : job.proposal.operations.length === 0 ? (
+          ) : proposal.operations.length === 0 ? (
             <p>目前没有建议修改的训练安排。</p>
           ) : (
             <ol className="plan-advice-diffs">
-              {job.proposal.operations.map((operation, index) => (
+              {proposal.operations.map((operation, index) => (
                 <li key={`${operation.type}-${index}`}>
                   <strong>{operationLabel(operation)}</strong>
                   <span>{operation.reason}</span>
@@ -184,10 +283,97 @@ export function PlanAdviceClient() {
               ))}
             </ol>
           )}
-          <p className="plan-advice-readonly-note">
-            这是一份只读建议，当前不会修改你的计划。
-          </p>
-          {job.proposal.status === "expired" ? (
+          {proposal.status === "proposed" &&
+          proposal.application.canAccept &&
+          proposal.application.effectiveFrom ? (
+            <p className="plan-advice-effective-date">
+              接受后将从 {proposal.application.effectiveFrom}{" "}
+              起更新后续安排，当天和历史记录不会改变。
+            </p>
+          ) : null}
+          {proposal.status === "proposed" && decisionIntent ? (
+            <div
+              className="plan-advice-confirmation"
+              role="group"
+              aria-labelledby="plan-advice-confirmation-title"
+            >
+              <h3 id="plan-advice-confirmation-title">
+                {decisionIntent === "accepted"
+                  ? "确认更新后续计划？"
+                  : "确认拒绝这份建议？"}
+              </h3>
+              <p>
+                {decisionIntent === "accepted"
+                  ? `确认后，应用会从 ${proposal.application.effectiveFrom ?? "下一个计划日"} 创建一份新的计划版本。`
+                  : "拒绝只会记录你的决定，当前计划不会改变。"}
+              </p>
+              {decisionError ? (
+                <p className="task-save-error" role="alert">
+                  {decisionError}
+                </p>
+              ) : null}
+              <div className="plan-advice-decision-actions">
+                <button
+                  className="primary-button"
+                  type="button"
+                  disabled={decisionMutation.isPending}
+                  onClick={confirmDecision}
+                >
+                  {decisionMutation.isPending
+                    ? "正在保存…"
+                    : decisionIntent === "accepted"
+                      ? "确认接受并更新计划"
+                      : "确认拒绝"}
+                </button>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={decisionMutation.isPending}
+                  onClick={cancelDecision}
+                >
+                  稍后
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {proposal.status === "proposed" && !decisionIntent ? (
+            <div className="plan-advice-decision-actions">
+              {proposal.application.canAccept ? (
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => chooseDecision("accepted")}
+                >
+                  接受并更新计划
+                </button>
+              ) : null}
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => chooseDecision("rejected")}
+              >
+                拒绝这份建议
+              </button>
+            </div>
+          ) : null}
+          {proposal.status === "proposed" &&
+          !proposal.application.canAccept &&
+          proposal.application.blockedReason === "invalid_operations" ? (
+            <div>
+              <p className="inline-notice" role="status">
+                这份建议不适合直接应用，请重新分析。
+              </p>
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={mutation.isPending || unavailable}
+                onClick={() => mutation.mutate(globalThis.crypto.randomUUID())}
+              >
+                重新分析
+              </button>
+            </div>
+          ) : null}
+          {proposal.status === "expired" ? (
             <button
               className="secondary-button"
               type="button"

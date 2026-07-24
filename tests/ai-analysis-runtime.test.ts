@@ -29,8 +29,11 @@ function prepared(): PreparedAiAnalysisContext {
     trackerKey: "knee-rehab",
     basePlanVersionId: planId,
     timelineHeadPlanVersionId: planId,
+    basePlan: currentPlan,
+    timelineHeadPlan: currentPlan,
     contextVersion: "1",
     contextHash: "a".repeat(64),
+    contextRevision: 1,
     contextFrom: "2026-07-11",
     contextThrough: "2026-07-24",
     safetyLevel: "green",
@@ -62,6 +65,7 @@ function memoryStore(order: string[]) {
         attemptCount: 0,
         contextVersion: input.contextVersion,
         contextHash: input.contextHash,
+        contextRevision: input.contextRevision,
         contextFrom: input.contextFrom,
         contextThrough: input.contextThrough,
         safetyLevel: input.safetyLevel,
@@ -71,6 +75,7 @@ function memoryStore(order: string[]) {
         startedAt: null,
         completedAt: null,
         proposal: null,
+        proposalDecision: null,
       };
       return job;
     },

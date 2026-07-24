@@ -60,9 +60,12 @@ export type PreparedAiAnalysisContext = {
   trackerKey: string;
   basePlanVersionId: string;
   timelineHeadPlanVersionId: string;
+  basePlan: ReturnType<typeof planVersionSchema.parse>;
+  timelineHeadPlan: ReturnType<typeof planVersionSchema.parse>;
   modelContext: PlanAdjustmentContext;
   contextVersion: "1";
   contextHash: string;
+  contextRevision: number;
   contextFrom: string;
   contextThrough: string;
   safetyLevel: PlanAdjustmentSafetyLevel;
@@ -82,6 +85,7 @@ export async function prepareAiAnalysisContext({
       id: trackers.id,
       key: trackers.key,
       planningTimeZone: trackers.planningTimeZone,
+      aiContextRevision: trackers.aiContextRevision,
     })
     .from(trackers)
     .where(and(eq(trackers.key, trackerKey), eq(trackers.active, true)))
@@ -103,7 +107,7 @@ export async function prepareAiAnalysisContext({
       .orderBy(desc(planVersions.effectiveFrom), desc(planVersions.version))
       .limit(1),
     database
-      .select({ id: planVersions.id })
+      .select({ id: planVersions.id, document: planVersions.document })
       .from(planVersions)
       .where(eq(planVersions.trackerId, tracker.id))
       .orderBy(desc(planVersions.version))
@@ -148,6 +152,7 @@ export async function prepareAiAnalysisContext({
   const head = headRow[0];
   if (!base || !head) throw new AiAnalysisPlanNotFoundError();
   const parsedPlan = planVersionSchema.parse(base.document);
+  const parsedTimelineHead = planVersionSchema.parse(head.document);
   const currentPlan: PlanAdjustmentContext["currentPlan"] = {
     id: parsedPlan.id,
     trackerKey: parsedPlan.trackerKey,
@@ -210,9 +215,12 @@ export async function prepareAiAnalysisContext({
     trackerKey: tracker.key,
     basePlanVersionId: base.id,
     timelineHeadPlanVersionId: head.id,
+    basePlan: parsedPlan,
+    timelineHeadPlan: parsedTimelineHead,
     modelContext,
     contextVersion: "1",
     contextHash: contentHash(modelContext),
+    contextRevision: tracker.aiContextRevision,
     contextFrom,
     contextThrough,
     safetyLevel,

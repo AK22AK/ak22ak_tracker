@@ -30,7 +30,10 @@ import {
 import { trendsAggregateSchema } from "@/domain/trends";
 import {
   aiAnalysisPageDtoSchema,
+  planChangeDecisionCommandSchema,
+  planChangeDecisionResultSchema,
   requestPlanAnalysisSchema,
+  type PlanChangeDecisionCommand,
 } from "@/domain/ai-analysis";
 
 async function getJson(url: string, signal?: AbortSignal) {
@@ -119,6 +122,31 @@ export async function requestPlanAdvice(trackerKey: string, commandId: string) {
   );
   if (!response.ok) throw new Error(`request_failed_${response.status}`);
   return aiAnalysisPageDtoSchema.parse(await response.json());
+}
+
+export async function decidePlanChange(
+  trackerKey: string,
+  input: PlanChangeDecisionCommand,
+) {
+  const command = planChangeDecisionCommandSchema.parse(input);
+  const response = await fetch(
+    `/api/trackers/${encodeURIComponent(trackerKey)}/ai-analysis/${encodeURIComponent(command.proposalId)}/decision`,
+    {
+      method: "PUT",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(command),
+    },
+  );
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(payload?.error ?? `request_failed_${response.status}`);
+  }
+  return planChangeDecisionResultSchema.parse(await response.json());
 }
 
 export async function saveExternalRecordAssociation(

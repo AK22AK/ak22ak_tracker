@@ -92,6 +92,13 @@
       "when": 1784901884307,
       "tag": "0012_chief_the_spike",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784905627414,
+      "tag": "0013_open_purple_man",
+      "breakpoints": true
     }
   ]
 }

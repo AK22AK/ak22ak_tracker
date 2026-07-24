@@ -72,6 +72,7 @@ export const trackers = pgTable("trackers", {
     .default("Asia/Shanghai")
     .notNull(),
   active: boolean("active").default(true).notNull(),
+  aiContextRevision: integer("ai_context_revision").default(0).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -532,6 +533,7 @@ export const aiAnalysisJobs = pgTable(
     attemptCount: integer("attempt_count").default(0).notNull(),
     contextVersion: text("context_version").notNull(),
     contextHash: text("context_hash").notNull(),
+    contextRevision: integer("context_revision").default(0).notNull(),
     contextFrom: date("context_from").notNull(),
     contextThrough: date("context_through").notNull(),
     safetyLevel: text("safety_level").notNull(),
@@ -584,6 +586,7 @@ export const planChangeProposals = pgTable("plan_change_proposals", {
   model: text("model"),
   contextVersion: text("context_version"),
   contextHash: text("context_hash"),
+  contextRevision: integer("context_revision").default(0).notNull(),
   contextFrom: date("context_from"),
   contextThrough: date("context_through"),
   document: jsonb("document").$type<PlanChangeProposal>().notNull(),
@@ -596,6 +599,55 @@ export const planChangeProposals = pgTable("plan_change_proposals", {
     .defaultNow()
     .notNull(),
 });
+
+export const planChangeDecisions = pgTable(
+  "plan_change_decisions",
+  {
+    id: uuid("id").primaryKey(),
+    trackerId: uuid("tracker_id")
+      .notNull()
+      .references(() => trackers.id, { onDelete: "cascade" }),
+    proposalId: uuid("proposal_id")
+      .notNull()
+      .references(() => planChangeProposals.id, { onDelete: "restrict" }),
+    decision: text("decision").notNull(),
+    basePlanVersionId: uuid("base_plan_version_id")
+      .notNull()
+      .references(() => planVersions.id, { onDelete: "restrict" }),
+    timelineHeadPlanVersionId: uuid("timeline_head_plan_version_id")
+      .notNull()
+      .references(() => planVersions.id, { onDelete: "restrict" }),
+    contextVersion: text("context_version").notNull(),
+    contextHash: text("context_hash").notNull(),
+    contextRevision: integer("context_revision").notNull(),
+    safetyLevel: text("safety_level").notNull(),
+    effectiveFrom: date("effective_from"),
+    appliedPlanVersionId: uuid("applied_plan_version_id").references(
+      () => planVersions.id,
+      { onDelete: "restrict" },
+    ),
+    decidedAt: timestamp("decided_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("plan_change_decisions_proposal_unique").on(table.proposalId),
+    index("plan_change_decisions_tracker_index").on(table.trackerId),
+    check(
+      "plan_change_decisions_decision_check",
+      sql`${table.decision} IN ('accepted', 'rejected')`,
+    ),
+    check(
+      "plan_change_decisions_result_check",
+      sql`(${table.decision} = 'accepted' AND ${table.effectiveFrom} IS NOT NULL AND ${table.appliedPlanVersionId} IS NOT NULL) OR (${table.decision} = 'rejected' AND ${table.effectiveFrom} IS NULL AND ${table.appliedPlanVersionId} IS NULL)`,
+    ),
+    check(
+      "plan_change_decisions_safety_check",
+      sql`${table.safetyLevel} IN ('green', 'yellow', 'red') AND (${table.decision} = 'rejected' OR ${table.safetyLevel} <> 'red')`,
+    ),
+  ],
+);
 
 export const integrationSyncState = pgTable(
   "integration_sync_state",

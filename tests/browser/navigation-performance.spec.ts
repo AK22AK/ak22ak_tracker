@@ -184,6 +184,49 @@ const trendsAggregate = aggregateEightWeekTrends({
   externalRecords: [],
 });
 
+const planAdvice = {
+  schemaVersion: "1.0.0",
+  configuration: "configured",
+  job: {
+    id: "019c0000-0000-7000-8000-000000000031",
+    trackerKey: "knee-rehab",
+    status: "succeeded",
+    errorCode: null,
+    retryable: false,
+    requestedAt: "2026-07-24T08:00:00.000Z",
+    completedAt: "2026-07-24T08:00:02.000Z",
+    proposal: {
+      id: "019c0000-0000-7000-8000-000000000031",
+      basePlanVersionId: "019c0000-0000-7000-8000-000000000001",
+      createdAt: "2026-07-24T08:00:02.000Z",
+      safetyLevel: "green",
+      summary: "Anonymous future adjustment",
+      operations: [
+        {
+          type: "replace_task",
+          taskId: "anonymous-task",
+          task: {
+            id: "anonymous-task",
+            title: "Anonymous adjusted task with a long mobile title",
+            scheduledDate: "2026-07-26",
+            sortOrder: 0,
+            category: "general",
+            prescription: {},
+          },
+          reason: "Anonymous reason",
+        },
+      ],
+      status: "proposed",
+      application: {
+        effectiveFrom: "2026-07-25",
+        canAccept: true,
+        blockedReason: null,
+      },
+      decision: null,
+    },
+  },
+};
+
 type RequestCounters = {
   today: number;
   month: number;
@@ -192,6 +235,7 @@ type RequestCounters = {
   garmin: number;
   mirror: number;
   trends: number;
+  advice: number;
 };
 
 async function authorize(context: BrowserContext) {
@@ -219,6 +263,7 @@ async function mockPrivateReads(page: Page, delayMs: number) {
     garmin: 0,
     mirror: 0,
     trends: 0,
+    advice: 0,
   };
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -242,6 +287,9 @@ async function mockPrivateReads(page: Page, delayMs: number) {
     } else if (url.pathname === "/api/mirror/status") {
       counters.mirror += 1;
       body = mirrorStatus;
+    } else if (url.pathname.endsWith("/ai-analysis")) {
+      counters.advice += 1;
+      body = planAdvice;
     } else if (url.pathname.endsWith("/trends")) {
       counters.trends += 1;
       body = trendsAggregate;
@@ -364,6 +412,52 @@ async function expectActiveTab(
 test.beforeEach(async ({ context }) => {
   await authorize(context);
 });
+
+for (const width of [320, 375, 390, 430]) {
+  test(`plan decision preview remains accessible at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await mockPrivateReads(page, 0);
+    await page.goto("/trends/advice");
+
+    await expect(
+      page.getByRole("heading", { name: "训练调整建议" }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Anonymous adjusted task with a long mobile title"),
+    ).toBeVisible();
+    const accept = page.getByRole("button", { name: "接受并更新计划" });
+    await expect(accept).toBeVisible();
+    await accept.click();
+    await expect(
+      page.getByRole("group", { name: "确认更新后续计划？" }),
+    ).toBeVisible();
+
+    const layout = await page.evaluate(() => {
+      const controls = [
+        ...document.querySelectorAll<HTMLElement>(
+          ".plan-advice-page button, .plan-advice-page a",
+        ),
+      ];
+      return {
+        clientWidth: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        controls: controls.map((control) => {
+          const rect = control.getBoundingClientRect();
+          return { height: rect.height, left: rect.left, right: rect.right };
+        }),
+      };
+    });
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+    expect(
+      layout.controls.every(
+        ({ height, left, right }) =>
+          height >= 44 && left >= 0 && right <= layout.clientWidth,
+      ),
+    ).toBe(true);
+  });
+}
 
 for (const width of [320, 375, 390, 430]) {
   test(`settings integration cards fit a ${width}px mobile viewport`, async ({

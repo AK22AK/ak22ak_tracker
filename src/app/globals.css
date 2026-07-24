@@ -1878,10 +1878,39 @@ summary:focus-visible {
 }
 
 .plan-advice-diffs span,
-.plan-advice-readonly-note {
+.plan-advice-effective-date {
   color: var(--color-muted);
   font-size: 0.8125rem;
   line-height: 1.25rem;
+}
+
+.plan-advice-confirmation,
+.plan-advice-decision-result {
+  display: grid;
+  min-width: 0;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-muted);
+}
+
+.plan-advice-confirmation h3 {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.plan-advice-decision-actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.plan-advice-decision-actions button {
+  min-width: 0;
+  min-height: 44px;
 }
 
 @media (max-width: 340px) {
@@ -1893,6 +1922,14 @@ summary:focus-visible {
   .trend-advice-card .primary-button,
   .plan-advice-intro .primary-button,
   .plan-advice-failure .secondary-button {
+    width: 100%;
+  }
+
+  .plan-advice-decision-actions {
+    flex-direction: column;
+  }
+
+  .plan-advice-decision-actions button {
     width: 100%;
   }
 }

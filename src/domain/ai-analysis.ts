@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import {
+  clientCommandMetadataSchema,
   instantSchema,
   localDateSchema,
   planChangeOperationSchema,
@@ -60,7 +61,37 @@ export const aiPlanChangeProposalDtoSchema = z
     safetyLevel: z.enum(["green", "yellow", "red"]),
     summary: z.string().min(1).max(2_000),
     operations: z.array(planChangeOperationSchema).max(20),
-    status: z.enum(["proposed", "expired"]),
+    status: z.enum(["proposed", "accepted", "rejected", "expired"]),
+    application: z
+      .object({
+        effectiveFrom: localDateSchema.nullable(),
+        canAccept: z.boolean(),
+        blockedReason: z
+          .enum([
+            "red_safety",
+            "no_operations",
+            "invalid_operations",
+            "context_changed",
+            "future_timeline",
+          ])
+          .nullable(),
+      })
+      .strict(),
+    decision: z
+      .object({
+        type: z.enum(["accepted", "rejected"]),
+        decidedAt: instantSchema,
+        appliedPlanVersion: z
+          .object({
+            id: z.uuid(),
+            version: z.number().int().positive(),
+            effectiveFrom: localDateSchema,
+          })
+          .strict()
+          .nullable(),
+      })
+      .strict()
+      .nullable(),
   })
   .strict();
 
@@ -85,8 +116,42 @@ export const aiAnalysisPageDtoSchema = z
   })
   .strict();
 
+export const planChangeDecisionCommandSchema = clientCommandMetadataSchema
+  .extend({
+    proposalId: z.uuid(),
+    decision: z.enum(["accepted", "rejected"]),
+  })
+  .strict();
+
+export const planChangeDecisionResultSchema = z
+  .object({
+    schemaVersion: z.literal(schemaVersion),
+    commandId: z.uuid(),
+    proposalId: z.uuid(),
+    replayed: z.boolean(),
+    conflict: z.boolean(),
+    status: z.enum(["accepted", "rejected", "expired"]),
+    appliedPlanVersion: z
+      .object({
+        id: z.uuid(),
+        version: z.number().int().positive(),
+        effectiveFrom: localDateSchema,
+      })
+      .strict()
+      .nullable(),
+    affectedDates: z.array(localDateSchema).max(500),
+    page: aiAnalysisPageDtoSchema,
+  })
+  .strict();
+
 export type AiConfigurationStatus = z.infer<typeof aiConfigurationStatusSchema>;
 export type AiAnalysisErrorCode = z.infer<typeof aiAnalysisErrorCodeSchema>;
 export type AiAnalysisJobDto = z.infer<typeof aiAnalysisJobDtoSchema>;
 export type AiAnalysisPageDto = z.infer<typeof aiAnalysisPageDtoSchema>;
 export type AiProposalAudit = z.infer<typeof aiProposalAuditSchema>;
+export type PlanChangeDecisionCommand = z.infer<
+  typeof planChangeDecisionCommandSchema
+>;
+export type PlanChangeDecisionResult = z.infer<
+  typeof planChangeDecisionResultSchema
+>;

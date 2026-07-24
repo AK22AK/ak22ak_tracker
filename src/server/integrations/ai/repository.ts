@@ -12,8 +12,10 @@ import {
 } from "@/domain/schemas";
 import { getDatabase } from "@/server/db/client";
 import {
+  planChangeDecisions,
   aiAnalysisJobs,
   planChangeProposals,
+  planVersions,
   trackers,
 } from "@/server/db/schema";
 
@@ -33,6 +35,7 @@ export type AiAnalysisJobRecord = {
   attemptCount: number;
   contextVersion: "1";
   contextHash: string;
+  contextRevision: number;
   contextFrom: string;
   contextThrough: string;
   safetyLevel: PlanAdjustmentSafetyLevel;
@@ -42,6 +45,15 @@ export type AiAnalysisJobRecord = {
   startedAt: Date | null;
   completedAt: Date | null;
   proposal: PlanChangeProposal | null;
+  proposalDecision: {
+    type: "accepted" | "rejected";
+    decidedAt: Date;
+    appliedPlanVersion: {
+      id: string;
+      version: number;
+      effectiveFrom: string;
+    } | null;
+  } | null;
 };
 
 export type NewAiAnalysisJob = PreparedAiAnalysisContext & {
@@ -93,6 +105,16 @@ function rowToJob(row: {
   const proposalDocument = row.proposal
     ? planChangeProposalSchema.parse(row.proposal.document)
     : null;
+  const proposalStatus = row.proposal?.status;
+  if (
+    proposalStatus !== undefined &&
+    proposalStatus !== "proposed" &&
+    proposalStatus !== "accepted" &&
+    proposalStatus !== "rejected" &&
+    proposalStatus !== "expired"
+  ) {
+    throw new Error("plan_change_proposal_status_invalid");
+  }
   return {
     id: row.job.id,
     trackerId: row.job.trackerId,
@@ -109,6 +131,7 @@ function rowToJob(row: {
             throw new Error("ai_analysis_context_version_invalid");
           })(),
     contextHash: row.job.contextHash,
+    contextRevision: row.job.contextRevision,
     contextFrom: row.job.contextFrom,
     contextThrough: row.job.contextThrough,
     safetyLevel: parseSafetyLevel(row.job.safetyLevel),
@@ -121,9 +144,10 @@ function rowToJob(row: {
     startedAt: row.job.startedAt,
     completedAt: row.job.completedAt,
     proposal:
-      proposalDocument && row.proposal?.status === "expired"
-        ? { ...proposalDocument, status: "expired" }
+      proposalDocument && proposalStatus
+        ? { ...proposalDocument, status: proposalStatus }
         : proposalDocument,
+    proposalDecision: null,
   };
 }
 
@@ -150,7 +174,42 @@ export function createNeonAiAnalysisStore(
       )
       .orderBy(desc(aiAnalysisJobs.requestedAt))
       .limit(1);
-    return rows[0] ? rowToJob(rows[0]) : null;
+    if (!rows[0]) return null;
+    const job = rowToJob(rows[0]);
+    if (!rows[0].proposal?.decidedAt) return job;
+    const [decision] = await database
+      .select({
+        decision: planChangeDecisions.decision,
+        decidedAt: planChangeDecisions.decidedAt,
+        appliedPlanVersionId: planChangeDecisions.appliedPlanVersionId,
+      })
+      .from(planChangeDecisions)
+      .where(eq(planChangeDecisions.proposalId, rows[0].proposal.id))
+      .limit(1);
+    if (!decision) return job;
+    if (decision.decision !== "accepted" && decision.decision !== "rejected") {
+      throw new Error("plan_change_decision_invalid");
+    }
+    const decisionType: "accepted" | "rejected" = decision.decision;
+    const [applied] = decision.appliedPlanVersionId
+      ? await database
+          .select({
+            id: planVersions.id,
+            version: planVersions.version,
+            effectiveFrom: planVersions.effectiveFrom,
+          })
+          .from(planVersions)
+          .where(eq(planVersions.id, decision.appliedPlanVersionId))
+          .limit(1)
+      : [];
+    return {
+      ...job,
+      proposalDecision: {
+        type: decisionType,
+        decidedAt: decision.decidedAt,
+        appliedPlanVersion: applied ?? null,
+      },
+    };
   }
 
   return {
@@ -167,6 +226,7 @@ export function createNeonAiAnalysisStore(
           model: input.model,
           contextVersion: input.contextVersion,
           contextHash: input.contextHash,
+          contextRevision: input.contextRevision,
           contextFrom: input.contextFrom,
           contextThrough: input.contextThrough,
           safetyLevel: input.safetyLevel,
@@ -240,6 +300,7 @@ export function createNeonAiAnalysisStore(
             model: input.model,
             contextVersion: input.job.contextVersion,
             contextHash: input.job.contextHash,
+            contextRevision: input.job.contextRevision,
             contextFrom: input.job.contextFrom,
             contextThrough: input.job.contextThrough,
             document: input.proposal,

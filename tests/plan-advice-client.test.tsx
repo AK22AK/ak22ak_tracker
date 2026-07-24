@@ -20,8 +20,49 @@ function response(body: unknown, status = 200) {
   });
 }
 
-function page(job: unknown = null) {
-  return { schemaVersion, configuration: "configured", job };
+type JobFixture = Record<string, unknown> & {
+  proposal?:
+    | (Record<string, unknown> & {
+        status: string;
+        safetyLevel: string;
+        operations: unknown[];
+        application?: unknown;
+        decision?: unknown;
+      })
+    | null;
+};
+
+function page(job: JobFixture | null = null) {
+  const proposal = job?.proposal;
+  return {
+    schemaVersion,
+    configuration: "configured",
+    job: proposal
+      ? {
+          ...job,
+          proposal: {
+            ...proposal,
+            application: proposal.application ?? {
+              effectiveFrom:
+                proposal.status === "expired" ? null : "2026-07-25",
+              canAccept:
+                proposal.status === "proposed" &&
+                proposal.safetyLevel !== "red" &&
+                proposal.operations.length > 0,
+              blockedReason:
+                proposal.status === "expired"
+                  ? "context_changed"
+                  : proposal.safetyLevel === "red"
+                    ? "red_safety"
+                    : proposal.operations.length === 0
+                      ? "no_operations"
+                      : null,
+            },
+            decision: proposal.decision ?? null,
+          },
+        }
+      : job,
+  };
 }
 
 function renderClient() {
@@ -36,14 +77,14 @@ function renderClient() {
   return { ...view, queryClient };
 }
 
-describe("read-only plan advice UI", () => {
+describe("plan advice UI", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
-  it("only starts analysis after an explicit click and shows read-only diffs", async () => {
+  it("only starts analysis after an explicit click and shows decision-ready diffs", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(response(page()))
@@ -96,9 +137,8 @@ describe("read-only plan advice UI", () => {
     expect(await screen.findByText("Repeat the current level")).toBeTruthy();
     expect(screen.getByText("移除一项训练安排")).toBeTruthy();
     expect(screen.getByText("Allow more recovery time")).toBeTruthy();
-    expect(
-      screen.queryByRole("button", { name: /接受|应用|拒绝|回滚/ }),
-    ).toBeNull();
+    expect(screen.getByRole("button", { name: "接受并更新计划" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "拒绝这份建议" })).toBeTruthy();
   });
 
   it("restores a running job after remount without starting another request", async () => {
@@ -157,6 +197,8 @@ describe("read-only plan advice UI", () => {
     ).toBeTruthy();
     expect(screen.getByText(/先暂停相关训练/)).toBeTruthy();
     expect(screen.queryByRole("list")).toBeNull();
+    expect(screen.queryByText(/接受后将从/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "接受并更新计划" })).toBeNull();
   });
 
   it("starts a new analysis when the saved suggestion has expired", async () => {
@@ -205,5 +247,147 @@ describe("read-only plan advice UI", () => {
     expect(JSON.parse(String(request.body))).toEqual({
       commandId: "019c1000-0000-7000-8000-000000000208",
     });
+  });
+
+  it("shows the effective date, requires a second confirmation and keeps other cache", async () => {
+    const proposalId = "019c1000-0000-7000-8000-000000000209";
+    const decisionId = "019c1000-0000-7000-8000-000000000210";
+    const proposed = page({
+      id: proposalId,
+      trackerKey: "knee-rehab",
+      status: "succeeded",
+      errorCode: null,
+      retryable: false,
+      requestedAt: "2026-07-24T08:00:00.000Z",
+      completedAt: "2026-07-24T08:00:02.000Z",
+      proposal: {
+        id: proposalId,
+        basePlanVersionId: "019c1000-0000-7000-8000-000000000211",
+        createdAt: "2026-07-24T08:00:02.000Z",
+        safetyLevel: "green",
+        summary: "Anonymous future adjustment",
+        operations: [
+          {
+            type: "remove_task",
+            taskId: "anonymous-task",
+            reason: "Anonymous reason",
+          },
+        ],
+        status: "proposed",
+      },
+    });
+    const acceptedPage = page({
+      ...proposed.job,
+      proposal: {
+        ...(proposed.job as JobFixture).proposal!,
+        status: "accepted",
+        application: {
+          effectiveFrom: "2026-07-25",
+          canAccept: false,
+          blockedReason: null,
+        },
+        decision: {
+          type: "accepted",
+          decidedAt: "2026-07-24T08:01:00.000Z",
+          appliedPlanVersion: {
+            id: "019c1000-0000-7000-8000-000000000212",
+            version: 2,
+            effectiveFrom: "2026-07-25",
+          },
+        },
+      },
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(proposed))
+      .mockResolvedValueOnce(
+        response({
+          schemaVersion,
+          commandId: decisionId,
+          proposalId,
+          replayed: false,
+          conflict: false,
+          status: "accepted",
+          appliedPlanVersion: {
+            id: "019c1000-0000-7000-8000-000000000212",
+            version: 2,
+            effectiveFrom: "2026-07-25",
+          },
+          affectedDates: ["2026-07-27"],
+          page: acceptedPage,
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(decisionId);
+    const { queryClient } = renderClient();
+    queryClient.setQueryData(["anonymous-draft"], { text: "keep" });
+
+    expect(await screen.findByText(/2026-07-25 起更新后续安排/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "接受并更新计划" }));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByRole("heading", { name: "确认更新后续计划？" }),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "确认接受并更新计划" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const [, request] = fetchMock.mock.calls[1]!;
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      commandId: decisionId,
+      proposalId,
+      decision: "accepted",
+    });
+    expect(await screen.findByText("计划已由你确认更新。")).toBeTruthy();
+    expect(queryClient.getQueryData(["anonymous-draft"])).toEqual({
+      text: "keep",
+    });
+  });
+
+  it("keeps the same decision command after a failed save", async () => {
+    const proposalId = "019c1000-0000-7000-8000-000000000213";
+    const decisionId = "019c1000-0000-7000-8000-000000000214";
+    const proposed = page({
+      id: proposalId,
+      trackerKey: "knee-rehab",
+      status: "succeeded",
+      errorCode: null,
+      retryable: false,
+      requestedAt: "2026-07-24T08:00:00.000Z",
+      completedAt: "2026-07-24T08:00:02.000Z",
+      proposal: {
+        id: proposalId,
+        basePlanVersionId: "019c1000-0000-7000-8000-000000000215",
+        createdAt: "2026-07-24T08:00:02.000Z",
+        safetyLevel: "green",
+        summary: "Anonymous future adjustment",
+        operations: [
+          {
+            type: "remove_task",
+            taskId: "anonymous-task",
+            reason: "Anonymous reason",
+          },
+        ],
+        status: "proposed",
+      },
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(proposed))
+      .mockResolvedValueOnce(response({ error: "temporary" }, 503))
+      .mockResolvedValueOnce(response({ error: "temporary" }, 503));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(decisionId);
+    renderClient();
+
+    await screen.findByText("Anonymous future adjustment");
+    fireEvent.click(screen.getByRole("button", { name: "拒绝这份建议" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认拒绝" }));
+    expect(await screen.findByText(/决定尚未保存/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "确认拒绝" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const first = JSON.parse(String(fetchMock.mock.calls[1]![1].body));
+    const second = JSON.parse(String(fetchMock.mock.calls[2]![1].body));
+    expect(first.commandId).toBe(decisionId);
+    expect(second.commandId).toBe(decisionId);
   });
 });

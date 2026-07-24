@@ -6,6 +6,7 @@ import {
   type AiAnalysisErrorCode,
   type AiAnalysisPageDto,
 } from "@/domain/ai-analysis";
+import { applyAcceptedPlanChange } from "@/domain/plan-change";
 import { planChangeProposalSchema, schemaVersion } from "@/domain/schemas";
 
 import { readDeepSeekConfiguration } from "./config";
@@ -44,6 +45,7 @@ function contextMatchesJob(
   return (
     job.contextVersion === context.contextVersion &&
     job.contextHash === context.contextHash &&
+    job.contextRevision === context.contextRevision &&
     job.basePlanVersionId === context.basePlanVersionId &&
     job.timelineHeadPlanVersionId === context.timelineHeadPlanVersionId &&
     job.safetyLevel === context.safetyLevel
@@ -77,22 +79,102 @@ async function ensureCurrentProposal(
   if (
     job.status !== "succeeded" ||
     !job.proposal ||
-    job.proposal.status === "expired"
+    job.proposal.status !== "proposed"
   ) {
-    return job;
+    return { job, context: null };
   }
   try {
     const context = await prepareContext(job.trackerKey, currentTime);
-    return contextMatchesJob(job, context) ? job : expireProposal(job, store);
+    return contextMatchesJob(job, context)
+      ? { job, context }
+      : { job: await expireProposal(job, store), context: null };
   } catch {
-    return expireProposal(job, store);
+    return { job: await expireProposal(job, store), context: null };
   }
+}
+
+function nextLocalDate(localDate: string) {
+  const value = new Date(`${localDate}T00:00:00.000Z`);
+  value.setUTCDate(value.getUTCDate() + 1);
+  return value.toISOString().slice(0, 10);
+}
+
+function proposalApplication(
+  job: AiAnalysisJobRecord,
+  context: PreparedAiAnalysisContext | null,
+) {
+  const proposal = job.proposal;
+  if (
+    !proposal ||
+    proposal.status === "accepted" ||
+    proposal.status === "rejected"
+  ) {
+    return {
+      effectiveFrom:
+        job.proposalDecision?.appliedPlanVersion?.effectiveFrom ?? null,
+      canAccept: false,
+      blockedReason: null,
+    } as const;
+  }
+  if (proposal.status === "expired" || !context) {
+    return {
+      effectiveFrom: null,
+      canAccept: false,
+      blockedReason: "context_changed" as const,
+    };
+  }
+  const effectiveFrom = nextLocalDate(context.contextThrough);
+  if (proposal.safetyLevel === "red") {
+    return {
+      effectiveFrom,
+      canAccept: false,
+      blockedReason: "red_safety" as const,
+    };
+  }
+  if (proposal.operations.length === 0) {
+    return {
+      effectiveFrom,
+      canAccept: false,
+      blockedReason: "no_operations" as const,
+    };
+  }
+  if (context.basePlanVersionId !== context.timelineHeadPlanVersionId) {
+    return {
+      effectiveFrom,
+      canAccept: false,
+      blockedReason: "future_timeline" as const,
+    };
+  }
+  try {
+    applyAcceptedPlanChange(
+      context.basePlan,
+      { ...proposal, status: "accepted" },
+      {
+        id: proposal.id,
+        version: context.timelineHeadPlan.version + 1,
+        effectiveFrom,
+        createdAt: currentIsoForValidation(job),
+      },
+    );
+    return { effectiveFrom, canAccept: true, blockedReason: null };
+  } catch {
+    return {
+      effectiveFrom,
+      canAccept: false,
+      blockedReason: "invalid_operations" as const,
+    };
+  }
+}
+
+function currentIsoForValidation(job: AiAnalysisJobRecord) {
+  return (job.completedAt ?? job.requestedAt).toISOString();
 }
 
 function pageDto(
   configuration: ReturnType<typeof readDeepSeekConfiguration>["status"],
   job: AiAnalysisJobRecord | null,
   currentTime: Date,
+  context: PreparedAiAnalysisContext | null = null,
 ): AiAnalysisPageDto {
   return aiAnalysisPageDtoSchema.parse({
     schemaVersion,
@@ -119,8 +201,16 @@ function pageDto(
                 safetyLevel: job.proposal.safetyLevel,
                 summary: job.proposal.summary,
                 operations: job.proposal.operations,
-                status:
-                  job.proposal.status === "expired" ? "expired" : "proposed",
+                status: job.proposal.status,
+                application: proposalApplication(job, context),
+                decision: job.proposalDecision
+                  ? {
+                      type: job.proposalDecision.type,
+                      decidedAt: job.proposalDecision.decidedAt.toISOString(),
+                      appliedPlanVersion:
+                        job.proposalDecision.appliedPlanVersion,
+                    }
+                  : null,
               }
             : null,
         })
@@ -156,10 +246,15 @@ export function createAiAnalysisRuntime({
       ? await store.findJob(trackerKey, jobId)
       : await store.findLatestJob(trackerKey);
     const currentTime = now();
-    const job = found
+    const current = found
       ? await ensureCurrentProposal(found, store, prepareContext, currentTime)
-      : null;
-    return pageDto(configuration.status, job, currentTime);
+      : { job: null, context: null };
+    return pageDto(
+      configuration.status,
+      current.job,
+      currentTime,
+      current.context,
+    );
   }
 
   async function request(input: { trackerKey: string; commandId: string }) {
@@ -177,12 +272,12 @@ export function createAiAnalysisRuntime({
       requestedAt,
     });
     if (job.status === "succeeded") {
+      const current = contextMatchesJob(job, context);
       return pageDto(
         configuration.status,
-        contextMatchesJob(job, context)
-          ? job
-          : await expireProposal(job, store),
+        current ? job : await expireProposal(job, store),
         now(),
+        current ? context : null,
       );
     }
     const contextChanged =
