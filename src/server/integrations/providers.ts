@@ -6,7 +6,7 @@ export const integrationProviderDefinitions = {
   garmin: {
     provider: "garmin",
     displayName: "Garmin",
-    description: "只读预览活动时间、距离、配速和平均心率。",
+    description: "只读同步活动时间、距离、配速和平均心率。",
     capabilities: ["activity:read"] as const,
   },
   xunji: {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { garminActivitySummarySchema } from "./garmin";
 import { clientCommandMetadataSchema, localDateSchema } from "./schemas";
 
 const displayMetricSchema = z.union([
@@ -73,12 +74,30 @@ const externalTrainingRecordBaseSchema = z.object({
   suggestion: externalRecordLinkSuggestionSchema.nullable(),
 });
 
-export const externalTrainingRecordSchema = externalTrainingRecordBaseSchema
+const xunjiExternalTrainingRecordSchema = externalTrainingRecordBaseSchema
   .extend({
     provider: z.literal("xunji"),
     details: xunjiTrainingDetailsSchema,
   })
   .strict();
+
+export const garminActivityDetailsSchema = garminActivitySummarySchema
+  .extend({ kind: z.literal("activity") })
+  .strict();
+
+const garminExternalActivityRecordSchema = externalTrainingRecordBaseSchema
+  .extend({
+    provider: z.literal("garmin"),
+    details: garminActivityDetailsSchema,
+  })
+  .strict();
+
+export const externalActivityRecordSchema = z.discriminatedUnion("provider", [
+  xunjiExternalTrainingRecordSchema,
+  garminExternalActivityRecordSchema,
+]);
+
+export const externalTrainingRecordSchema = externalActivityRecordSchema;
 
 const associationCommandBase = {
   externalRecordId: z.uuid(),
@@ -108,6 +127,16 @@ export const externalRecordAssociationResultSchema = z.object({
 });
 
 export type XunjiTrainingDetails = z.infer<typeof xunjiTrainingDetailsSchema>;
+export type GarminActivityDetails = z.infer<typeof garminActivityDetailsSchema>;
+export type XunjiExternalTrainingRecord = z.infer<
+  typeof xunjiExternalTrainingRecordSchema
+>;
+export type GarminExternalActivityRecord = z.infer<
+  typeof garminExternalActivityRecordSchema
+>;
+export type ExternalActivityRecord = z.infer<
+  typeof externalActivityRecordSchema
+>;
 export type ExternalTrainingRecord = z.infer<
   typeof externalTrainingRecordSchema
 >;

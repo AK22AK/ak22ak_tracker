@@ -7,9 +7,14 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { GarminIntegrationCard } from "@/components/garmin-integration-card";
+import {
+  garminActivityTypeLabel,
+  type GarminConnectionStatus,
+} from "@/domain/garmin";
 
 const disconnected = {
   provider: "garmin" as const,
@@ -35,6 +40,21 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function renderCard(initialStatus: GarminConnectionStatus = disconnected) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <GarminIntegrationCard
+        trackerKey="anonymous-tracker"
+        initialStatus={initialStatus}
+      />
+    </QueryClientProvider>,
+  );
+  return queryClient;
+}
+
 describe("Garmin token-only settings flow", () => {
   it("imports a local file without displaying or retaining its token", async () => {
     const connected = {
@@ -44,12 +64,7 @@ describe("Garmin token-only settings flow", () => {
     };
     const fetchMock = vi.fn<typeof fetch>(async () => Response.json(connected));
     vi.stubGlobal("fetch", fetchMock);
-    render(
-      <GarminIntegrationCard
-        trackerKey="anonymous-tracker"
-        initialStatus={disconnected}
-      />,
-    );
+    renderCard();
 
     const input = screen.getByLabelText("Token 文件") as HTMLInputElement;
     fireEvent.change(input, {
@@ -80,7 +95,7 @@ describe("Garmin token-only settings flow", () => {
     expect(String(init?.body)).not.toContain(".ak22ak_tracker");
   });
 
-  it("renders only the whitelisted single-day activity summary", async () => {
+  it("persists one selected day and reports only safe result counts", async () => {
     const imported = {
       ...disconnected,
       state: "needs_validation" as const,
@@ -89,22 +104,14 @@ describe("Garmin token-only settings flow", () => {
     const response = {
       provider: "garmin",
       date: "2026-07-24",
-      activities: [
-        "running",
-        "walking",
-        "hiking",
-        "cycling",
-        "swimming",
-        "strength_training",
-        "anonymous_provider_type",
-      ].map((activityType) => ({
-        activityType,
-        startedAt: "2026-07-24T00:30:00.000Z",
-        durationSeconds: 1_800,
-        distanceMeters: 3_000,
-        averagePaceSecondsPerKilometer: 360,
-        averageHeartRateBpm: 128,
-      })),
+      sync: {
+        cached: false,
+        created: 2,
+        changed: 1,
+        unchanged: 3,
+        recordCount: 6,
+        syncedAt: "2026-07-24T02:00:00.000Z",
+      },
       connection: {
         ...imported,
         state: "connected",
@@ -113,35 +120,27 @@ describe("Garmin token-only settings flow", () => {
     };
     const fetchMock = vi.fn<typeof fetch>(async () => Response.json(response));
     vi.stubGlobal("fetch", fetchMock);
-    render(
-      <GarminIntegrationCard
-        trackerKey="anonymous-tracker"
-        initialStatus={imported}
-      />,
-    );
+    renderCard(imported);
 
-    fireEvent.change(screen.getByLabelText("验证日期"), {
+    fireEvent.change(screen.getByLabelText("同步日期"), {
       target: { value: "2026-07-24" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "预览这一天" }));
+    fireEvent.click(screen.getByRole("button", { name: "同步这一天" }));
 
-    for (const label of [
-      "跑步",
-      "步行",
-      "徒步",
-      "骑行",
-      "游泳",
-      "力量训练",
-      "其他活动",
-    ]) {
-      expect(await screen.findByText(label)).toBeTruthy();
-    }
-    expect(screen.getAllByText(/3.00 km/)).toHaveLength(7);
-    expect(screen.getAllByText(/平均心率 128/)).toHaveLength(7);
-    expect(screen.getByText(/尚未保存活动数据/)).toBeTruthy();
+    expect(await screen.findByText(/已同步 6 条活动/)).toBeTruthy();
+    expect(screen.getByText(/新增 2 条、更新 1 条/)).toBeTruthy();
     expect(document.body.textContent).not.toContain("providerRecordId");
-    expect(document.body.textContent).not.toContain("anonymous_provider_type");
+    expect(document.body.textContent).not.toContain("anonymous-provider-id");
     expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/trackers/anonymous-tracker/integrations/garmin/sync",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ date: "2026-07-24" }),
+      }),
+    );
+    expect(garminActivityTypeLabel("running")).toBe("跑步");
+    expect(garminActivityTypeLabel("anonymous_provider_type")).toBe("其他活动");
   });
 
   it("shows a safe refresh action without exposing Provider errors", async () => {
@@ -151,14 +150,9 @@ describe("Garmin token-only settings flow", () => {
         Response.json({ error: "authentication" }, { status: 422 }),
       ),
     );
-    render(
-      <GarminIntegrationCard
-        trackerKey="anonymous-tracker"
-        initialStatus={{ ...disconnected, state: "needs_validation" }}
-      />,
-    );
+    renderCard({ ...disconnected, state: "needs_validation" });
 
-    fireEvent.click(screen.getByRole("button", { name: "预览这一天" }));
+    fireEvent.click(screen.getByRole("button", { name: "同步这一天" }));
 
     await waitFor(() => expect(screen.getByText("需要更新")).toBeTruthy());
     expect(screen.getByText(/请在本机重新授权后导入/)).toBeTruthy();
@@ -172,16 +166,11 @@ describe("Garmin token-only settings flow", () => {
         Response.json({ error: "future_date_not_allowed" }, { status: 400 }),
       ),
     );
-    render(
-      <GarminIntegrationCard
-        trackerKey="anonymous-tracker"
-        initialStatus={{ ...disconnected, state: "connected" }}
-      />,
-    );
+    renderCard({ ...disconnected, state: "connected" });
 
-    fireEvent.click(screen.getByRole("button", { name: "预览这一天" }));
+    fireEvent.click(screen.getByRole("button", { name: "同步这一天" }));
 
-    await screen.findByText("验证日期不能晚于今天。");
+    await screen.findByText("同步日期不能晚于今天。");
     expect(screen.queryByText(/Garmin 暂时无法连接/)).toBeNull();
     expect(screen.queryByText(/本次验证没有完成/)).toBeNull();
   });

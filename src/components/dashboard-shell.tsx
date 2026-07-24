@@ -11,6 +11,7 @@ import type {
   ExternalRecordAssociation,
   ExternalTrainingRecord,
 } from "@/domain/external-training";
+import { garminActivityTypeLabel } from "@/domain/garmin";
 import type { TaskActual } from "@/domain/schemas";
 import type { DashboardTask, TodayDashboard } from "@/server/dashboard";
 import type { ExecutionContextToday } from "@/domain/execution-context";
@@ -332,7 +333,7 @@ function TaskCard({
               trackerKey="knee-rehab"
               records={records}
               tasks={tasks}
-              heading="已同步训练"
+              heading="已同步记录"
               onUpdated={onExternalTrainingUpdated}
               readOnly={externalWritesDisabled}
             />
@@ -907,7 +908,7 @@ export function DashboardShell({
 
       <SurfaceCard className="pending-sources-card" aria-label="待处理来源">
         <SectionHeading
-          eyebrow="训练来源"
+          eyebrow="活动与训练来源"
           title={
             pendingRecords.length > 0
               ? `${pendingRecords.length} 条需要确认`
@@ -925,8 +926,14 @@ export function DashboardShell({
           <div className="pending-source-list">
             {pendingRecords.map((record) => (
               <div key={record.id}>
-                <StatusPill tone="brand">训记</StatusPill>
-                <span>{record.details.title}</span>
+                <StatusPill tone="brand">
+                  {record.provider === "xunji" ? "训记" : "Garmin"}
+                </StatusPill>
+                <span>
+                  {record.provider === "xunji"
+                    ? record.details.title
+                    : garminActivityTypeLabel(record.details.activityType)}
+                </span>
                 <small>
                   {record.association?.needsReview
                     ? "来源已更新，需复核"
@@ -939,7 +946,7 @@ export function DashboardShell({
           </div>
         ) : (
           <p className="empty-state-copy">
-            有待确认的训练记录时，会显示在这里。
+            有待确认的活动或训练记录时，会显示在这里。
           </p>
         )}
         {unassignedRecords.length > 0 ? (
@@ -947,7 +954,7 @@ export function DashboardShell({
             trackerKey="knee-rehab"
             records={unassignedRecords}
             tasks={tasks}
-            heading="未归入任务的训练"
+            heading="未归入任务的记录"
             onUpdated={onExternalTrainingUpdated}
             readOnly={writesDisabled}
           />

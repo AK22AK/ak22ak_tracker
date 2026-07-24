@@ -10,7 +10,9 @@ import {
 import type {
   ExternalRecordAssociation,
   ExternalTrainingRecord,
+  XunjiExternalTrainingRecord,
 } from "@/domain/external-training";
+import { garminActivityTypeLabel } from "@/domain/garmin";
 import type { DashboardTask } from "@/server/dashboard";
 
 function timeLabel(value: string) {
@@ -34,7 +36,7 @@ function metric(value: string | number | null, suffix = "") {
 }
 
 type TrainingSetDetails =
-  ExternalTrainingRecord["details"]["movements"][number]["sets"][number];
+  XunjiExternalTrainingRecord["details"]["movements"][number]["sets"][number];
 
 function setDetailSummary(set: Omit<TrainingSetDetails, "index" | "items">) {
   const duration =
@@ -82,6 +84,107 @@ function associationLabel(
   return association.status === "confirmed"
     ? `已关联：${task?.title ?? "其他任务"}`
     : "等待确认";
+}
+
+function distanceLabel(meters: number | null) {
+  return meters === null ? null : `${(meters / 1_000).toFixed(2)} km`;
+}
+
+function paceLabel(seconds: number | null) {
+  if (seconds === null) return null;
+  const rounded = Math.round(seconds);
+  return `${Math.floor(rounded / 60)}'${String(rounded % 60).padStart(2, "0")}"/km`;
+}
+
+function GarminActivitySummary({
+  record,
+}: {
+  record: Extract<ExternalTrainingRecord, { provider: "garmin" }>;
+}) {
+  const details = record.details;
+  const metrics = [
+    distanceLabel(details.distanceMeters),
+    paceLabel(details.averagePaceSecondsPerKilometer),
+    details.averageHeartRateBpm === null
+      ? null
+      : `平均心率 ${details.averageHeartRateBpm}`,
+  ].filter(Boolean);
+  return (
+    <>
+      <div className="external-training-heading">
+        <div>
+          <span className="external-source-badge">Garmin</span>
+          <h3>{garminActivityTypeLabel(details.activityType)}</h3>
+        </div>
+        <span>{durationLabel(details.durationSeconds)}</span>
+      </div>
+      <p className="external-training-time">
+        {timeLabel(details.startedAt)}
+        {metrics.length ? ` · ${metrics.join(" · ")}` : ""}
+      </p>
+    </>
+  );
+}
+
+function XunjiTrainingSummary({
+  record,
+}: {
+  record: XunjiExternalTrainingRecord;
+}) {
+  return (
+    <>
+      <div className="external-training-heading">
+        <div>
+          <span className="external-source-badge">训记</span>
+          <h3>{record.details.title}</h3>
+        </div>
+        <span>{durationLabel(record.details.durationSeconds)}</span>
+      </div>
+      <p className="external-training-time">
+        {timeLabel(record.details.startedAt)}–
+        {timeLabel(record.details.endedAt)}
+        {record.details.rpe !== null ? ` · RPE ${record.details.rpe}` : ""}
+      </p>
+      {record.details.movements.length > 0 && (
+        <div className="external-movement-list">
+          {record.details.movements.map((movement, movementIndex) => (
+            <div key={`${movement.name}-${movementIndex}`}>
+              <strong>{movement.name}</strong>
+              {movement.difficulty && (
+                <span className="external-movement-difficulty">
+                  难度：{difficultyLabels[movement.difficulty]}
+                </span>
+              )}
+              {movement.sets.length > 0 && (
+                <ol>
+                  {movement.sets.map((set) => (
+                    <li key={set.index}>
+                      第 {set.index} 组：{setSummary(set) || "已记录"}
+                      {set.note ? ` · ${set.note}` : ""}
+                      {set.items.length > 0 && (
+                        <ul className="external-set-items">
+                          {set.items.map((item, itemIndex) => (
+                            <li key={`${item.name}-${itemIndex}`}>
+                              {item.name}：{setDetailSummary(item) || "已记录"}
+                              {item.note ? ` · ${item.note}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              )}
+              {movement.note && <p>{movement.note}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+      {record.details.note && (
+        <p className="external-training-note">备注：{record.details.note}</p>
+      )}
+    </>
+  );
 }
 
 function ExternalTrainingCard({
@@ -148,7 +251,7 @@ function ExternalTrainingCard({
     } catch (error) {
       setMessage(
         String(error).includes("409")
-          ? "训记来源已更新，请刷新后重新确认"
+          ? "来源记录已更新，请刷新后重新确认"
           : "关联保存失败，请稍后重试",
       );
     } finally {
@@ -165,61 +268,19 @@ function ExternalTrainingCard({
 
   return (
     <article className="external-training-card">
-      <div className="external-training-heading">
-        <div>
-          <span className="external-source-badge">训记</span>
-          <h3>{record.details.title}</h3>
-        </div>
-        <span>{durationLabel(record.details.durationSeconds)}</span>
-      </div>
-      <p className="external-training-time">
-        {timeLabel(record.details.startedAt)}–
-        {timeLabel(record.details.endedAt)}
-        {record.details.rpe !== null ? ` · RPE ${record.details.rpe}` : ""}
-      </p>
-      {record.details.movements.length > 0 && (
-        <div className="external-movement-list">
-          {record.details.movements.map((movement, movementIndex) => (
-            <div key={`${movement.name}-${movementIndex}`}>
-              <strong>{movement.name}</strong>
-              {movement.difficulty && (
-                <span className="external-movement-difficulty">
-                  难度：{difficultyLabels[movement.difficulty]}
-                </span>
-              )}
-              {movement.sets.length > 0 && (
-                <ol>
-                  {movement.sets.map((set) => (
-                    <li key={set.index}>
-                      第 {set.index} 组：{setSummary(set) || "已记录"}
-                      {set.note ? ` · ${set.note}` : ""}
-                      {set.items.length > 0 && (
-                        <ul className="external-set-items">
-                          {set.items.map((item, itemIndex) => (
-                            <li key={`${item.name}-${itemIndex}`}>
-                              {item.name}：{setDetailSummary(item) || "已记录"}
-                              {item.note ? ` · ${item.note}` : ""}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </li>
-                  ))}
-                </ol>
-              )}
-              {movement.note && <p>{movement.note}</p>}
-            </div>
-          ))}
-        </div>
-      )}
-      {record.details.note && (
-        <p className="external-training-note">备注：{record.details.note}</p>
+      {record.provider === "xunji" ? (
+        <XunjiTrainingSummary record={record} />
+      ) : (
+        <GarminActivitySummary record={record} />
       )}
 
       <div className="external-association">
         <strong>{associationLabel(record.association, tasks)}</strong>
         {record.association?.needsReview && (
-          <p role="status">训记内容已更新，请重新确认关联。</p>
+          <p role="status">
+            {record.provider === "xunji" ? "训练" : "活动"}
+            内容已更新，请重新确认关联。
+          </p>
         )}
         {!record.association && record.suggestion && (
           <p>建议：{record.suggestion.reason}</p>
@@ -260,7 +321,7 @@ function ExternalTrainingCard({
           </button>
         </div>
         <p className="external-association-hint">
-          确认后，这条训练会显示在所选任务下。
+          确认后，这条记录会显示在所选任务下；任务状态不会自动改变。
         </p>
         {message && <p role="status">{message}</p>}
       </div>
@@ -272,7 +333,7 @@ export function ExternalTrainingSection({
   trackerKey,
   records,
   tasks,
-  heading = "当天训练记录",
+  heading = "当天活动与训练记录",
   onUpdated,
   readOnly = false,
 }: {
@@ -285,7 +346,10 @@ export function ExternalTrainingSection({
 }) {
   if (records.length === 0) return null;
   return (
-    <section className="external-training-section" aria-label="训记训练记录">
+    <section
+      className="external-training-section"
+      aria-label="外部活动与训练记录"
+    >
       <div className="external-section-title">
         <h2>{heading}</h2>
         <span>{records.length} 条</span>

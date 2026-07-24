@@ -77,3 +77,30 @@ export function suggestTrainingTask(
     reason: `训记动作“${best.match.sourceName}”与计划动作${relation}`,
   };
 }
+
+const garminActivityPatterns: Record<string, RegExp> = {
+  running: /running|run|跑步|慢跑/i,
+  walking: /walking|walk|步行|健走/i,
+  hiking: /hiking|hike|徒步|登山/i,
+  cycling: /cycling|cycle|bike|骑行|骑车/i,
+  swimming: /swimming|swim|游泳/i,
+  strength_training: /strength|力量|抗阻/i,
+};
+
+export function suggestGarminActivityTask(
+  record: { localDate: string; activityType: string },
+  tasks: TrainingLinkCandidateTask[],
+): { taskId: string; reason: string } | null {
+  const pattern = garminActivityPatterns[record.activityType];
+  if (!pattern) return null;
+  const matches = tasks.filter(
+    (task) =>
+      task.scheduledOn === record.localDate &&
+      pattern.test(`${task.category} ${task.title}`),
+  );
+  if (matches.length !== 1) return null;
+  return {
+    taskId: matches[0]!.id,
+    reason: "Garmin 活动类型与计划任务一致",
+  };
+}

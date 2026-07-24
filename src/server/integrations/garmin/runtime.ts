@@ -1,6 +1,7 @@
 import "server-only";
 
 import {
+  garminActivitySyncResponseSchema,
   garminActivityPreviewResponseSchema,
   garminConnectionStatusSchema,
   garminProviderErrorCodeSchema,
@@ -13,6 +14,11 @@ import {
 import { localDateInTimeZone } from "@/domain/planning-time";
 import { localDateSchema } from "@/domain/schemas";
 import { getDatabase } from "@/server/db/client";
+import { createNeonProviderDateSyncStore } from "@/server/integrations/core/neon-date-sync-store";
+import {
+  syncProviderDate,
+  type ProviderDateSyncStore,
+} from "@/server/integrations/core/sync-provider-date";
 import { getIntegrationEncryptionConfig } from "@/server/integrations/credentials/config";
 import {
   getIntegrationStatus,
@@ -28,6 +34,7 @@ import {
   type GarminCredential,
 } from "./contracts";
 import { GarminProviderError } from "./errors";
+import { normalizeGarminActivities } from "./normalize";
 import { createGarminPythonRuntimeClient } from "./python-runtime-client";
 
 type Database = ReturnType<typeof getDatabase>;
@@ -123,14 +130,87 @@ function connectionStatus(status: GenericStatus): GarminConnectionStatus {
 export function createGarminRuntime({
   store,
   client,
+  createDateSyncStore,
   now = () => new Date(),
   assertEncryptionConfigured = () => void getIntegrationEncryptionConfig(),
 }: {
   store: GarminCredentialStore;
   client: GarminClient<GarminCredential>;
+  createDateSyncStore: (trackerKey: string) => ProviderDateSyncStore;
   now?: () => Date;
   assertEncryptionConfigured?: () => void;
 }) {
+  async function readActivities(input: {
+    tracker: Tracker;
+    date: string;
+    requestedAt: Date;
+    markCredentialFailure: boolean;
+  }) {
+    let credential: GarminCredential;
+    try {
+      credential = garminCredentialSchema.parse(
+        JSON.parse(await store.read(input.tracker.id)) as unknown,
+      );
+    } catch (error) {
+      if (input.markCredentialFailure) {
+        await store.markFailure(
+          input.tracker.id,
+          input.requestedAt,
+          "invalid_token_bundle",
+        );
+      }
+      throw new GarminProviderError("invalid_token_bundle", { cause: error });
+    }
+
+    try {
+      const result = await client.fetchActivitiesForDate({
+        credential,
+        date: input.date,
+      });
+      if (
+        result.activities.some(
+          (activity) =>
+            localDateInTimeZone(
+              activity.startedAt,
+              input.tracker.planningTimeZone,
+            ) !== input.date,
+        )
+      ) {
+        throw new GarminProviderError("invalid_response");
+      }
+      await store.saveAndReset({
+        trackerId: input.tracker.id,
+        plaintext: JSON.stringify(result.refreshedCredential),
+        verifiedAt: input.requestedAt,
+        attemptedAt: input.requestedAt,
+        now: input.requestedAt,
+      });
+      return result.activities;
+    } catch (error) {
+      const providerError =
+        error instanceof GarminProviderError
+          ? error
+          : new GarminProviderError("provider_unavailable", { cause: error });
+      if (input.markCredentialFailure) {
+        await store.markFailure(
+          input.tracker.id,
+          input.requestedAt,
+          providerError.code,
+        );
+      }
+      throw providerError;
+    }
+  }
+
+  async function requirePreviewDate(trackerKey: string, dateInput: string) {
+    const date = localDateSchema.parse(dateInput);
+    const tracker = await store.requireTracker(trackerKey);
+    const requestedAt = now();
+    const today = localDateInTimeZone(requestedAt, tracker.planningTimeZone);
+    if (date > today) throw new GarminPreviewDateOutOfRangeError();
+    return { date, tracker, requestedAt };
+  }
+
   return {
     async status(trackerKey: string) {
       return connectionStatus(await store.getStatus(trackerKey));
@@ -152,77 +232,62 @@ export function createGarminRuntime({
     },
 
     async previewActivities(input: { trackerKey: string; date: string }) {
-      const date = localDateSchema.parse(input.date);
-      const tracker = await store.requireTracker(input.trackerKey);
-      const requestedAt = now();
-      const today = localDateInTimeZone(requestedAt, tracker.planningTimeZone);
-      if (date > today) {
-        throw new GarminPreviewDateOutOfRangeError();
-      }
+      const { date, tracker, requestedAt } = await requirePreviewDate(
+        input.trackerKey,
+        input.date,
+      );
+      const activities = await readActivities({
+        tracker,
+        date,
+        requestedAt,
+        markCredentialFailure: true,
+      });
+      return garminActivityPreviewResponseSchema.parse({
+        provider: "garmin",
+        date,
+        activities: activities.map((activity) => ({
+          activityType: activity.activityType,
+          startedAt: activity.startedAt,
+          durationSeconds: activity.durationSeconds,
+          distanceMeters: activity.distanceMeters,
+          averagePaceSecondsPerKilometer:
+            activity.averagePaceSecondsPerKilometer,
+          averageHeartRateBpm: activity.averageHeartRateBpm,
+        })),
+        connection: connectionStatus(await store.getStatus(input.trackerKey)),
+      });
+    },
 
-      let credential: GarminCredential;
-      try {
-        credential = garminCredentialSchema.parse(
-          JSON.parse(await store.read(tracker.id)) as unknown,
-        );
-      } catch (error) {
-        await store.markFailure(
-          tracker.id,
-          requestedAt,
-          "invalid_token_bundle",
-        );
-        throw new GarminProviderError("invalid_token_bundle", {
-          cause: error,
-        });
-      }
-
-      try {
-        const result = await client.fetchActivitiesForDate({
-          credential,
-          date,
-        });
-        if (
-          result.activities.some(
-            (activity) =>
-              localDateInTimeZone(
-                activity.startedAt,
-                tracker.planningTimeZone,
-              ) !== date,
-          )
-        ) {
-          throw new GarminProviderError("invalid_response");
-        }
-        await store.saveAndReset({
-          trackerId: tracker.id,
-          plaintext: JSON.stringify(result.refreshedCredential),
-          verifiedAt: requestedAt,
-          attemptedAt: requestedAt,
-          now: requestedAt,
-        });
-        return garminActivityPreviewResponseSchema.parse({
-          provider: "garmin",
-          date,
-          activities: result.activities.map((activity) => ({
-            activityType: activity.activityType,
-            startedAt: activity.startedAt,
-            durationSeconds: activity.durationSeconds,
-            distanceMeters: activity.distanceMeters,
-            averagePaceSecondsPerKilometer:
-              activity.averagePaceSecondsPerKilometer,
-            averageHeartRateBpm: activity.averageHeartRateBpm,
-          })),
-          connection: connectionStatus(await store.getStatus(input.trackerKey)),
-        });
-      } catch (error) {
-        const providerError =
-          error instanceof GarminProviderError
-            ? error
-            : new GarminProviderError("provider_unavailable", {
-                cause: error,
-              });
-        await store.markFailure(tracker.id, requestedAt, providerError.code);
-        throw providerError;
-      }
+    async syncActivities(input: { trackerKey: string; date: string }) {
+      const { date, tracker, requestedAt } = await requirePreviewDate(
+        input.trackerKey,
+        input.date,
+      );
+      const sync = await syncProviderDate({
+        trackerId: tracker.id,
+        provider: "garmin",
+        date,
+        now: requestedAt,
+        store: createDateSyncStore(tracker.key),
+        readSource: async () =>
+          normalizeGarminActivities({
+            activities: await readActivities({
+              tracker,
+              date,
+              requestedAt,
+              markCredentialFailure: false,
+            }),
+            localDate: date,
+            planningTimeZone: tracker.planningTimeZone,
+            fetchedAt: requestedAt,
+          }),
+      });
+      return garminActivitySyncResponseSchema.parse({
+        provider: "garmin",
+        date,
+        sync,
+        connection: connectionStatus(await store.getStatus(input.trackerKey)),
+      });
     },
   };
 }
@@ -231,5 +296,7 @@ export function createDefaultGarminRuntime(database?: Database) {
   return createGarminRuntime({
     store: createNeonGarminCredentialStore(database),
     client: createGarminPythonRuntimeClient(),
+    createDateSyncStore: (trackerKey) =>
+      createNeonProviderDateSyncStore(trackerKey, database ?? getDatabase()),
   });
 }

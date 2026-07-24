@@ -561,7 +561,7 @@ export function CalendarShell({
                 {dashboard.tasks.length === 0 && (
                   <div className="calendar-detail-state empty compact">
                     <strong>当天没有计划任务</strong>
-                    <p>仍可查看同步训练来源和身体反馈。</p>
+                    <p>仍可查看同步活动、训练来源和身体反馈。</p>
                   </div>
                 )}
               </div>

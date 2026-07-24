@@ -1,28 +1,17 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 
+import { integrationQueryKeys, trackerQueryKeys } from "@/client/query-keys";
 import {
-  garminActivityPreviewResponseSchema,
+  garminActivitySyncResponseSchema,
   garminConnectionStatusSchema,
   garminProviderErrorCodeSchema,
-  type GarminActivityPreviewResponse,
   type GarminConnectionStatus,
 } from "@/domain/garmin";
 
 const maxCredentialFileBytes = 140 * 1024;
-const activityTypeLabels: Record<string, string> = {
-  running: "跑步",
-  walking: "步行",
-  hiking: "徒步",
-  cycling: "骑行",
-  swimming: "游泳",
-  strength_training: "力量训练",
-};
-
-function activityTypeLabel(activityType: string) {
-  return activityTypeLabels[activityType] ?? "其他活动";
-}
 
 function todayInPlanningTimeZone() {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -45,36 +34,18 @@ function statusCopy(state: GarminConnectionStatus["state"]) {
 }
 
 function safeFailureMessage(code: string | null) {
-  if (code === "future_date_not_allowed") {
-    return "验证日期不能晚于今天。";
-  }
+  if (code === "future_date_not_allowed") return "同步日期不能晚于今天。";
   if (code === "authentication") {
     return "Garmin Token 已失效，请在本机重新授权后导入。";
   }
-  if (code === "rate_limited") {
-    return "Garmin 请求过于频繁，请稍后再试。";
-  }
+  if (code === "rate_limited") return "Garmin 请求过于频繁，请稍后再试。";
   if (code === "timeout" || code === "provider_unavailable") {
     return "Garmin 暂时无法连接，请稍后再试。";
   }
   if (code === "invalid_token_bundle") {
     return "Token 文件无效，原有连接没有被替换。";
   }
-  return "本次验证没有完成，请稍后再试。";
-}
-
-function durationLabel(seconds: number) {
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} 分钟`;
-  const hours = Math.floor(minutes / 60);
-  const remainder = minutes % 60;
-  return remainder ? `${hours} 小时 ${remainder} 分钟` : `${hours} 小时`;
-}
-
-function paceLabel(seconds: number | null) {
-  if (seconds === null) return null;
-  const rounded = Math.round(seconds);
-  return `${Math.floor(rounded / 60)}'${String(rounded % 60).padStart(2, "0")}\"/km`;
+  return "本次同步没有完成，请稍后再试。";
 }
 
 async function safeErrorCode(response: Response) {
@@ -95,12 +66,10 @@ export function GarminIntegrationCard({
   trackerKey: string;
   initialStatus: GarminConnectionStatus;
 }) {
+  const queryClient = useQueryClient();
   const [status, setStatus] = useState(initialStatus);
-  const [previewDate, setPreviewDate] = useState(todayInPlanningTimeZone);
-  const [preview, setPreview] = useState<GarminActivityPreviewResponse | null>(
-    null,
-  );
-  const [busy, setBusy] = useState<"credential" | "preview" | null>(null);
+  const [syncDate, setSyncDate] = useState(todayInPlanningTimeZone);
+  const [busy, setBusy] = useState<"credential" | "sync" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const baseUrl = `/api/trackers/${encodeURIComponent(trackerKey)}/integrations/garmin`;
@@ -129,10 +98,13 @@ export function GarminIntegrationCard({
         await response.json(),
       );
       setStatus(nextStatus);
-      setPreview(null);
+      queryClient.setQueryData(
+        integrationQueryKeys.providerStatus(trackerKey, "garmin"),
+        nextStatus,
+      );
       if (fileInputRef.current) fileInputRef.current.value = "";
       setMessage(
-        "Token 已加密保存。浏览器无法删除本机文件，请手动运行 rm ~/.ak22ak_tracker/garmin-token-bundle.json 删除临时文件，再继续验证一天的活动。",
+        "Token 已加密保存。浏览器无法删除本机文件，请手动运行 rm ~/.ak22ak_tracker/garmin-token-bundle.json 删除临时文件，再同步一天的活动。",
       );
     } catch (error) {
       setMessage(
@@ -143,15 +115,18 @@ export function GarminIntegrationCard({
     }
   }
 
-  async function previewActivities() {
-    setBusy("preview");
+  async function syncActivities() {
+    setBusy("sync");
     setMessage(null);
     try {
-      const response = await fetch(`${baseUrl}/preview`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: previewDate }),
-      });
+      const response = await fetch(
+        `/api/trackers/${encodeURIComponent(trackerKey)}/integrations/garmin/sync`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date: syncDate }),
+        },
+      );
       if (!response.ok) {
         const code = await safeErrorCode(response);
         if (code === "authentication") {
@@ -161,20 +136,36 @@ export function GarminIntegrationCard({
             lastErrorCode: code,
           }));
         }
-        throw new Error(code ?? "preview_failed");
+        throw new Error(code ?? "sync_failed");
       }
-      const result = garminActivityPreviewResponseSchema.parse(
+      const result = garminActivitySyncResponseSchema.parse(
         await response.json(),
       );
       setStatus(result.connection);
-      setPreview(result);
+      queryClient.setQueryData(
+        integrationQueryKeys.providerStatus(trackerKey, "garmin"),
+        result.connection,
+      );
+      void Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: trackerQueryKeys.today(trackerKey, syncDate),
+          exact: true,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: trackerQueryKeys.day(trackerKey, syncDate),
+          exact: true,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: trackerQueryKeys.calendar(trackerKey, syncDate.slice(0, 7)),
+          exact: true,
+        }),
+      ]).catch(() => undefined);
       setMessage(
-        result.activities.length
-          ? `已读取 ${result.activities.length} 条活动，仅供确认，尚未保存活动数据。`
-          : "这一天没有读取到活动，尚未保存活动数据。",
+        result.sync.recordCount
+          ? `已同步 ${result.sync.recordCount} 条活动，其中新增 ${result.sync.created} 条、更新 ${result.sync.changed} 条。`
+          : "这一天没有活动记录。",
       );
     } catch (error) {
-      setPreview(null);
       setMessage(
         safeFailureMessage(error instanceof Error ? error.message : null),
       );
@@ -221,56 +212,23 @@ export function GarminIntegrationCard({
       </form>
 
       <div className="integration-actions garmin-preview-actions">
-        <label htmlFor="garmin-preview-date">验证日期</label>
+        <label htmlFor="garmin-sync-date">同步日期</label>
         <input
-          id="garmin-preview-date"
+          id="garmin-sync-date"
           type="date"
-          value={previewDate}
+          value={syncDate}
           max={todayInPlanningTimeZone()}
           disabled={busy !== null}
-          onChange={(event) => setPreviewDate(event.target.value)}
+          onChange={(event) => setSyncDate(event.target.value)}
         />
         <button
           type="button"
           disabled={status.state === "not_connected" || busy !== null}
-          onClick={() => void previewActivities()}
+          onClick={() => void syncActivities()}
         >
-          {busy === "preview" ? "正在读取…" : "预览这一天"}
+          {busy === "sync" ? "正在同步…" : "同步这一天"}
         </button>
       </div>
-
-      {preview ? (
-        <div className="garmin-preview" aria-label="Garmin 活动预览">
-          {preview.activities.length ? (
-            <ul>
-              {preview.activities.map((activity, index) => (
-                <li key={`${activity.startedAt}-${index}`}>
-                  <strong>{activityTypeLabel(activity.activityType)}</strong>
-                  <span>
-                    {new Intl.DateTimeFormat("zh-CN", {
-                      timeZone: "Asia/Shanghai",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    }).format(new Date(activity.startedAt))}
-                    · {durationLabel(activity.durationSeconds)}
-                    {activity.distanceMeters === null
-                      ? ""
-                      : ` · ${(activity.distanceMeters / 1_000).toFixed(2)} km`}
-                    {paceLabel(activity.averagePaceSecondsPerKilometer)
-                      ? ` · ${paceLabel(activity.averagePaceSecondsPerKilometer)}`
-                      : ""}
-                    {activity.averageHeartRateBpm === null
-                      ? ""
-                      : ` · 平均心率 ${activity.averageHeartRateBpm}`}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p>没有活动。</p>
-          )}
-        </div>
-      ) : null}
       {message ? (
         <p role="status" className="integration-message">
           {message}

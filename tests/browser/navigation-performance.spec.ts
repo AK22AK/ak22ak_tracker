@@ -30,7 +30,26 @@ const day = {
   ],
   feedbackCount: 0,
   feedbacks: [],
-  externalTrainingRecords: [],
+  externalTrainingRecords: [
+    {
+      id: "019c0000-0000-7000-8000-000000000004",
+      provider: "garmin",
+      localDate,
+      occurredAt: `${localDate}T02:00:00+08:00`,
+      sourceVersion: 1,
+      details: {
+        kind: "activity",
+        activityType: "running",
+        startedAt: `${localDate}T02:00:00+08:00`,
+        durationSeconds: 1_800,
+        distanceMeters: 3_000,
+        averagePaceSecondsPerKilometer: 360,
+        averageHeartRateBpm: 120,
+      },
+      association: null,
+      suggestion: null,
+    },
+  ],
 };
 
 const todayAggregate = {
@@ -320,6 +339,28 @@ for (const width of [320, 375, 390, 430]) {
           height >= 44 && left >= cardLeft && right <= cardRight,
       ),
     ).toBe(true);
+
+    await page.getByRole("link", { name: "今日" }).click();
+    await expect(page.getByText("3.00 km")).toBeVisible();
+    const activityLayout = await page.evaluate(() => {
+      const card = document.querySelector<HTMLElement>(
+        '[data-tab-panel="today"] .external-training-card',
+      );
+      const rect = card?.getBoundingClientRect();
+      return {
+        clientWidth: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        left: rect?.left ?? -1,
+        right: rect?.right ?? Number.POSITIVE_INFINITY,
+      };
+    });
+    expect(activityLayout.scrollWidth).toBeLessThanOrEqual(
+      activityLayout.clientWidth,
+    );
+    expect(activityLayout.left).toBeGreaterThanOrEqual(0);
+    expect(activityLayout.right).toBeLessThanOrEqual(
+      activityLayout.clientWidth,
+    );
   });
 }
 
@@ -432,7 +473,9 @@ test("persistent tabs keep DOM, active state and browser history URLs aligned", 
   await expectActiveTab(page, "/trends", "/trends");
   await page.getByRole("link", { name: /今日/ }).click();
   await expect(
-    page.locator('[data-tab-panel="today"]').getByText("Anonymous task"),
+    page
+      .locator('[data-tab-panel="today"] .task-card-summary')
+      .getByText("Anonymous task", { exact: true }),
   ).toBeVisible();
   await expectActiveTab(page, "/", "/");
 
@@ -449,7 +492,9 @@ test("persistent tabs keep DOM, active state and browser history URLs aligned", 
   await expectActiveTab(page, "/trends", "/trends");
   await page.goForward();
   await expect(
-    page.locator('[data-tab-panel="today"]').getByText("Anonymous task"),
+    page
+      .locator('[data-tab-panel="today"] .task-card-summary')
+      .getByText("Anonymous task", { exact: true }),
   ).toBeVisible();
   await expectActiveTab(page, "/", "/");
 });

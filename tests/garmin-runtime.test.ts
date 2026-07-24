@@ -11,6 +11,7 @@ import {
   createGarminRuntime,
   type GarminCredentialStore,
 } from "@/server/integrations/garmin/runtime";
+import type { ProviderDateSyncStore } from "@/server/integrations/core/sync-provider-date";
 
 const credential: GarminCredential = {
   schemaVersion: 1,
@@ -82,13 +83,38 @@ function fixture() {
       refreshedCredential: credential,
     })),
   };
+  const committedRecords: unknown[] = [];
+  const dateSyncStore: ProviderDateSyncStore = {
+    getCachedSuccess: vi.fn(async () => null),
+    markAttempt: vi.fn(async () => undefined),
+    commitSuccess: vi.fn(async (input) => {
+      committedRecords.push(...input.records);
+      return {
+        cached: false,
+        created: input.records.length,
+        changed: 0,
+        unchanged: 0,
+        recordCount: input.records.length,
+        syncedAt: input.succeededAt.toISOString(),
+      };
+    }),
+    markFailure: vi.fn(async () => undefined),
+  };
   const runtime = createGarminRuntime({
     store,
     client,
+    createDateSyncStore: () => dateSyncStore,
     now: () => new Date("2026-07-24T02:00:00.000Z"),
     assertEncryptionConfigured: vi.fn(),
   });
-  return { runtime, store, client, getPlaintext: () => plaintext };
+  return {
+    runtime,
+    store,
+    client,
+    dateSyncStore,
+    committedRecords,
+    getPlaintext: () => plaintext,
+  };
 }
 
 describe("P3b-2a Garmin token-only runtime", () => {
@@ -215,7 +241,7 @@ describe("P3b-2a Garmin token-only runtime", () => {
   it("previews a user-selected historical day before the plan started", async () => {
     const { runtime, client } = fixture();
     await runtime.importCredential({ trackerKey: "knee-rehab", credential });
-    vi.mocked(client.fetchActivitiesForDate).mockResolvedValueOnce({
+    const historicalResult = {
       activities: [
         {
           providerRecordId: "anonymous-walking-activity",
@@ -228,7 +254,10 @@ describe("P3b-2a Garmin token-only runtime", () => {
         },
       ],
       refreshedCredential: credential,
-    });
+    };
+    vi.mocked(client.fetchActivitiesForDate).mockResolvedValue(
+      historicalResult,
+    );
 
     await expect(
       runtime.previewActivities({
@@ -243,6 +272,15 @@ describe("P3b-2a Garmin token-only runtime", () => {
       credential,
       date: "2026-07-13",
     });
+    await expect(
+      runtime.syncActivities({
+        trackerKey: "knee-rehab",
+        date: "2026-07-13",
+      }),
+    ).resolves.toMatchObject({
+      date: "2026-07-13",
+      sync: { created: 1 },
+    });
   });
 
   it("rejects a future date without calling Garmin", async () => {
@@ -255,6 +293,86 @@ describe("P3b-2a Garmin token-only runtime", () => {
         date: "2026-07-25",
       }),
     ).rejects.toThrow("garmin_preview_date_out_of_range");
+    await expect(
+      runtime.syncActivities({
+        trackerKey: "knee-rehab",
+        date: "2026-07-25",
+      }),
+    ).rejects.toThrow("garmin_preview_date_out_of_range");
     expect(client.fetchActivitiesForDate).not.toHaveBeenCalled();
+  });
+
+  it("persists one selected day through the provider-neutral date store", async () => {
+    const { runtime, dateSyncStore, committedRecords } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+
+    const result = await runtime.syncActivities({
+      trackerKey: "knee-rehab",
+      date: "2026-07-24",
+    });
+
+    expect(result).toMatchObject({
+      provider: "garmin",
+      date: "2026-07-24",
+      sync: { created: 1, changed: 0, recordCount: 1 },
+      connection: { state: "connected" },
+    });
+    expect(dateSyncStore.commitSuccess).toHaveBeenCalledOnce();
+    expect(committedRecords).toEqual([
+      expect.objectContaining({
+        provider: "garmin",
+        providerRecordId: "anonymous-activity-1",
+        kind: "activity",
+        localDate: "2026-07-24",
+        payload: expect.not.objectContaining({
+          providerRecordId: expect.anything(),
+        }),
+      }),
+    ]);
+  });
+
+  it("does not call Garmin again while the same-day success is cached", async () => {
+    const { runtime, client, dateSyncStore } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+    vi.mocked(dateSyncStore.getCachedSuccess).mockResolvedValueOnce({
+      cached: true,
+      created: 0,
+      changed: 0,
+      unchanged: 1,
+      recordCount: 1,
+      syncedAt: "2026-07-24T01:59:00.000Z",
+    });
+
+    const result = await runtime.syncActivities({
+      trackerKey: "knee-rehab",
+      date: "2026-07-24",
+    });
+
+    expect(result.sync.cached).toBe(true);
+    expect(client.fetchActivitiesForDate).not.toHaveBeenCalled();
+    expect(dateSyncStore.commitSuccess).not.toHaveBeenCalled();
+  });
+
+  it("isolates a Provider failure to date sync state without committing records", async () => {
+    const { runtime, client, dateSyncStore } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+    vi.mocked(client.fetchActivitiesForDate).mockRejectedValueOnce(
+      new GarminProviderError("rate_limited"),
+    );
+
+    await expect(
+      runtime.syncActivities({
+        trackerKey: "knee-rehab",
+        date: "2026-07-24",
+      }),
+    ).rejects.toMatchObject({ code: "rate_limited" });
+    expect(dateSyncStore.markFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "garmin",
+        date: "2026-07-24",
+        errorCode: "rate_limited",
+      }),
+    );
+    expect(dateSyncStore.commitSuccess).not.toHaveBeenCalled();
   });
 });

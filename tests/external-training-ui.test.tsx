@@ -7,6 +7,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -303,7 +304,7 @@ describe("external training association UI", () => {
     );
 
     expect(screen.getByText(/已关联/)).toBeTruthy();
-    expect(screen.getByText("训记内容已更新，请重新确认关联。")).toBeTruthy();
+    expect(screen.getByText("训练内容已更新，请重新确认关联。")).toBeTruthy();
     expect(
       (
         screen.getByRole("checkbox", {
@@ -311,5 +312,90 @@ describe("external training association UI", () => {
         }) as HTMLInputElement
       ).checked,
     ).toBe(false);
+  });
+
+  it("renders Xunji and Garmin together and keeps Garmin association independent from task status", async () => {
+    const data = todayAggregate();
+    const garminRecordId = "019c0000-0000-7000-8000-000000000106";
+    data.day.externalTrainingRecords.push({
+      id: garminRecordId,
+      provider: "garmin",
+      localDate: "2026-07-19",
+      occurredAt: "2026-07-19T04:00:00.000Z",
+      sourceVersion: 1,
+      details: {
+        kind: "activity",
+        activityType: "running",
+        startedAt: "2026-07-19T04:00:00.000Z",
+        durationSeconds: 1_500,
+        distanceMeters: 2_500,
+        averagePaceSecondsPerKilometer: 360,
+        averageHeartRateBpm: 118,
+      },
+      association: null,
+      suggestion: {
+        taskId,
+        reason: "Garmin 活动类型与计划任务一致",
+      },
+    });
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, init?: RequestInit) => {
+        if (!init?.method || init.method === "GET") return jsonResponse(data);
+        if (init.method === "PUT") {
+          return jsonResponse({
+            commandId: "019c0000-0000-7000-8000-000000000105",
+            replayed: false,
+            recordId: garminRecordId,
+            association: {
+              status: "confirmed",
+              taskId,
+              sourceVersion: 1,
+              needsReview: false,
+            },
+          });
+        }
+        return jsonResponse({}, 500);
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", {
+      randomUUID: () => "019c0000-0000-7000-8000-000000000105",
+    });
+
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <TodayClient />
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "展开 Anonymous strength task",
+      }),
+    );
+    expect(screen.getAllByText("Anonymous session").length).toBeGreaterThan(0);
+    const heading = screen.getAllByRole("heading", { name: "跑步" })[0]!;
+    const card = heading.closest("article");
+    expect(card).toBeTruthy();
+    expect(within(card!).getByText("Garmin")).toBeTruthy();
+    expect(within(card!).getByText(/2.50 km/)).toBeTruthy();
+    expect(within(card!).getByText(/6'00"\/km/)).toBeTruthy();
+    expect(within(card!).getByText(/平均心率 118/)).toBeTruthy();
+
+    const checkbox = screen.getByRole("checkbox", {
+      name: "Anonymous strength task",
+    }) as HTMLInputElement;
+    fireEvent.click(
+      within(card!).getByRole("button", { name: "关联到此任务" }),
+    );
+    await within(card!).findByText("已关联到任务");
+    expect(checkbox.checked).toBe(false);
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toContain(
+      "anonymous-provider-record",
+    );
   });
 });
