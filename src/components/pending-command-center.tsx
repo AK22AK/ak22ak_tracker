@@ -145,15 +145,17 @@ export function PendingCommandCenter({ trackerKey }: { trackerKey: string }) {
         </Link>
       </header>
 
-      <section className="surface-card pending-command-intro">
-        <div>
-          <strong>{relevant.length} 条本机记录</strong>
-          <p>最早一条处理完成后，后面的记录会继续同步。</p>
-        </div>
-        <StatusPill tone={online ? "success" : "warning"}>
-          {online ? "当前在线" : "当前离线"}
-        </StatusPill>
-      </section>
+      {relevant.length > 0 ? (
+        <section className="surface-card pending-command-intro">
+          <div>
+            <strong>{relevant.length} 条本机记录</strong>
+            <p>最早一条处理完成后，后面的记录会继续同步。</p>
+          </div>
+          <StatusPill tone={online ? "success" : "warning"}>
+            {online ? "当前在线" : "当前离线"}
+          </StatusPill>
+        </section>
+      ) : null}
 
       {relevant.length === 0 ? (
         <section className="surface-card pending-command-empty" role="status">

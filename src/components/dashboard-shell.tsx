@@ -953,10 +953,6 @@ export function DashboardShell({
           />
         ) : null}
       </SurfaceCard>
-
-      <footer className="today-technical-status" aria-label="应用状态">
-        <span>{online ? "网络可用" : "当前离线"}</span>
-      </footer>
     </main>
   );
 }

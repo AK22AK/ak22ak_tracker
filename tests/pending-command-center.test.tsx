@@ -84,6 +84,10 @@ describe("P2b-2 pending command center", () => {
     render(<PendingCommandCenter trackerKey="knee-rehab" />);
 
     expect(screen.getByText("当前没有需要同步的内容。")).toBeTruthy();
+    expect(screen.queryByText("0 条本机记录")).toBeNull();
+    expect(
+      screen.queryByText("最早一条处理完成后，后面的记录会继续同步。"),
+    ).toBeNull();
     expect(screen.queryByText("任务和身体反馈都已保存。")).toBeNull();
   });
 
@@ -97,6 +101,10 @@ describe("P2b-2 pending command center", () => {
 
     render(<PendingCommandCenter trackerKey="knee-rehab" />);
 
+    expect(screen.getByText("2 条本机记录")).toBeTruthy();
+    expect(
+      screen.getByText("最早一条处理完成后，后面的记录会继续同步。"),
+    ).toBeTruthy();
     const records = screen.getAllByRole("article");
     expect(within(records[0]!).getByText("最早一条")).toBeTruthy();
     expect(within(records[1]!).getByText("等待前一条")).toBeTruthy();

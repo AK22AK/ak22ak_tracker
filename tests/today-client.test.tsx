@@ -203,7 +203,7 @@ describe("today background refresh", () => {
     commandHarness.replayNow.mockReset();
   });
 
-  it("describes online capability without claiming that data is synced", async () => {
+  it("shows the top online status without repeating it in a technical footer", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(jsonResponse(aggregate("planned", 0))),
@@ -222,7 +222,8 @@ describe("today background refresh", () => {
     );
 
     expect(await screen.findByText("当前在线")).toBeTruthy();
-    expect(screen.getByText("网络可用")).toBeTruthy();
+    expect(screen.queryByText("网络可用")).toBeNull();
+    expect(screen.queryByLabelText("应用状态")).toBeNull();
     expect(screen.queryByText("已同步到云端")).toBeNull();
     expect(screen.queryByText(/全部已同步|待同步 0/)).toBeNull();
   });
