@@ -7,9 +7,9 @@
 [数据与同步](../architecture/data-and-sync.md)，关键决策见
 [ADR-0009](../adr/0009-garmin-token-runtime-and-fit-fallback.md)。
 
-截至 2026-07-24，P3b-1 已完成并验收契约、安全边界和匿名部署可行性验证；P3b-2a
-已完成本机授权、加密导入、单日活动预览的代码及 Preview/Production 安全部署，等待
-项目经理复核。项目尚未接入真实 Garmin Token，也没有读取任何私人 Garmin 数据。
+截至 2026-07-24，P3b-1 与 P3b-2a 的契约、安全边界、匿名测试及 Preview/Production
+部署已由项目经理验收。项目尚未接入真实 Garmin Token，也没有读取任何私人 Garmin
+数据；真实验证必须等待使用者明确授权，并由使用者本人完成账号、密码和 MFA 输入。
 
 ## 接入路线
 
