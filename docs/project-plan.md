@@ -387,8 +387,8 @@ worker 更新仍是人工发布验收项，不据自动化结果虚报完成。
 
 #### P3b-2a：Token-only 单日活动受控验证
 
-状态：代码、匿名测试和 Vercel Preview Python 3.12 构建已完成，等待项目经理复核；
-真实 Garmin Token、账号连接和单日活动尚未验证。
+状态：代码、匿名测试、Preview 与 Production 部署门禁已完成，等待项目经理复核；真实
+Garmin Token、账号连接和单日活动尚未验证。
 
 - 本机授权助手在使用者 Mac 的临时 Python 环境中处理账号、密码与 MFA，只生成固定
   `python-garminconnect==0.3.6` 的严格 token 文件；密码不进入网页、Vercel 或聊天。
@@ -404,6 +404,9 @@ worker 更新仍是人工发布验收项，不据自动化结果虚报完成。
 - Preview `dpl_FzhmN4y1aDPnCJvQYVLoxCbZHzeE` 已确认正式 Python Route 与锁定依赖在
   Python 3.12 构建成功；无内部 Secret 的请求由 Runtime 自身返回 401。该证据没有调用
   Garmin，也不能代替真实 Token 验证。
+- Production `dpl_3ocqbQM9zLKxeh7PneCgnUiivaQS` 已 Ready 并绑定正式域名；健康检查为
+  `database=ok`，未登录导入/预览接口和未携带内部 Secret 的 Runtime 均按设计拒绝。
+  生产门禁同样没有导入 Token、调用 Garmin 或持久化活动。
 
 #### P3 后续范围
 

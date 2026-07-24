@@ -8,8 +8,8 @@
 [ADR-0009](../adr/0009-garmin-token-runtime-and-fit-fallback.md)。
 
 截至 2026-07-24，P3b-1 已完成并验收契约、安全边界和匿名部署可行性验证；P3b-2a
-已完成本机授权、加密导入和单日活动预览的代码与匿名 Preview，等待项目经理复核。
-项目尚未接入真实 Garmin Token，也没有读取任何私人 Garmin 数据。
+已完成本机授权、加密导入、单日活动预览的代码及 Preview/Production 安全部署，等待
+项目经理复核。项目尚未接入真实 Garmin Token，也没有读取任何私人 Garmin 数据。
 
 ## 接入路线
 
@@ -116,6 +116,10 @@ Token 文件不应发送到聊天、放入项目目录或提交到 Git。
 3.12、锁定依赖和 Route 构建成功；未携带内部 Secret 的 POST 由 Runtime 返回 401。
 本次没有调用 Garmin，也没有使用匿名假 Token 对 Garmin 发请求，因此该证据只覆盖
 部署、鉴权门禁和运行时装载，不覆盖真实账号、刷新、WAF 或活动字段。
+
+Production `dpl_3ocqbQM9zLKxeh7PneCgnUiivaQS` 已 Ready 并绑定正式域名；健康检查为
+`database=ok`，未登录的 Garmin 导入与预览接口返回 401，未携带内部 Secret 的 Python
+Runtime 也返回安全的 401。该生产门禁没有导入 Token、读取活动或触发 Garmin 请求。
 
 ## 运行时选择
 
