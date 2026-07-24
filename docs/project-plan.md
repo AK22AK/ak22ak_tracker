@@ -364,8 +364,8 @@ worker 更新仍是人工发布验收项，不据自动化结果虚报完成。
 
 #### P3b-1：Garmin 私人只读连接的运行时与凭证可行性
 
-状态：代码、匿名 Preview 运行时和安全边界已完成，等待项目经理复核；没有连接真实
-Garmin Token 或读取真实数据。
+状态：代码、匿名 Preview 运行时和安全边界已于 2026-07-24 由项目经理验收；没有连接
+真实 Garmin Token 或读取真实数据。
 
 - Garmin 官方 Developer Program 当前只面向业务使用，Activity API 只有在申请获批后
   才提供评估环境；当前项目未把官方 API 表述为已连接。
@@ -379,7 +379,8 @@ Garmin Token 或读取真实数据。
   客户端、`curl_cffi`、匿名 Token 解析与安全错误分类均可构建和启动；临时验证 Route
   已删除，不进入 Production。
 - Garmin 官方 JavaScript FIT SDK 作为无凭证活动导入兜底；是否先做 token-only 单日
-  读取，还是先做 FIT 导入，由项目经理在 P3b-2 前决定。
+  读取，还是先做 FIT 导入，由项目经理在 P3b-2 前决定。项目经理已决定 P3b-2 优先
+  验证 token-only 单日自动读取，FIT 导入继续作为失败兜底。
 
 未验证项：真实 Token 验证与刷新、Vercel 网络/WAF、全球区/中国区账号差异、真实
 活动字段和延迟。P3b-1 不等于 Garmin 已连接，不允许据匿名 Spike 扩展历史追赶同步。
@@ -424,8 +425,8 @@ P5 不作为膝关节康复闭环完成的前置条件。
 5. P2a 至 P2b-4 均已验收，P2 代码实现收口；真机发布验收继续保留。
 6. P3a-2、P3a-3a 与 P3a-3b 已验收；P3a-3c 已完成首次平台 Cron 空队列生产验收。
    P3a-1 的首条真实私仓写入仍等待自然产生的 outbox 后受控验收。
-7. P3b-1 已完成 Garmin Token-only 契约和匿名 Vercel Python 运行时验证；项目经理复核
-   后再决定 P3b-2 是单日自动读取，还是先交付官方 FIT 导入。
+7. P3b-1 已完成 Garmin Token-only 契约和匿名 Vercel Python 运行时验证，并已由项目
+   经理验收；P3b-2 优先实现 token-only 单日受控验证，FIT 导入保留为失败兜底。
 8. 数据质量与版本能力达到门槛后接入 DeepSeek、趋势和阶段评估。
 
 每个切片同时包含界面、领域规则、数据迁移、自动化测试和运维状态，不能把测试、
