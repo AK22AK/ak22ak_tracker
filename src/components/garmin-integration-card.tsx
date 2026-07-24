@@ -11,6 +11,18 @@ import {
 } from "@/domain/garmin";
 
 const maxCredentialFileBytes = 140 * 1024;
+const activityTypeLabels: Record<string, string> = {
+  running: "跑步",
+  walking: "步行",
+  hiking: "徒步",
+  cycling: "骑行",
+  swimming: "游泳",
+  strength_training: "力量训练",
+};
+
+function activityTypeLabel(activityType: string) {
+  return activityTypeLabels[activityType] ?? "其他活动";
+}
 
 function todayInPlanningTimeZone() {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -233,7 +245,7 @@ export function GarminIntegrationCard({
             <ul>
               {preview.activities.map((activity, index) => (
                 <li key={`${activity.startedAt}-${index}`}>
-                  <strong>{activity.activityType}</strong>
+                  <strong>{activityTypeLabel(activity.activityType)}</strong>
                   <span>
                     {new Intl.DateTimeFormat("zh-CN", {
                       timeZone: "Asia/Shanghai",

@@ -90,15 +90,21 @@ describe("Garmin token-only settings flow", () => {
       provider: "garmin",
       date: "2026-07-24",
       activities: [
-        {
-          activityType: "running",
-          startedAt: "2026-07-24T00:30:00.000Z",
-          durationSeconds: 1_800,
-          distanceMeters: 3_000,
-          averagePaceSecondsPerKilometer: 360,
-          averageHeartRateBpm: 128,
-        },
-      ],
+        "running",
+        "walking",
+        "hiking",
+        "cycling",
+        "swimming",
+        "strength_training",
+        "anonymous_provider_type",
+      ].map((activityType) => ({
+        activityType,
+        startedAt: "2026-07-24T00:30:00.000Z",
+        durationSeconds: 1_800,
+        distanceMeters: 3_000,
+        averagePaceSecondsPerKilometer: 360,
+        averageHeartRateBpm: 128,
+      })),
       connection: {
         ...imported,
         state: "connected",
@@ -119,11 +125,22 @@ describe("Garmin token-only settings flow", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "预览这一天" }));
 
-    await screen.findByText("running");
-    expect(screen.getByText(/3.00 km/)).toBeTruthy();
-    expect(screen.getByText(/平均心率 128/)).toBeTruthy();
+    for (const label of [
+      "跑步",
+      "步行",
+      "徒步",
+      "骑行",
+      "游泳",
+      "力量训练",
+      "其他活动",
+    ]) {
+      expect(await screen.findByText(label)).toBeTruthy();
+    }
+    expect(screen.getAllByText(/3.00 km/)).toHaveLength(7);
+    expect(screen.getAllByText(/平均心率 128/)).toHaveLength(7);
     expect(screen.getByText(/尚未保存活动数据/)).toBeTruthy();
     expect(document.body.textContent).not.toContain("providerRecordId");
+    expect(document.body.textContent).not.toContain("anonymous_provider_type");
     expect(screen.queryByRole("checkbox")).toBeNull();
   });
 

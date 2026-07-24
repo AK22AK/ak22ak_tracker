@@ -109,6 +109,14 @@ const integrationStatus = {
   },
 };
 
+const garminStatus = {
+  provider: "garmin",
+  state: "connected",
+  verifiedAt: "2026-07-01T00:00:00.000Z",
+  updatedAt: "2026-07-01T00:00:00.000Z",
+  lastErrorCode: null,
+};
+
 const mirrorStatus = {
   configuration: "configured",
   pendingCount: 0,
@@ -125,6 +133,7 @@ type RequestCounters = {
   month: number;
   day: number;
   integration: number;
+  garmin: number;
   mirror: number;
 };
 
@@ -150,6 +159,7 @@ async function mockPrivateReads(page: Page, delayMs: number) {
     month: 0,
     day: 0,
     integration: 0,
+    garmin: 0,
     mirror: 0,
   };
   await page.route("**/api/**", async (route) => {
@@ -168,6 +178,9 @@ async function mockPrivateReads(page: Page, delayMs: number) {
     } else if (url.pathname.endsWith("/integrations/xunji/credential")) {
       counters.integration += 1;
       body = integrationStatus;
+    } else if (url.pathname.endsWith("/integrations/garmin/credential")) {
+      counters.garmin += 1;
+      body = garminStatus;
     } else if (url.pathname === "/api/mirror/status") {
       counters.mirror += 1;
       body = mirrorStatus;
@@ -252,6 +265,63 @@ async function expectActiveTab(
 test.beforeEach(async ({ context }) => {
   await authorize(context);
 });
+
+for (const width of [320, 375, 390, 430]) {
+  test(`settings integration cards fit a ${width}px mobile viewport`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await mockPrivateReads(page, 0);
+    await page.goto("/settings");
+    await expect(page.getByRole("heading", { name: "Garmin" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "训记" })).toBeVisible();
+
+    const layout = await page.evaluate(() => {
+      const controls = [
+        ...document.querySelectorAll<HTMLElement>(
+          ".integration-card input, .integration-card button",
+        ),
+      ];
+      const cards = [
+        ...document.querySelectorAll<HTMLElement>(".integration-card"),
+      ];
+      return {
+        clientWidth: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        controls: controls.map((control) => {
+          const rect = control.getBoundingClientRect();
+          const cardRect = control
+            .closest<HTMLElement>(".integration-card")
+            ?.getBoundingClientRect();
+          return {
+            height: rect.height,
+            left: rect.left,
+            right: rect.right,
+            cardLeft: cardRect?.left ?? 0,
+            cardRight: cardRect?.right ?? 0,
+          };
+        }),
+        cards: cards.map((card) => {
+          const rect = card.getBoundingClientRect();
+          return { left: rect.left, right: rect.right };
+        }),
+      };
+    });
+
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+    expect(
+      layout.cards.every(
+        ({ left, right }) => left >= 0 && right <= layout.clientWidth,
+      ),
+    ).toBe(true);
+    expect(
+      layout.controls.every(
+        ({ height, left, right, cardLeft, cardRight }) =>
+          height >= 44 && left >= cardLeft && right <= cardRight,
+      ),
+    ).toBe(true);
+  });
+}
 
 test("cold uncached Calendar exposes a stable target shell within 100 ms", async ({
   page,

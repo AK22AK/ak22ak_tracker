@@ -103,6 +103,8 @@ a {
 }
 
 .integration-card {
+  min-width: 0;
+  max-width: 100%;
   padding: 1.25rem;
   border: 1px solid var(--line);
   background: var(--card);
@@ -113,7 +115,12 @@ a {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-width: 0;
   gap: 1rem;
+}
+
+.integration-actions {
+  flex-wrap: wrap;
 }
 
 .integration-connected,
@@ -163,6 +170,7 @@ a {
 
 .integration-form {
   display: grid;
+  min-width: 0;
   gap: 0.55rem;
   margin-top: 1.2rem;
 }
@@ -173,6 +181,10 @@ a {
 }
 
 .integration-form input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: 2.9rem;
   padding: 0.7rem 0.8rem;
   border: 1px solid var(--line);
@@ -184,6 +196,7 @@ a {
 
 .integration-form button,
 .integration-actions button {
+  max-width: 100%;
   min-height: 2.75rem;
   padding: 0.7rem 0.9rem;
   border: 0;
@@ -204,8 +217,10 @@ a {
 }
 
 .integration-actions p {
+  min-width: 0;
   font-size: 0.78rem;
   text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .integration-message {
@@ -226,7 +241,9 @@ a {
 }
 
 .garmin-preview-actions input {
+  width: 100%;
   min-width: 0;
+  max-width: 100%;
   min-height: 2.75rem;
   padding: 0.65rem 0.75rem;
   border: 1px solid var(--line);
