@@ -9,6 +9,8 @@ export const trackerQueryKeys = {
   calendar: (trackerKey: string, month: string) =>
     ["calendar", trackerKey, month] as const,
   trends: (trackerKey: string) => ["trends", trackerKey] as const,
+  planAdvice: (trackerKey: string) =>
+    ["proposals", trackerKey, "latest"] as const,
   resumptionAssessment: (trackerKey: string, assessmentId: string) =>
     ["resumption-assessment", trackerKey, assessmentId] as const,
 };

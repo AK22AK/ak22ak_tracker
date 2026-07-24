@@ -1764,7 +1764,8 @@ summary:focus-visible {
 .trend-card,
 .trend-current-card,
 .trend-empty-card,
-.trend-error-card {
+.trend-error-card,
+.trend-advice-card {
   min-width: 0;
 }
 
@@ -1772,6 +1773,7 @@ summary:focus-visible {
 .trend-current-card,
 .trend-empty-card,
 .trend-error-card,
+.trend-advice-card,
 .trend-list,
 .trend-row {
   display: grid;
@@ -1786,6 +1788,113 @@ summary:focus-visible {
   font-size: 1.125rem;
   line-height: 1.5rem;
   letter-spacing: -0.02em;
+}
+
+.trend-advice-card,
+.plan-advice-page,
+.plan-advice-intro,
+.plan-advice-result,
+.plan-advice-failure,
+.plan-advice-diffs,
+.plan-advice-diffs li {
+  display: grid;
+  min-width: 0;
+  gap: 0.875rem;
+}
+
+.trend-advice-card h2,
+.plan-advice-page h2 {
+  margin: 0.2rem 0 0;
+  font-size: 1.125rem;
+  line-height: 1.5rem;
+}
+
+.trend-advice-card p,
+.plan-advice-page p {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  line-height: 1.375rem;
+}
+
+.trend-advice-card .primary-button {
+  width: fit-content;
+  text-decoration: none;
+}
+
+.plan-advice-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.plan-advice-header h1 {
+  margin-top: 0.15rem;
+  font-size: 1.75rem;
+  line-height: 2.125rem;
+  letter-spacing: -0.035em;
+}
+
+.plan-advice-header .text-button {
+  flex: 0 0 auto;
+  text-decoration: none;
+}
+
+.plan-advice-intro .primary-button,
+.plan-advice-failure .secondary-button {
+  width: fit-content;
+}
+
+.plan-advice-result.safety-red {
+  border-color: color-mix(
+    in srgb,
+    var(--color-danger) 34%,
+    var(--color-border)
+  );
+  background: var(--color-danger-soft);
+}
+
+.plan-advice-diffs {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.plan-advice-diffs li {
+  gap: 0.25rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.plan-advice-diffs li:last-child {
+  border-bottom: 0;
+}
+
+.plan-advice-diffs strong,
+.plan-advice-diffs span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.plan-advice-diffs span,
+.plan-advice-readonly-note {
+  color: var(--color-muted);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+@media (max-width: 340px) {
+  .plan-advice-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .trend-advice-card .primary-button,
+  .plan-advice-intro .primary-button,
+  .plan-advice-failure .secondary-button {
+    width: 100%;
+  }
 }
 
 .trend-current-card {

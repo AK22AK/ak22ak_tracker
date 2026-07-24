@@ -28,6 +28,10 @@ import {
   type ResumptionDecisionCommand,
 } from "@/domain/resumption";
 import { trendsAggregateSchema } from "@/domain/trends";
+import {
+  aiAnalysisPageDtoSchema,
+  requestPlanAnalysisSchema,
+} from "@/domain/ai-analysis";
 
 async function getJson(url: string, signal?: AbortSignal) {
   const response = await fetch(url, {
@@ -87,6 +91,34 @@ export async function fetchTrendsAggregate(
       signal,
     ),
   );
+}
+
+export async function fetchPlanAdvice(
+  trackerKey: string,
+  signal?: AbortSignal,
+) {
+  return aiAnalysisPageDtoSchema.parse(
+    await getJson(
+      `/api/trackers/${encodeURIComponent(trackerKey)}/ai-analysis`,
+      signal,
+    ),
+  );
+}
+
+export async function requestPlanAdvice(trackerKey: string, commandId: string) {
+  const response = await fetch(
+    `/api/trackers/${encodeURIComponent(trackerKey)}/ai-analysis`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestPlanAnalysisSchema.parse({ commandId })),
+    },
+  );
+  if (!response.ok) throw new Error(`request_failed_${response.status}`);
+  return aiAnalysisPageDtoSchema.parse(await response.json());
 }
 
 export async function saveExternalRecordAssociation(

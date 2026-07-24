@@ -160,4 +160,5 @@ export type PlanVersion = z.infer<typeof planVersionSchema>;
 export type TrackerEvent = z.infer<typeof trackerEventSchema>;
 export type ExternalRecord = z.infer<typeof externalRecordSchema>;
 export type PlanChangeProposal = z.infer<typeof planChangeProposalSchema>;
+export type PlanChangeOperation = z.infer<typeof planChangeOperationSchema>;
 export type TaskActual = z.infer<typeof taskActualSchema>;

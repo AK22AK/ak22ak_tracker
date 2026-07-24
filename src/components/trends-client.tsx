@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 
 import { trackerQueryKeys } from "@/client/query-keys";
 import { fetchTrendsAggregate } from "@/client/tracker-api";
@@ -305,6 +306,17 @@ export function TrendsClient() {
           反馈 {currentWeek.symptoms.feedbackDays} /{" "}
           {currentWeek.symptoms.expectedDays} 天
         </p>
+      </section>
+
+      <section className="surface-card trend-advice-card">
+        <div>
+          <p className="eyebrow">训练安排</p>
+          <h2>需要调整下一步吗？</h2>
+          <p>可以结合近期训练和身体反馈，生成一份只读建议。</p>
+        </div>
+        <Link className="primary-button" href="/trends/advice">
+          查看调整建议
+        </Link>
       </section>
 
       {allEmpty ? (

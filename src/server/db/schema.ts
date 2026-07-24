@@ -513,6 +513,57 @@ export const integrationCredentials = pgTable(
   ],
 );
 
+export const aiAnalysisJobs = pgTable(
+  "ai_analysis_jobs",
+  {
+    id: uuid("id").primaryKey(),
+    trackerId: uuid("tracker_id")
+      .notNull()
+      .references(() => trackers.id, { onDelete: "cascade" }),
+    basePlanVersionId: uuid("base_plan_version_id")
+      .notNull()
+      .references(() => planVersions.id, { onDelete: "restrict" }),
+    timelineHeadPlanVersionId: uuid("timeline_head_plan_version_id")
+      .notNull()
+      .references(() => planVersions.id, { onDelete: "restrict" }),
+    status: text("status").default("pending").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    attemptCount: integer("attempt_count").default(0).notNull(),
+    contextVersion: text("context_version").notNull(),
+    contextHash: text("context_hash").notNull(),
+    contextFrom: date("context_from").notNull(),
+    contextThrough: date("context_through").notNull(),
+    safetyLevel: text("safety_level").notNull(),
+    responseHash: text("response_hash"),
+    lastErrorCode: text("last_error_code"),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("ai_analysis_jobs_tracker_requested_index").on(
+      table.trackerId,
+      table.requestedAt,
+    ),
+    check(
+      "ai_analysis_jobs_status_check",
+      sql`${table.status} IN ('pending', 'running', 'succeeded', 'failed')`,
+    ),
+    check(
+      "ai_analysis_jobs_safety_check",
+      sql`${table.safetyLevel} IN ('green', 'yellow', 'red')`,
+    ),
+    check(
+      "ai_analysis_jobs_range_check",
+      sql`${table.contextThrough} >= ${table.contextFrom}`,
+    ),
+  ],
+);
+
 export const planChangeProposals = pgTable("plan_change_proposals", {
   id: uuid("id").primaryKey(),
   trackerId: uuid("tracker_id")
@@ -523,6 +574,18 @@ export const planChangeProposals = pgTable("plan_change_proposals", {
     .references(() => planVersions.id, { onDelete: "restrict" }),
   status: text("status").notNull(),
   safetyLevel: text("safety_level").notNull(),
+  analysisJobId: uuid("analysis_job_id")
+    .unique()
+    .references(() => aiAnalysisJobs.id, { onDelete: "restrict" }),
+  timelineHeadPlanVersionId: uuid("timeline_head_plan_version_id").references(
+    () => planVersions.id,
+    { onDelete: "restrict" },
+  ),
+  model: text("model"),
+  contextVersion: text("context_version"),
+  contextHash: text("context_hash"),
+  contextFrom: date("context_from"),
+  contextThrough: date("context_through"),
   document: jsonb("document").$type<PlanChangeProposal>().notNull(),
   decidedAt: timestamp("decided_at", { withTimezone: true }),
   appliedPlanVersionId: uuid("applied_plan_version_id").references(
