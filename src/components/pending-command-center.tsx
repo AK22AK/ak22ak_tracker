@@ -158,7 +158,7 @@ export function PendingCommandCenter({ trackerKey }: { trackerKey: string }) {
       {relevant.length === 0 ? (
         <section className="surface-card pending-command-empty" role="status">
           <h2>没有待同步记录</h2>
-          <p>任务和身体反馈都已保存。</p>
+          <p>当前没有需要同步的内容。</p>
         </section>
       ) : (
         <section className="pending-command-list" aria-label="待同步记录">

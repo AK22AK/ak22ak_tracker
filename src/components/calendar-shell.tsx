@@ -273,6 +273,7 @@ export function CalendarShell({
 }) {
   const online = useNetworkState();
   const writesDisabled = readOnlyOffline || !online;
+  const refreshingFromLocal = online && readOnlyOffline;
   const summaries = new Map(days.map((day) => [day.date, day]));
   const cells = calendarMonthCells(month);
   const previousMonth = shiftMonth(month, -1);
@@ -300,10 +301,12 @@ export function CalendarShell({
       {writesDisabled ? (
         <section className="offline-cache-notice" role="status">
           <strong>
-            {readOnlyOffline ? "本机内容 · 仅供查看" : "当前离线 · 仅供查看"}
+            {refreshingFromLocal ? "正在获取最新内容" : "当前离线 · 仅供查看"}
           </strong>
           <span>
-            最近更新：
+            {refreshingFromLocal
+              ? "暂时显示本机内容 · 最近更新："
+              : "最近更新："}
             {offlineSavedAt
               ? new Intl.DateTimeFormat("zh-CN", {
                   month: "numeric",
@@ -313,7 +316,11 @@ export function CalendarShell({
                 }).format(new Date(offlineSavedAt))
               : "未知"}
           </span>
-          <small>可以浏览日期；训练关联请联网后操作。</small>
+          <small>
+            {refreshingFromLocal
+              ? "更新完成后，可以处理训练关联等操作。"
+              : "可以浏览日期，训练关联请联网后操作。"}
+          </small>
         </section>
       ) : null}
 

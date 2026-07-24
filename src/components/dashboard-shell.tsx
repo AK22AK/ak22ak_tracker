@@ -605,6 +605,7 @@ export function DashboardShell({
 }) {
   const online = useNetworkState();
   const writesDisabled = readOnlyOffline || !online;
+  const refreshingFromLocal = online && readOnlyOffline;
   const [refreshing, setRefreshing] = useState(false);
 
   const tasks = initialDashboard.tasks;
@@ -689,9 +690,17 @@ export function DashboardShell({
 
       {writesDisabled ? (
         <section className="offline-cache-notice" role="status">
-          <strong>{readOnlyOffline ? "本机内容" : "当前离线"}</strong>
+          <strong>
+            {refreshingFromLocal
+              ? "正在获取最新内容"
+              : readOnlyOffline
+                ? "当前离线 · 显示本机内容"
+                : "当前离线"}
+          </strong>
           <span>
-            最近更新：
+            {refreshingFromLocal
+              ? "暂时显示本机内容 · 最近更新："
+              : "最近更新："}
             {offlineSavedAt
               ? new Intl.DateTimeFormat("zh-CN", {
                   month: "numeric",
@@ -701,7 +710,11 @@ export function DashboardShell({
                 }).format(new Date(offlineSavedAt))
               : "未知"}
           </span>
-          <small>任务和身体反馈可先保存到本机；其他操作需联网。</small>
+          <small>
+            {refreshingFromLocal
+              ? "更新完成后，可以继续使用需要联网的操作。"
+              : "任务和身体反馈可先保存到本机，其他操作请联网后进行。"}
+          </small>
         </section>
       ) : null}
 

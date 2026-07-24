@@ -139,7 +139,8 @@ describe("P2 offline snapshot UI", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
     renderPrivate(<TodayClient />);
 
-    expect(await screen.findByText("本机内容")).toBeTruthy();
+    expect(await screen.findByText("当前离线 · 显示本机内容")).toBeTruthy();
+    expect(screen.getByText(/其他操作请联网后进行/)).toBeTruthy();
     expect(screen.getByText("Anonymous offline task")).toBeTruthy();
     expect(
       (
@@ -149,6 +150,30 @@ describe("P2 offline snapshot UI", () => {
       ).disabled,
     ).toBe(false);
     expect(screen.getByRole("link", { name: "添加反馈" })).toBeTruthy();
+  });
+
+  it("distinguishes an online Today snapshot refresh from a true offline state", async () => {
+    vi.spyOn(window.navigator, "onLine", "get").mockReturnValue(true);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse(todayAggregate())),
+    );
+    const seeded = renderPrivate(<TodayClient />);
+    expect(await screen.findByText("Anonymous offline task")).toBeTruthy();
+    await waitFor(async () =>
+      expect(await offlineDatabase.querySnapshots.count()).toBe(1),
+    );
+    seeded.unmount();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>(() => undefined)),
+    );
+    renderPrivate(<TodayClient />);
+
+    expect(await screen.findByText("正在获取最新内容")).toBeTruthy();
+    expect(screen.getByText(/暂时显示本机内容/)).toBeTruthy();
+    expect(screen.queryByText(/其他操作请联网后进行/)).toBeNull();
   });
 
   it("never restores another GitHub identity's snapshot", async () => {
@@ -213,11 +238,13 @@ describe("P2 offline snapshot UI", () => {
     online.unmount();
 
     onlineManager.setOnline(false);
+    vi.spyOn(window.navigator, "onLine", "get").mockReturnValue(false);
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
     renderPrivate(<CalendarClient initialDate="2026-07-21" />);
 
-    expect(await screen.findByText("本机内容 · 仅供查看")).toBeTruthy();
-    expect(screen.getByText("Anonymous offline task")).toBeTruthy();
+    expect(await screen.findByText("当前离线 · 仅供查看")).toBeTruthy();
+    expect(screen.getByText(/训练关联请联网后操作/)).toBeTruthy();
+    expect(await screen.findByText("Anonymous offline task")).toBeTruthy();
     expect(
       (
         screen.getByRole("button", {
@@ -225,5 +252,53 @@ describe("P2 offline snapshot UI", () => {
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(false);
+  });
+
+  it("distinguishes an online Calendar snapshot refresh from a true offline state", async () => {
+    const today = todayAggregate();
+    const month: CalendarAggregate = {
+      trackerKey: "knee-rehab",
+      month: "2026-07",
+      days: [
+        {
+          date: "2026-07-21",
+          taskCount: 1,
+          completedCount: 0,
+          skippedCount: 0,
+          feedbackCount: 0,
+        },
+      ],
+    };
+    const day: DayAggregate = {
+      trackerKey: "knee-rehab",
+      targetDate: "2026-07-21",
+      plan: today.plan,
+      day: today.day,
+    };
+    vi.spyOn(window.navigator, "onLine", "get").mockReturnValue(true);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) =>
+        Promise.resolve(
+          jsonResponse(String(input).includes("/calendar?") ? month : day),
+        ),
+      ),
+    );
+    const seeded = renderPrivate(<CalendarClient initialDate="2026-07-21" />);
+    expect(await screen.findByText("Anonymous offline task")).toBeTruthy();
+    await waitFor(async () =>
+      expect(await offlineDatabase.querySnapshots.count()).toBe(2),
+    );
+    seeded.unmount();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>(() => undefined)),
+    );
+    renderPrivate(<CalendarClient initialDate="2026-07-21" />);
+
+    expect(await screen.findByText("正在获取最新内容")).toBeTruthy();
+    expect(screen.getByText(/暂时显示本机内容/)).toBeTruthy();
+    expect(screen.queryByText(/训练关联请联网后操作/)).toBeNull();
   });
 });

@@ -46,6 +46,9 @@ describe("user-facing copy boundary", () => {
       "外部集成状态请在",
       "离线缓存",
       "本机缓存",
+      "趋势图还没开放",
+      "任务和身体反馈都已保存",
+      "其他操作需联网",
     ]) {
       expect(
         userSurfaceCopy,

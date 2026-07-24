@@ -80,6 +80,13 @@ describe("P2b-2 pending command center", () => {
     vi.restoreAllMocks();
   });
 
+  it("describes an empty local list without claiming records were saved", () => {
+    render(<PendingCommandCenter trackerKey="knee-rehab" />);
+
+    expect(screen.getByText("当前没有需要同步的内容。")).toBeTruthy();
+    expect(screen.queryByText("任务和身体反馈都已保存。")).toBeNull();
+  });
+
   it("marks the strict queue head and blocks every later record from actions", async () => {
     const headId = "019c0000-0000-7000-8000-000000000901";
     const laterId = "019c0000-0000-7000-8000-000000000902";
