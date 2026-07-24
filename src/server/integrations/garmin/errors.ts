@@ -2,19 +2,13 @@ import "server-only";
 
 import { z } from "zod";
 
-export const garminProviderErrorCodeSchema = z.enum([
-  "invalid_token_bundle",
-  "unsupported_client_version",
-  "authentication",
-  "rate_limited",
-  "timeout",
-  "invalid_response",
-  "provider_unavailable",
-]);
+import {
+  garminProviderErrorCodeSchema,
+  type GarminProviderErrorCode,
+} from "@/domain/garmin";
 
-export type GarminProviderErrorCode = z.infer<
-  typeof garminProviderErrorCodeSchema
->;
+export { garminProviderErrorCodeSchema } from "@/domain/garmin";
+export type { GarminProviderErrorCode } from "@/domain/garmin";
 
 export const garminRuntimeFailureSchema = z
   .object({

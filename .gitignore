@@ -42,6 +42,13 @@ yarn-error.log*
 # local Neon CLI context
 .neon
 
+# local Garmin authorization output
+garmin-token-bundle.json
+
+# python
+__pycache__/
+*.py[cod]
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

@@ -7,8 +7,9 @@
 [数据与同步](../architecture/data-and-sync.md)，关键决策见
 [ADR-0009](../adr/0009-garmin-token-runtime-and-fit-fallback.md)。
 
-截至 2026-07-24，P3b-1 只完成契约、安全边界和匿名部署可行性验证；项目尚未接入
-真实 Garmin Token，也没有读取任何私人 Garmin 数据。
+截至 2026-07-24，P3b-1 已完成并验收契约、安全边界和匿名部署可行性验证；P3b-2a
+已完成本机授权、加密导入和单日活动预览的代码与匿名 Preview，等待项目经理复核。
+项目尚未接入真实 Garmin Token，也没有读取任何私人 Garmin 数据。
 
 ## 接入路线
 
@@ -63,8 +64,8 @@ Token 格式扩散到计划、任务和反馈领域。
 - 它依赖的 `curl_cffi` 原生运行时成功加载。
 - 客户端自己的 `Client.loads()` 成功解析匿名 token bundle。
 - 损坏 bundle、认证、限流、超时和 Provider 不可用被映射为有限的安全错误代码。
-- 临时 Python Route、`requirements.txt` 和 `.python-version` 已在验证后删除，不进入
-  正式应用或 Production。
+- P3b-1 的临时 Python Route 和依赖文件已在验证后删除；P3b-2a 后来新增的是经过契约、
+  鉴权和大小限制审查的正式 Runtime 与锁定依赖，不沿用临时诊断接口。
 
 上述证据只证明“固定版本可在 Vercel Python Runtime 加载并解析匿名 Token”。以下
 内容仍需使用者以后在本机生成 Token 后另行受控验证：
@@ -76,13 +77,54 @@ Token 格式扩散到计划、任务和反馈领域。
 
 因此 P3b-1 不是“Garmin 已连接”，也不授权使用账号密码在云端重新登录。
 
+## P3b-2a 本机授权与单日预览
+
+### 本机一次性授权助手
+
+授权助手只在使用者自己的 Mac 上运行：
+
+```bash
+./scripts/garmin-authorize-local.sh --region global
+```
+
+中国区账号使用 `--region china`。助手会在临时虚拟环境安装锁定依赖，在终端中读取
+账号、隐藏输入密码并按需隐藏输入 MFA 验证码；完成后删除临时环境。默认只生成权限为
+`0600` 的 `~/.ak22ak_tracker/garmin-token-bundle.json`，终端不输出 Token 内容。
+
+随后在设置页选择该 JSON 文件进行导入。网页只把严格 token 信封经 HTTPS 发送给已
+鉴权后端；后端重新校验客户端、版本、区域和三个 token 字段后加密保存。页面返回的
+状态只有“未连接、待验证、已连接、需要更新、需要处理”及安全错误分类，永不回传原值。
+Token 文件不应发送到聊天、放入项目目录或提交到 Git。
+
+### 单日活动预览
+
+设置页允许选择一天并请求预览。该操作：
+
+1. 只读取一个日期，不追赶历史；日期不能早于 Tracker 开始日或晚于计划时区今天。
+2. Node 后端解密 Token，通过独立 `GARMIN_RUNTIME_SECRET` 调用同一部署中的 Python
+   Runtime；Secret 只存在服务端。
+3. Python Runtime 固定请求版本、最大请求体、最多 100 条活动；Node 使用 12 秒超时
+   和 128 KiB 响应上限。
+4. 页面只得到活动类型、开始时间、时长、距离、配速和平均心率，不得到 Provider raw
+   payload、内部记录 ID 或刷新后的 Token。
+5. 预览不写入 `external_records`，不建立任务关联，更不能改变任务完成状态。
+
+若读取过程中客户端刷新了 token bundle，刷新结果只回到 Node 内存并原子重新加密；
+不会经过浏览器。第一次真实调用必须等使用者明确确认后进行。
+
+正式 Runtime 已由 Vercel Preview `dpl_FzhmN4y1aDPnCJvQYVLoxCbZHzeE` 验证：Python
+3.12、锁定依赖和 Route 构建成功；未携带内部 Secret 的 POST 由 Runtime 返回 401。
+本次没有调用 Garmin，也没有使用匿名假 Token 对 Garmin 发请求，因此该证据只覆盖
+部署、鉴权门禁和运行时装载，不覆盖真实账号、刷新、WAF 或活动字段。
+
 ## 运行时选择
 
 ### Vercel Python Function
 
-当前首选候选。它与现有项目同平台，Preview 已证明 Python 3.12、固定客户端及
-`curl_cffi` 可以构建和启动。Vercel 官方仍将 Python Runtime 标为 Beta；正式 Adapter
-还需要一个只允许 Node 服务调用的认证边界、请求上限、超时和 Token 轮换协议。
+当前首选。它与现有项目同平台，Preview 已证明 Python 3.12、固定客户端及 `curl_cffi`
+可以构建和启动。P3b-2a 已增加只允许 Node 服务调用的独立 Secret、固定协议版本、
+请求/响应大小限制、短超时和刷新 Token 回收边界。Vercel 官方仍将 Python Runtime
+标为 Beta，真实 Token 的网络/WAF 和刷新行为仍需受控验证。
 
 ### 独立受控 Worker
 
@@ -95,8 +137,8 @@ Token 格式扩散到计划、任务和反馈领域。
 这是不依赖非官方登录的稳定兜底。官方 JavaScript FIT SDK 可直接在现有 Node 运行时
 解码活动文件，适合活动时间、时长、距离、配速和心率；它不能替代自动睡眠和步数。
 
-下一切片应在“Token-only 单日只读验证”和“FIT 导入”之间由项目经理择一。若继续
-自动路线，先验证一日匿名化投影，不直接展开历史追赶同步。
+项目经理已选择先完成 Token-only 单日受控验证。若真实环境遇到不可接受的 WAF、区域
+或刷新阻塞，再比较独立受控 Worker 与 FIT 导入；当前不直接展开历史追赶同步。
 
 ## 数据职责
 

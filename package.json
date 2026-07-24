@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run && python3 -m unittest discover -s tests/python -p 'test_*.py'",
     "test:browser:offline": "pnpm build && playwright test --config=playwright.offline.config.ts",
     "test:browser:performance": "pnpm build && playwright test --config=playwright.performance.config.ts",
     "test:watch": "vitest",

@@ -3,6 +3,12 @@ import "server-only";
 import type { IntegrationProvider } from "./core/external-records";
 
 export const integrationProviderDefinitions = {
+  garmin: {
+    provider: "garmin",
+    displayName: "Garmin",
+    description: "只读预览活动时间、距离、配速和平均心率。",
+    capabilities: ["activity:read"] as const,
+  },
   xunji: {
     provider: "xunji",
     displayName: "训记",

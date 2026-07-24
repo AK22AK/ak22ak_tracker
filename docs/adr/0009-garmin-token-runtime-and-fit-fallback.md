@@ -33,11 +33,14 @@ Developer Program 只面向业务使用，获批后才提供 Activity API 评估
    不得把它描述为已连接。
 7. Garmin 官方 JavaScript FIT SDK 是无凭证兜底。如果真实 token 路线在 Vercel 上
    失败，先比较独立受控 Worker 与 FIT 导入，不把账号密码移到云端补救。
+8. P3b-2a 先交付 token-only 单日预览：本机助手处理账号、密码和 MFA；网页只导入
+   token 文件；Node 与 Python Runtime 以独立 Secret、固定协议、短超时和大小上限
+   通信。预览不持久化活动，也不改变任务状态。
 
 ## 结果
 
-- 当前不需要数据库 migration，也不增加设置页连接入口。
-- P3b-2 可以在不改业务领域的情况下选择单日 token-only Adapter 或 FIT 导入。
+- 当前不需要数据库 migration；通用凭证表可直接承载加密 Garmin Token。
+- P3b-2 已选择先实现单日 token-only Adapter，FIT 导入继续作为真实验证失败时的兜底。
 - 非官方接口变化只会让 Garmin Provider 降级，不会影响任务、反馈和训记。
 - Vercel Python Runtime 仍是 Beta；真实 Token、刷新、网络/WAF、地区账号和数据字段
   必须在后续受控试验中验证。

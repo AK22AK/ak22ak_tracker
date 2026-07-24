@@ -123,7 +123,7 @@ export async function saveIntegrationCredential(input: {
   trackerId: string;
   provider: string;
   plaintext: string;
-  verifiedAt: Date;
+  verifiedAt: Date | null;
   database?: Database;
 }) {
   const database = input.database ?? getDatabase();
@@ -150,6 +150,62 @@ export async function saveIntegrationCredential(input: {
       ],
       set: { verifiedAt: input.verifiedAt, updatedAt: now, ...encrypted },
     });
+}
+
+export async function saveIntegrationCredentialAndResetState(input: {
+  trackerId: string;
+  provider: string;
+  plaintext: string;
+  verifiedAt: Date | null;
+  attemptedAt: Date | null;
+  now: Date;
+  database?: Database;
+}) {
+  const database = input.database ?? getDatabase();
+  const encrypted = encryptIntegrationCredential({
+    plaintext: input.plaintext,
+    provider: input.provider,
+    ...getIntegrationEncryptionConfig(),
+  });
+  const reset = {
+    status: "idle" as const,
+    lastAttemptAt: input.attemptedAt,
+    lastErrorCode: null,
+    updatedAt: input.now,
+  };
+  await database.batch([
+    database
+      .insert(integrationCredentials)
+      .values({
+        trackerId: input.trackerId,
+        provider: input.provider,
+        verifiedAt: input.verifiedAt,
+        updatedAt: input.now,
+        ...encrypted,
+      })
+      .onConflictDoUpdate({
+        target: [
+          integrationCredentials.trackerId,
+          integrationCredentials.provider,
+        ],
+        set: {
+          verifiedAt: input.verifiedAt,
+          updatedAt: input.now,
+          ...encrypted,
+        },
+      }),
+    database
+      .insert(integrationSyncState)
+      .values({
+        trackerId: input.trackerId,
+        provider: input.provider,
+        ...reset,
+      })
+      .onConflictDoUpdate({
+        target: [integrationSyncState.trackerId, integrationSyncState.provider],
+        set: reset,
+      }),
+  ]);
 }
 
 export async function markIntegrationConnectionFailure(input: {

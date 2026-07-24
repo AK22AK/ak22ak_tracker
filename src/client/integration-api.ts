@@ -1,4 +1,5 @@
 import { githubMirrorStatusSchema } from "@/domain/github-mirror";
+import { garminConnectionStatusSchema } from "@/domain/garmin";
 import { integrationStatusSchema } from "@/domain/integrations";
 
 async function getJson(url: string, signal?: AbortSignal) {
@@ -26,5 +27,17 @@ export async function fetchIntegrationStatus(
 export async function fetchGitHubMirrorStatus(signal?: AbortSignal) {
   return githubMirrorStatusSchema.parse(
     await getJson("/api/mirror/status", signal),
+  );
+}
+
+export async function fetchGarminConnectionStatus(
+  trackerKey: string,
+  signal?: AbortSignal,
+) {
+  return garminConnectionStatusSchema.parse(
+    await getJson(
+      `/api/trackers/${encodeURIComponent(trackerKey)}/integrations/garmin/credential`,
+      signal,
+    ),
   );
 }

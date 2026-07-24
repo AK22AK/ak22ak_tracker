@@ -16,26 +16,26 @@ AK Tracker 第一版是单用户、手机优先的私人追踪应用。技术选
 
 ## 已确定的技术栈
 
-| 范围           | 选择                                                    | 职责                                          | 选择原因                                                           |
-| -------------- | ------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------ |
-| 应用形态       | 手机优先 PWA                                            | 主屏安装、网页更新、有限离线能力              | 第一版无需 App Store，iPhone 可直接使用，同时保留服务端能力        |
-| 全栈框架       | Next.js App Router + React + TypeScript                 | 页面、共享 Layout、Route Handler、构建        | 一个公开仓库完成前后端；适合 Vercel；共享 App Shell 可保留导航状态 |
-| 部署           | Vercel                                                  | HTTPS、Next.js Functions、静态资源、每日 Cron | 已完成部署和 GitHub OAuth 回调；个人第一版运维成本低               |
-| 主数据库       | Neon PostgreSQL                                         | 计划、任务、事件、版本、同步状态、outbox      | 支持事务、约束、关联查询和恢复；不依赖 Vercel 本地文件系统         |
-| 数据访问       | Drizzle ORM + Neon serverless driver                    | Schema、migration、类型化查询                 | 数据模型与 SQL 保持可见；适合 PostgreSQL 和 serverless 环境        |
-| 身份           | GitHub OAuth + NextAuth + 数字 ID 白名单                | 只允许指定 GitHub 账号进入                    | 不自建密码体系；公开网址仍保持数据私有                             |
-| 输入校验       | Zod                                                     | HTTP 输入、领域文档、AI 输出和镜像 Schema     | 客户端、服务端和数据导出共用结构；可导出 JSON Schema               |
-| 客户端远端状态 | TanStack Query                                          | 查询缓存、取消、刷新、乐观更新、精确失效      | 日期和 Tab 不再等待整页服务端渲染；可验证慢网与迟到响应            |
-| 本机持久化     | Dexie / IndexedDB                                       | 私人查询白名单、离线命令队列、重放状态        | 适合结构化敏感数据；不使用 localStorage 保存康复记录               |
-| PWA 缓存       | Service Worker + Cache Storage                          | 公共离线壳、带内容哈希的静态资源              | 与私人 IndexedDB 分开；不缓存认证首页和 API 响应                   |
-| 私有数据镜像   | GitHub 私仓 + Octokit Contents API                      | 可读 JSON、版本追踪、供其他 AI 读取           | 只更新目标文件，不克隆笔记仓库；不承担在线数据库职责               |
-| AI             | DeepSeek OpenAI-compatible 接口 + `PlanAdvisor` Adapter | 生成结构化调整建议                            | 复用现有按量 API；模型只建议，不持有写权限，Provider 可替换        |
-| Garmin         | `GarminClient` + 隔离 Python 候选 + 官方 FIT SDK        | 活动证据，后续基础睡眠/步数及文件导入         | Token-only、固定版本；官方 API 待审批，FIT 是无凭证兜底            |
-| 训记           | 训练数据 REST Adapter + 按日期同步作业                  | 力量训练明细、来源版本和人工关联              | 复用既有训练记录避免重复录入；只读能力隔离写接口和无关数据         |
-| 单元与契约测试 | Vitest                                                  | 领域规则、Module Interface、故障注入          | 运行快，适合每次提交                                               |
-| 交互测试       | Testing Library + Vitest                                | 表单、本地状态、慢网、迟到响应                | 验证用户可见行为，不依赖实现细节                                   |
-| 浏览器测试     | Playwright                                              | 核心旅程、离线、缓存、移动视口                | 覆盖完整 PWA 数据流；iPhone 特有行为仍需真机验收                   |
-| 数据库集成测试 | 临时 PostgreSQL + 正式 migration                        | 事务、约束、并发和 outbox                     | 不用私人 Neon 数据；验证真实 PostgreSQL 语义                       |
+| 范围           | 选择                                                       | 职责                                          | 选择原因                                                           |
+| -------------- | ---------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------ |
+| 应用形态       | 手机优先 PWA                                               | 主屏安装、网页更新、有限离线能力              | 第一版无需 App Store，iPhone 可直接使用，同时保留服务端能力        |
+| 全栈框架       | Next.js App Router + React + TypeScript                    | 页面、共享 Layout、Route Handler、构建        | 一个公开仓库完成前后端；适合 Vercel；共享 App Shell 可保留导航状态 |
+| 部署           | Vercel                                                     | HTTPS、Next.js Functions、静态资源、每日 Cron | 已完成部署和 GitHub OAuth 回调；个人第一版运维成本低               |
+| 主数据库       | Neon PostgreSQL                                            | 计划、任务、事件、版本、同步状态、outbox      | 支持事务、约束、关联查询和恢复；不依赖 Vercel 本地文件系统         |
+| 数据访问       | Drizzle ORM + Neon serverless driver                       | Schema、migration、类型化查询                 | 数据模型与 SQL 保持可见；适合 PostgreSQL 和 serverless 环境        |
+| 身份           | GitHub OAuth + NextAuth + 数字 ID 白名单                   | 只允许指定 GitHub 账号进入                    | 不自建密码体系；公开网址仍保持数据私有                             |
+| 输入校验       | Zod                                                        | HTTP 输入、领域文档、AI 输出和镜像 Schema     | 客户端、服务端和数据导出共用结构；可导出 JSON Schema               |
+| 客户端远端状态 | TanStack Query                                             | 查询缓存、取消、刷新、乐观更新、精确失效      | 日期和 Tab 不再等待整页服务端渲染；可验证慢网与迟到响应            |
+| 本机持久化     | Dexie / IndexedDB                                          | 私人查询白名单、离线命令队列、重放状态        | 适合结构化敏感数据；不使用 localStorage 保存康复记录               |
+| PWA 缓存       | Service Worker + Cache Storage                             | 公共离线壳、带内容哈希的静态资源              | 与私人 IndexedDB 分开；不缓存认证首页和 API 响应                   |
+| 私有数据镜像   | GitHub 私仓 + Octokit Contents API                         | 可读 JSON、版本追踪、供其他 AI 读取           | 只更新目标文件，不克隆笔记仓库；不承担在线数据库职责               |
+| AI             | DeepSeek OpenAI-compatible 接口 + `PlanAdvisor` Adapter    | 生成结构化调整建议                            | 复用现有按量 API；模型只建议，不持有写权限，Provider 可替换        |
+| Garmin         | `GarminClient` + 隔离 Vercel Python Runtime + 官方 FIT SDK | Token-only 单日活动预览，后续同步与文件导入   | 本机认证、固定版本、内部 Secret；官方 API 待审批，FIT 是无凭证兜底 |
+| 训记           | 训练数据 REST Adapter + 按日期同步作业                     | 力量训练明细、来源版本和人工关联              | 复用既有训练记录避免重复录入；只读能力隔离写接口和无关数据         |
+| 单元与契约测试 | Vitest                                                     | 领域规则、Module Interface、故障注入          | 运行快，适合每次提交                                               |
+| 交互测试       | Testing Library + Vitest                                   | 表单、本地状态、慢网、迟到响应                | 验证用户可见行为，不依赖实现细节                                   |
+| 浏览器测试     | Playwright                                                 | 核心旅程、离线、缓存、移动视口                | 覆盖完整 PWA 数据流；iPhone 特有行为仍需真机验收                   |
+| 数据库集成测试 | 临时 PostgreSQL + 正式 migration                           | 事务、约束、并发和 outbox                     | 不用私人 Neon 数据；验证真实 PostgreSQL 语义                       |
 
 ## 设计约束的权威位置
 

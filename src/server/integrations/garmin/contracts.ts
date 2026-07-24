@@ -72,6 +72,17 @@ export type GarminActivityEvidence = z.infer<
   typeof garminActivityEvidenceSchema
 >;
 
+export const garminActivityReadResultSchema = z
+  .object({
+    activities: z.array(garminActivityEvidenceSchema).max(100),
+    refreshedCredential: garminCredentialSchema,
+  })
+  .strict();
+
+export type GarminActivityReadResult = z.infer<
+  typeof garminActivityReadResultSchema
+>;
+
 export const garminDailyEvidenceSchema = z
   .object({
     localDate: localDateSchema,
@@ -131,7 +142,7 @@ export interface GarminClient<TCredential = unknown> {
     credential: TCredential;
     date: string;
     signal?: AbortSignal;
-  }): Promise<GarminActivityEvidence[]>;
+  }): Promise<GarminActivityReadResult>;
 
   fetchDailyEvidenceForDate?(input: {
     credential: TCredential;

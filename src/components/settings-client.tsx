@@ -3,12 +3,14 @@
 import { useQuery } from "@tanstack/react-query";
 
 import {
+  fetchGarminConnectionStatus,
   fetchGitHubMirrorStatus,
   fetchIntegrationStatus,
 } from "@/client/integration-api";
 import { integrationQueryKeys } from "@/client/query-keys";
 
 import { GitHubMirrorCard } from "./github-mirror-card";
+import { GarminIntegrationCard } from "./garmin-integration-card";
 import { IntegrationCard } from "./integration-card";
 import { LocalDataCard } from "./local-data-card";
 
@@ -50,6 +52,11 @@ export function SettingsClient() {
       fetchIntegrationStatus(trackerKey, "xunji", signal),
     staleTime: 5 * 60_000,
   });
+  const garminQuery = useQuery({
+    queryKey: integrationQueryKeys.providerStatus(trackerKey, "garmin"),
+    queryFn: ({ signal }) => fetchGarminConnectionStatus(trackerKey, signal),
+    staleTime: 5 * 60_000,
+  });
   const mirrorQuery = useQuery({
     queryKey: integrationQueryKeys.githubMirrorStatus(),
     queryFn: ({ signal }) => fetchGitHubMirrorStatus(signal),
@@ -64,6 +71,18 @@ export function SettingsClient() {
           <h1>设置</h1>
         </div>
       </header>
+      {garminQuery.data ? (
+        <GarminIntegrationCard
+          trackerKey={trackerKey}
+          initialStatus={garminQuery.data}
+        />
+      ) : (
+        <SettingsSectionState
+          label="Garmin 活动"
+          error={garminQuery.isError}
+          onRetry={() => void garminQuery.refetch()}
+        />
+      )}
       {integrationQuery.data ? (
         <IntegrationCard
           trackerKey={trackerKey}
