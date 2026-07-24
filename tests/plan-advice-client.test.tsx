@@ -240,13 +240,64 @@ describe("plan advice UI", () => {
     );
     renderClient();
 
-    expect(await screen.findByText(/基于较早的计划/)).toBeTruthy();
+    expect(await screen.findByText("建议已过期")).toBeTruthy();
+    expect(
+      screen.getByText("近期记录或计划已经变化，请重新分析。"),
+    ).toBeTruthy();
+    expect(screen.queryByText(/基于较早的计划/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "重新分析" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     const [, request] = fetchMock.mock.calls[1]!;
     expect(JSON.parse(String(request.body))).toEqual({
       commandId: "019c1000-0000-7000-8000-000000000208",
     });
+  });
+
+  it("explains why a scheduled future plan blocks direct application", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response(
+          page({
+            id: "019c1000-0000-7000-8000-000000000214",
+            trackerKey: "knee-rehab",
+            status: "succeeded",
+            errorCode: null,
+            retryable: false,
+            requestedAt: "2026-07-24T08:00:00.000Z",
+            completedAt: "2026-07-24T08:00:02.000Z",
+            proposal: {
+              id: "019c1000-0000-7000-8000-000000000214",
+              basePlanVersionId: "019c1000-0000-7000-8000-000000000215",
+              createdAt: "2026-07-24T08:00:02.000Z",
+              safetyLevel: "green",
+              summary: "Anonymous future adjustment",
+              operations: [
+                {
+                  type: "remove_task",
+                  taskId: "anonymous-task",
+                  reason: "Anonymous reason",
+                },
+              ],
+              status: "proposed",
+              application: {
+                effectiveFrom: "2026-07-25",
+                canAccept: false,
+                blockedReason: "future_timeline",
+              },
+            },
+          }),
+        ),
+      ),
+    );
+
+    renderClient();
+
+    expect(
+      await screen.findByText("已有后续计划版本，这份建议不能直接应用。"),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "接受并更新计划" })).toBeNull();
+    expect(screen.getByRole("button", { name: "拒绝这份建议" })).toBeTruthy();
   });
 
   it("shows the effective date, requires a second confirmation and keeps other cache", async () => {

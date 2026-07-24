@@ -242,7 +242,7 @@ export function PlanAdviceClient() {
               {proposal.safetyLevel === "red"
                 ? "停止并重新评估"
                 : proposal.status === "expired"
-                  ? "计划已经更新"
+                  ? "建议已过期"
                   : proposal.status === "accepted"
                     ? "已更新计划"
                     : proposal.status === "rejected"
@@ -267,7 +267,7 @@ export function PlanAdviceClient() {
             </p>
           ) : proposal.status === "expired" ? (
             <p className="inline-notice" role="status">
-              这份建议基于较早的计划，不能继续使用。请重新分析。
+              近期记录或计划已经变化，请重新分析。
             </p>
           ) : proposal.safetyLevel === "red" ? (
             <p>先暂停相关训练；症状稳定或完成专业评估后，再决定后续安排。</p>
@@ -355,6 +355,13 @@ export function PlanAdviceClient() {
                 拒绝这份建议
               </button>
             </div>
+          ) : null}
+          {proposal.status === "proposed" &&
+          !proposal.application.canAccept &&
+          proposal.application.blockedReason === "future_timeline" ? (
+            <p className="inline-notice" role="status">
+              已有后续计划版本，这份建议不能直接应用。
+            </p>
           ) : null}
           {proposal.status === "proposed" &&
           !proposal.application.canAccept &&
