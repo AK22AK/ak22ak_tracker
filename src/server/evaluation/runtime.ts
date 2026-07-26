@@ -2,11 +2,16 @@ import "server-only";
 
 import {
   buildEvaluationEvidenceSnapshot,
+  buildEvaluationResultDocument,
   deriveEvaluationTargetDate,
   evaluationPageDtoSchema,
+  evaluationResultAnswersSchema,
+  evaluationResultDocumentSchema,
   evaluationSessionSnapshotSchema,
   type CreateEvaluationSessionCommand,
+  type CreateEvaluationResultCommand,
   type EvaluationPageDto,
+  type EvaluationResultDocument,
   type EvaluationSessionSnapshot,
 } from "@/domain/evaluation";
 import { localDateInTimeZone } from "@/domain/planning-time";
@@ -24,6 +29,7 @@ export type EvaluationContext = {
     key: string;
     startedOn: string;
     planningTimeZone: string;
+    aiContextRevision: number;
   };
   planVersions: PlanVersion[];
   timelineHeadPlanVersion: PlanVersion | null;
@@ -52,12 +58,31 @@ export type PreparedEvaluationSession = {
   };
 };
 
+export type PreparedEvaluationResult = {
+  trackerId: string;
+  expectedContextRevision: number;
+  result: EvaluationResultDocument;
+  event: TrackerEvent;
+  outbox: {
+    aggregateType: "event";
+    aggregateId: string;
+    targetPath: string;
+    payload: Record<string, unknown>;
+  };
+};
+
 export type EvaluationStore = {
   loadContext(trackerKey: string): Promise<EvaluationContext | null>;
   findLatestSession(trackerId: string): Promise<EvaluationSessionRecord | null>;
   findEventByCommandId(commandId: string): Promise<TrackerEvent | null>;
+  findResultBySessionId(
+    trackerId: string,
+    sessionId: string,
+  ): Promise<EvaluationResultDocument | null>;
+  hasRedSafetySignal(trackerId: string, localDate: string): Promise<boolean>;
   expireSession(sessionId: string): Promise<boolean>;
   commitAtomically(prepared: PreparedEvaluationSession): Promise<void>;
+  commitResultAtomically(prepared: PreparedEvaluationResult): Promise<void>;
 };
 
 export class EvaluationTrackerNotFoundError extends Error {
@@ -78,6 +103,13 @@ export class EvaluationCommandConflictError extends Error {
   constructor() {
     super("idempotency_conflict");
     this.name = "EvaluationCommandConflictError";
+  }
+}
+
+export class EvaluationResultNotEligibleError extends Error {
+  constructor(message = "evaluation_result_not_eligible") {
+    super(message);
+    this.name = "EvaluationResultNotEligibleError";
   }
 }
 
@@ -112,10 +144,43 @@ function snapshotFromEvent(
   return parsed.data;
 }
 
+function resultFromEvent(
+  event: TrackerEvent,
+  trackerKey: string,
+  command: CreateEvaluationResultCommand,
+) {
+  const parsed = evaluationResultDocumentSchema.safeParse(event.payload.result);
+  if (
+    event.kind !== "evaluation_result_recorded" ||
+    event.trackerKey !== trackerKey ||
+    event.idempotencyKey !== command.commandId ||
+    event.occurredAt !== command.occurredAt ||
+    event.occurredTimeZone !== command.occurredTimeZone ||
+    event.occurredUtcOffsetMinutes !== command.occurredUtcOffsetMinutes ||
+    !parsed.success ||
+    parsed.data.id !== command.commandId ||
+    parsed.data.sessionId !== command.sessionId ||
+    JSON.stringify(evaluationResultAnswersSchema.parse(command.answers)) !==
+      JSON.stringify(
+        evaluationResultAnswersSchema.parse({
+          goalCompletion: parsed.data.goalCompletion,
+          sides: parsed.data.sides,
+          nextStageIntent: parsed.data.nextStageIntent,
+          ...(parsed.data.note === undefined ? {} : { note: parsed.data.note }),
+        }),
+      )
+  ) {
+    throw new EvaluationCommandConflictError();
+  }
+  return parsed.data;
+}
+
 function pageState(input: {
   context: EvaluationContext;
   currentDate: string;
   session: EvaluationSessionRecord | null;
+  result: EvaluationResultDocument | null;
+  hasRedSafetySignal: boolean;
 }): EvaluationPageDto {
   if (
     !input.context.timelineHeadPlanVersion ||
@@ -155,6 +220,7 @@ function pageState(input: {
       state: "expired",
       canOpenReplacement: input.currentDate >= targetDate,
       session: { ...input.session.snapshot, status: "expired" },
+      result: input.result,
     });
   }
   if (input.session) {
@@ -162,6 +228,16 @@ function pageState(input: {
       ...common,
       state: "opened",
       session: { ...input.session.snapshot, status: "open" },
+      result: input.result,
+      resultSubmission: {
+        allowed: input.result === null && !input.hasRedSafetySignal,
+        blockedReason:
+          input.result !== null
+            ? "already_recorded"
+            : input.hasRedSafetySignal
+              ? "red_safety"
+              : null,
+      },
     });
   }
   return evaluationPageDtoSchema.parse({
@@ -195,7 +271,13 @@ export function createEvaluationRuntime({
       await store.expireSession(session.snapshot.id);
       session = { ...session, status: "expired" };
     }
-    return { context, currentDate, session };
+    const [result, hasRedSafetySignal] = session
+      ? await Promise.all([
+          store.findResultBySessionId(context.tracker.id, session.snapshot.id),
+          store.hasRedSafetySignal(context.tracker.id, currentDate),
+        ])
+      : [null, false];
+    return { context, currentDate, session, result, hasRedSafetySignal };
   }
 
   return {
@@ -286,7 +368,87 @@ export function createEvaluationRuntime({
       return pageState({
         ...state,
         session: { snapshot, status: "open" },
+        result: null,
+        hasRedSafetySignal: false,
       });
+    },
+
+    async submitResult(
+      trackerKey: string,
+      command: CreateEvaluationResultCommand,
+    ) {
+      const existingEvent = await store.findEventByCommandId(command.commandId);
+      if (existingEvent) {
+        resultFromEvent(existingEvent, trackerKey, command);
+        return pageState(await current(trackerKey));
+      }
+      const state = await current(trackerKey);
+      if (
+        !state.session ||
+        state.session.status !== "open" ||
+        state.session.snapshot.id !== command.sessionId
+      ) {
+        throw new EvaluationResultNotEligibleError();
+      }
+      if (state.result) return pageState(state);
+      if (state.hasRedSafetySignal) {
+        throw new EvaluationResultNotEligibleError("red_safety");
+      }
+      const submittedAt = now();
+      const result = buildEvaluationResultDocument({
+        id: command.commandId,
+        sessionId: command.sessionId,
+        trackerKey,
+        kind: state.session.snapshot.kind,
+        submittedAt: submittedAt.toISOString(),
+        submittedLocalDate: state.currentDate,
+        basePlanVersionId: state.session.snapshot.basePlanVersion.id,
+        timelineHeadPlanVersionId:
+          state.session.snapshot.timelineHeadPlanVersion.id,
+        answers: command.answers,
+      });
+      const event = trackerEventSchema.parse({
+        schemaVersion,
+        id: command.commandId,
+        trackerKey,
+        kind: "evaluation_result_recorded",
+        occurredAt: command.occurredAt,
+        recordedAt: submittedAt.toISOString(),
+        occurredTimeZone: command.occurredTimeZone,
+        occurredUtcOffsetMinutes: command.occurredUtcOffsetMinutes,
+        localDate: result.submittedLocalDate,
+        idempotencyKey: command.commandId,
+        payload: { result },
+        provenance: { source: "user" },
+      });
+      try {
+        await store.commitResultAtomically({
+          trackerId: state.context.tracker.id,
+          expectedContextRevision: state.context.tracker.aiContextRevision,
+          result,
+          event,
+          outbox: {
+            aggregateType: "event",
+            aggregateId: event.id,
+            targetPath: eventMirrorPath(event),
+            payload: event,
+          },
+        });
+      } catch (error) {
+        if (postgresErrorCode(error) === "40001") {
+          throw new EvaluationResultNotEligibleError(
+            "evaluation_result_context_changed",
+          );
+        }
+        if (postgresErrorCode(error) !== "23505") throw error;
+        const canonical = await store.findResultBySessionId(
+          state.context.tracker.id,
+          command.sessionId,
+        );
+        if (!canonical) throw new EvaluationCommandConflictError();
+        return pageState({ ...state, result: canonical });
+      }
+      return pageState({ ...state, result });
     },
   };
 }

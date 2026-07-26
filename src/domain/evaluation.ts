@@ -15,6 +15,72 @@ import {
 export const evaluationSessionKindSchema = z.enum(["stage", "final"]);
 export const evaluationSessionStatusSchema = z.enum(["open", "expired"]);
 
+export const evaluationGoalCompletionSchema = z.enum([
+  "met",
+  "partially_met",
+  "not_met",
+  "uncertain",
+]);
+
+export const evaluationSymptomResponseSchema = z.enum([
+  "none",
+  "mild",
+  "moderate",
+  "severe",
+  "not_assessed",
+]);
+
+export const evaluationCapacitySchema = z.enum([
+  "ready",
+  "limited",
+  "not_assessed",
+]);
+
+export const evaluationNextStageIntentSchema = z.enum([
+  "maintain",
+  "progress",
+  "extend",
+  "professional_review",
+  "undecided",
+]);
+
+const evaluationSideResultSchema = z
+  .object({
+    symptomResponse: evaluationSymptomResponseSchema,
+    strengthAndControl: evaluationCapacitySchema,
+    loadTolerance: evaluationCapacitySchema,
+  })
+  .strict();
+
+export const evaluationResultAnswersSchema = z
+  .object({
+    goalCompletion: evaluationGoalCompletionSchema,
+    sides: z
+      .object({
+        left: evaluationSideResultSchema,
+        right: evaluationSideResultSchema,
+      })
+      .strict(),
+    nextStageIntent: evaluationNextStageIntentSchema,
+    note: z.string().max(2_000).optional(),
+  })
+  .strict();
+
+export const evaluationResultDocumentSchema = evaluationResultAnswersSchema
+  .extend({
+    schemaVersion: z.literal(schemaVersion),
+    resultVersion: z.literal("evaluation-result-v1"),
+    id: z.uuid(),
+    sessionId: z.uuid(),
+    trackerKey: trackerKeySchema,
+    kind: evaluationSessionKindSchema,
+    submittedAt: instantSchema,
+    submittedLocalDate: localDateSchema,
+    basePlanVersionId: z.uuid(),
+    timelineHeadPlanVersionId: z.uuid(),
+  })
+  .strict();
+
 const planPointerSchema = z
   .object({
     id: z.uuid(),
@@ -98,6 +164,13 @@ export const evaluationSessionDtoSchema = evaluationSessionSnapshotSchema
   .extend({ status: evaluationSessionStatusSchema })
   .strict();
 
+const evaluationResultSubmissionSchema = z
+  .object({
+    allowed: z.boolean(),
+    blockedReason: z.enum(["red_safety", "already_recorded"]).nullable(),
+  })
+  .strict();
+
 export const evaluationPageDtoSchema = z.discriminatedUnion("state", [
   z
     .object({
@@ -127,6 +200,11 @@ export const evaluationPageDtoSchema = z.discriminatedUnion("state", [
       targetDate: localDateSchema,
       planningTimeZone: ianaTimeZoneSchema,
       session: evaluationSessionDtoSchema,
+      result: evaluationResultDocumentSchema.nullable().default(null),
+      resultSubmission: evaluationResultSubmissionSchema.default({
+        allowed: true,
+        blockedReason: null,
+      }),
     })
     .strict(),
   z
@@ -138,6 +216,7 @@ export const evaluationPageDtoSchema = z.discriminatedUnion("state", [
       planningTimeZone: ianaTimeZoneSchema,
       canOpenReplacement: z.boolean(),
       session: evaluationSessionDtoSchema,
+      result: evaluationResultDocumentSchema.nullable().default(null),
     })
     .strict(),
   z
@@ -157,12 +236,28 @@ export const createEvaluationSessionCommandSchema =
     kind: evaluationSessionKindSchema.default("final"),
   });
 
+export const createEvaluationResultCommandSchema = clientCommandMetadataSchema
+  .extend({
+    sessionId: z.uuid(),
+    answers: evaluationResultAnswersSchema,
+  })
+  .strict();
+
 export type EvaluationSessionSnapshot = z.infer<
   typeof evaluationSessionSnapshotSchema
+>;
+export type EvaluationResultAnswers = z.infer<
+  typeof evaluationResultAnswersSchema
+>;
+export type EvaluationResultDocument = z.infer<
+  typeof evaluationResultDocumentSchema
 >;
 export type EvaluationPageDto = z.infer<typeof evaluationPageDtoSchema>;
 export type CreateEvaluationSessionCommand = z.infer<
   typeof createEvaluationSessionCommandSchema
+>;
+export type CreateEvaluationResultCommand = z.infer<
+  typeof createEvaluationResultCommandSchema
 >;
 
 type EvidenceTask = {
@@ -184,6 +279,32 @@ type EvidenceFeedback = {
 };
 
 type DateRange = { startDate: string; endDate: string };
+
+export function buildEvaluationResultDocument(input: {
+  id: string;
+  sessionId: string;
+  trackerKey: string;
+  kind: "stage" | "final";
+  submittedAt: string;
+  submittedLocalDate: string;
+  basePlanVersionId: string;
+  timelineHeadPlanVersionId: string;
+  answers: EvaluationResultAnswers;
+}): EvaluationResultDocument {
+  return evaluationResultDocumentSchema.parse({
+    schemaVersion,
+    resultVersion: "evaluation-result-v1",
+    id: input.id,
+    sessionId: input.sessionId,
+    trackerKey: input.trackerKey,
+    kind: input.kind,
+    submittedAt: input.submittedAt,
+    submittedLocalDate: input.submittedLocalDate,
+    basePlanVersionId: input.basePlanVersionId,
+    timelineHeadPlanVersionId: input.timelineHeadPlanVersionId,
+    ...input.answers,
+  });
+}
 
 function dateValue(localDate: string) {
   if (!isLocalDate(localDate)) throw new Error("invalid_local_date");

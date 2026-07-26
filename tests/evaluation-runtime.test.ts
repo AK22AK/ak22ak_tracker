@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { CreateEvaluationSessionCommand } from "@/domain/evaluation";
+import type {
+  CreateEvaluationResultCommand,
+  CreateEvaluationSessionCommand,
+  EvaluationResultDocument,
+} from "@/domain/evaluation";
 import {
   schemaVersion,
   type PlanVersion,
@@ -45,6 +49,7 @@ function context(): EvaluationContext {
       key: "anonymous-tracker",
       startedOn: "2026-06-01",
       planningTimeZone: "Asia/Shanghai",
+      aiContextRevision: 0,
     },
     planVersions: [plan],
     timelineHeadPlanVersion: plan,
@@ -67,15 +72,47 @@ function command(): CreateEvaluationSessionCommand {
   };
 }
 
+function resultCommand(): CreateEvaluationResultCommand {
+  return {
+    commandId: "019c0000-0000-7000-8000-000000000815",
+    sessionId: commandId,
+    occurredAt: "2026-06-09T09:00:00.000Z",
+    occurredTimeZone: "Asia/Shanghai",
+    occurredUtcOffsetMinutes: 480,
+    answers: {
+      goalCompletion: "partially_met",
+      sides: {
+        left: {
+          symptomResponse: "mild",
+          strengthAndControl: "ready",
+          loadTolerance: "limited",
+        },
+        right: {
+          symptomResponse: "none",
+          strengthAndControl: "ready",
+          loadTolerance: "ready",
+        },
+      },
+      nextStageIntent: "undecided",
+    },
+  };
+}
+
 function createStore() {
   let current = context();
   let session: EvaluationSessionRecord | null = null;
+  let result: EvaluationResultDocument | null = null;
   const events = new Map<string, TrackerEvent>();
   let failCommit = false;
+  let redSafety = false;
   const store: EvaluationStore = {
     loadContext: vi.fn(async () => current),
     findLatestSession: vi.fn(async () => session),
     findEventByCommandId: vi.fn(async (id) => events.get(id) ?? null),
+    findResultBySessionId: vi.fn(async (_trackerId, sessionId) =>
+      result?.sessionId === sessionId ? result : null,
+    ),
+    hasRedSafetySignal: vi.fn(async () => redSafety),
     expireSession: vi.fn(async (id) => {
       if (!session || session.snapshot.id !== id || session.status !== "open") {
         return false;
@@ -86,6 +123,16 @@ function createStore() {
     commitAtomically: vi.fn(async (prepared) => {
       if (failCommit) throw new Error("anonymous_commit_failure");
       session = { snapshot: prepared.snapshot, status: "open" };
+      events.set(prepared.event.idempotencyKey, prepared.event);
+    }),
+    commitResultAtomically: vi.fn(async (prepared) => {
+      if (failCommit) throw new Error("anonymous_commit_failure");
+      if (result) {
+        throw Object.assign(new Error("anonymous_unique_conflict"), {
+          code: "23505",
+        });
+      }
+      result = prepared.result;
       events.set(prepared.event.idempotencyKey, prepared.event);
     }),
   };
@@ -114,6 +161,9 @@ function createStore() {
     },
     failCommit() {
       failCommit = true;
+    },
+    setRedSafety(value: boolean) {
+      redSafety = value;
     },
     getSession: () => session,
   };
@@ -200,5 +250,78 @@ describe("P4c-1 evaluation runtime", () => {
       runtime.create("anonymous-tracker", command()),
     ).rejects.toThrow("anonymous_commit_failure");
     expect(holder.getSession()).toBeNull();
+  });
+});
+
+describe("P4c-2a immutable evaluation result runtime", () => {
+  it("records one canonical result and replays the stable command", async () => {
+    const holder = createStore();
+    const runtime = createEvaluationRuntime({
+      store: holder.store,
+      now: () => new Date("2026-06-09T09:05:00.000Z"),
+    });
+    await runtime.create("anonymous-tracker", command());
+
+    const first = await runtime.submitResult(
+      "anonymous-tracker",
+      resultCommand(),
+    );
+    const replay = await runtime.submitResult(
+      "anonymous-tracker",
+      resultCommand(),
+    );
+
+    expect(first).toMatchObject({
+      state: "opened",
+      result: {
+        id: resultCommand().commandId,
+        sessionId: commandId,
+        sides: {
+          left: { symptomResponse: "mild" },
+          right: { symptomResponse: "none" },
+        },
+      },
+    });
+    expect(replay).toEqual(first);
+  });
+
+  it("fails closed when a red safety signal exists", async () => {
+    const holder = createStore();
+    const runtime = createEvaluationRuntime({
+      store: holder.store,
+      now: () => new Date("2026-06-09T09:05:00.000Z"),
+    });
+    await runtime.create("anonymous-tracker", command());
+    holder.setRedSafety(true);
+
+    await expect(
+      runtime.submitResult("anonymous-tracker", resultCommand()),
+    ).rejects.toThrow("red_safety");
+    expect(holder.store.commitResultAtomically).not.toHaveBeenCalled();
+    await expect(runtime.load("anonymous-tracker")).resolves.toMatchObject({
+      state: "opened",
+      resultSubmission: { allowed: false, blockedReason: "red_safety" },
+    });
+  });
+
+  it("expires the session instead of saving after the plan timeline changes", async () => {
+    const holder = createStore();
+    const runtime = createEvaluationRuntime({
+      store: holder.store,
+      now: () => new Date("2026-06-09T09:05:00.000Z"),
+    });
+    await runtime.create("anonymous-tracker", command());
+    holder.addTimelineVersion({
+      ...plan,
+      id: "019c0000-0000-7000-8000-000000000816",
+      version: 2,
+      effectiveFrom: "2026-06-10",
+      createdAt: "2026-06-09T09:01:00.000Z",
+    });
+
+    await expect(
+      runtime.submitResult("anonymous-tracker", resultCommand()),
+    ).rejects.toThrow("evaluation_result_not_eligible");
+    expect(holder.store.commitResultAtomically).not.toHaveBeenCalled();
   });
 });

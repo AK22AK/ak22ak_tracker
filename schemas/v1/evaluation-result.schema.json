@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "goalCompletion": {
+      "type": "string",
+      "enum": ["met", "partially_met", "not_met", "uncertain"]
+    },
+    "sides": {
+      "type": "object",
+      "properties": {
+        "left": {
+          "type": "object",
+          "properties": {
+            "symptomResponse": {
+              "type": "string",
+              "enum": ["none", "mild", "moderate", "severe", "not_assessed"]
+            },
+            "strengthAndControl": {
+              "type": "string",
+              "enum": ["ready", "limited", "not_assessed"]
+            },
+            "loadTolerance": {
+              "type": "string",
+              "enum": ["ready", "limited", "not_assessed"]
+            }
+          },
+          "required": [
+            "symptomResponse",
+            "strengthAndControl",
+            "loadTolerance"
+          ],
+          "additionalProperties": false
+        },
+        "right": {
+          "type": "object",
+          "properties": {
+            "symptomResponse": {
+              "type": "string",
+              "enum": ["none", "mild", "moderate", "severe", "not_assessed"]
+            },
+            "strengthAndControl": {
+              "type": "string",
+              "enum": ["ready", "limited", "not_assessed"]
+            },
+            "loadTolerance": {
+              "type": "string",
+              "enum": ["ready", "limited", "not_assessed"]
+            }
+          },
+          "required": [
+            "symptomResponse",
+            "strengthAndControl",
+            "loadTolerance"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": ["left", "right"],
+      "additionalProperties": false
+    },
+    "nextStageIntent": {
+      "type": "string",
+      "enum": [
+        "maintain",
+        "progress",
+        "extend",
+        "professional_review",
+        "undecided"
+      ]
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "resultVersion": {
+      "type": "string",
+      "const": "evaluation-result-v1"
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "sessionId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "trackerKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120,
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["stage", "final"]
+    },
+    "submittedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+    },
+    "submittedLocalDate": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+    },
+    "basePlanVersionId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "timelineHeadPlanVersionId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    }
+  },
+  "required": [
+    "goalCompletion",
+    "sides",
+    "nextStageIntent",
+    "schemaVersion",
+    "resultVersion",
+    "id",
+    "sessionId",
+    "trackerKey",
+    "kind",
+    "submittedAt",
+    "submittedLocalDate",
+    "basePlanVersionId",
+    "timelineHeadPlanVersionId"
+  ],
+  "additionalProperties": false
+}

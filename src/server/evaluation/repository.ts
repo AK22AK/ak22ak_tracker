@@ -2,7 +2,10 @@ import "server-only";
 
 import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 
-import { evaluationSessionSnapshotSchema } from "@/domain/evaluation";
+import {
+  evaluationResultDocumentSchema,
+  evaluationSessionSnapshotSchema,
+} from "@/domain/evaluation";
 import { garminActivitySummarySchema } from "@/domain/garmin";
 import {
   planVersionSchema,
@@ -13,6 +16,7 @@ import { kneeCheckInEventPayloadSchema } from "@/modules/knee-rehab/check-in";
 import { getDatabase } from "@/server/db/client";
 import {
   evaluationSessions,
+  evaluationResults,
   events,
   executionContexts,
   executionDayDecisions,
@@ -45,6 +49,7 @@ export function createNeonEvaluationStore(
           key: trackers.key,
           startedOn: trackers.startedOn,
           planningTimeZone: trackers.planningTimeZone,
+          aiContextRevision: trackers.aiContextRevision,
         })
         .from(trackers)
         .where(and(eq(trackers.key, trackerKey), eq(trackers.active, true)))
@@ -325,6 +330,37 @@ export function createNeonEvaluationStore(
       return row ? trackerEventSchema.parse(row.document) : null;
     },
 
+    async findResultBySessionId(trackerId, sessionId) {
+      const [row] = await database
+        .select({ document: evaluationResults.document })
+        .from(evaluationResults)
+        .where(
+          and(
+            eq(evaluationResults.trackerId, trackerId),
+            eq(evaluationResults.sessionId, sessionId),
+          ),
+        )
+        .limit(1);
+      return row ? evaluationResultDocumentSchema.parse(row.document) : null;
+    },
+
+    async hasRedSafetySignal(trackerId, localDate) {
+      const rows = await database
+        .select({ document: events.document })
+        .from(events)
+        .where(
+          and(
+            eq(events.trackerId, trackerId),
+            eq(events.kind, "symptom_check_in"),
+            eq(events.localDate, localDate),
+          ),
+        );
+      return rows.some((row) => {
+        const parsed = trackerEventSchema.safeParse(row.document);
+        return parsed.success && parsed.data.payload.safetyLevel === "red";
+      });
+    },
+
     async expireSession(sessionId) {
       const rows = await database
         .update(evaluationSessions)
@@ -379,6 +415,45 @@ export function createNeonEvaluationStore(
         database.insert(githubSyncOutbox).values(prepared.outbox),
       ]);
     },
+
+    async commitResultAtomically(prepared) {
+      await database.batch([
+        database.execute(sql`
+          select assert_evaluation_result_context(
+            ${prepared.trackerId}::uuid,
+            ${prepared.result.sessionId}::uuid,
+            ${prepared.result.basePlanVersionId}::uuid,
+            ${prepared.result.timelineHeadPlanVersionId}::uuid,
+            ${prepared.expectedContextRevision}::integer,
+            ${prepared.result.submittedLocalDate}::date
+          )
+        `),
+        database.insert(evaluationResults).values({
+          id: prepared.result.id,
+          trackerId: prepared.trackerId,
+          sessionId: prepared.result.sessionId,
+          basePlanVersionId: prepared.result.basePlanVersionId,
+          timelineHeadPlanVersionId: prepared.result.timelineHeadPlanVersionId,
+          submittedOn: prepared.result.submittedLocalDate,
+          resultVersion: prepared.result.resultVersion,
+          document: prepared.result,
+          recordedAt: new Date(prepared.result.submittedAt),
+        }),
+        database.insert(events).values({
+          id: prepared.event.id,
+          trackerId: prepared.trackerId,
+          kind: prepared.event.kind,
+          localDate: prepared.event.localDate,
+          occurredAt: new Date(prepared.event.occurredAt),
+          recordedAt: new Date(prepared.event.recordedAt),
+          occurredTimeZone: prepared.event.occurredTimeZone,
+          occurredUtcOffsetMinutes: prepared.event.occurredUtcOffsetMinutes,
+          idempotencyKey: prepared.event.idempotencyKey,
+          document: prepared.event,
+        }),
+        database.insert(githubSyncOutbox).values(prepared.outbox),
+      ]);
+    },
   };
 }
 
@@ -389,10 +464,16 @@ const lazyEvaluationStore: EvaluationStore = {
     createNeonEvaluationStore().findLatestSession(...arguments_),
   findEventByCommandId: (...arguments_) =>
     createNeonEvaluationStore().findEventByCommandId(...arguments_),
+  findResultBySessionId: (...arguments_) =>
+    createNeonEvaluationStore().findResultBySessionId(...arguments_),
+  hasRedSafetySignal: (...arguments_) =>
+    createNeonEvaluationStore().hasRedSafetySignal(...arguments_),
   expireSession: (...arguments_) =>
     createNeonEvaluationStore().expireSession(...arguments_),
   commitAtomically: (...arguments_) =>
     createNeonEvaluationStore().commitAtomically(...arguments_),
+  commitResultAtomically: (...arguments_) =>
+    createNeonEvaluationStore().commitResultAtomically(...arguments_),
 };
 
 export const evaluationRuntime = createEvaluationRuntime({

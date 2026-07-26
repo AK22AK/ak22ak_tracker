@@ -2,17 +2,72 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
 
 import { trackerQueryKeys } from "@/client/query-keys";
-import { createEvaluationSession, fetchEvaluation } from "@/client/tracker-api";
+import {
+  createEvaluationSession,
+  fetchEvaluation,
+  submitEvaluationResult,
+} from "@/client/tracker-api";
 import {
   createOrReuseClientCommand,
   type PendingClientCommand,
 } from "@/domain/client-command";
-import type { EvaluationSessionSnapshot } from "@/domain/evaluation";
+import type {
+  EvaluationResultAnswers,
+  EvaluationResultDocument,
+  EvaluationSessionSnapshot,
+} from "@/domain/evaluation";
 
 const trackerKey = "knee-rehab";
+
+const emptyResultDraft: EvaluationResultAnswers = {
+  goalCompletion: "uncertain",
+  sides: {
+    left: {
+      symptomResponse: "not_assessed",
+      strengthAndControl: "not_assessed",
+      loadTolerance: "not_assessed",
+    },
+    right: {
+      symptomResponse: "not_assessed",
+      strengthAndControl: "not_assessed",
+      loadTolerance: "not_assessed",
+    },
+  },
+  nextStageIntent: "undecided",
+  note: "",
+};
+
+const symptomLabels = {
+  none: "没有不适反应",
+  mild: "轻微反应",
+  moderate: "中等反应",
+  severe: "明显反应",
+  not_assessed: "尚未评估",
+} as const;
+
+const capacityLabels = {
+  ready: "表现稳定",
+  limited: "仍有限制",
+  not_assessed: "尚未评估",
+} as const;
+
+const goalLabels = {
+  met: "已达到",
+  partially_met: "部分达到",
+  not_met: "尚未达到",
+  uncertain: "暂不确定",
+} as const;
+
+const intentLabels = {
+  maintain: "倾向维持",
+  progress: "倾向进阶",
+  extend: "倾向延长当前阶段",
+  professional_review: "倾向人工复评",
+  undecided: "暂未决定",
+} as const;
 
 function weekLabel(week: EvaluationSessionSnapshot["weeks"][number]) {
   return `${week.weekStart.slice(5).replace("-", "/")}–${week.weekEnd
@@ -74,6 +129,193 @@ function Evidence({ snapshot }: { snapshot: EvaluationSessionSnapshot }) {
   );
 }
 
+function ResultSummary({ result }: { result: EvaluationResultDocument }) {
+  return (
+    <section className="surface-card evaluation-result-card">
+      <p className="eyebrow">不可变记录</p>
+      <h2>评估结果已保存</h2>
+      <p className="evaluation-guidance">
+        这份结果不会被覆盖。记录评估结果不等于完成，也不会自动修改计划。
+      </p>
+      <dl className="evaluation-result-summary">
+        <div>
+          <dt>目标完成情况</dt>
+          <dd>{goalLabels[result.goalCompletion]}</dd>
+        </div>
+        <div>
+          <dt>左侧</dt>
+          <dd>
+            {symptomLabels[result.sides.left.symptomResponse]} ·{" "}
+            {capacityLabels[result.sides.left.strengthAndControl]} ·{" "}
+            {capacityLabels[result.sides.left.loadTolerance]}
+          </dd>
+        </div>
+        <div>
+          <dt>右侧</dt>
+          <dd>
+            {symptomLabels[result.sides.right.symptomResponse]} ·{" "}
+            {capacityLabels[result.sides.right.strengthAndControl]} ·{" "}
+            {capacityLabels[result.sides.right.loadTolerance]}
+          </dd>
+        </div>
+        <div>
+          <dt>下一阶段意向</dt>
+          <dd>{intentLabels[result.nextStageIntent]}</dd>
+        </div>
+      </dl>
+      {result.note ? (
+        <p className="evaluation-result-note">{result.note}</p>
+      ) : null}
+    </section>
+  );
+}
+
+function ResultForm({
+  draft,
+  saving,
+  error,
+  onChange,
+  onSubmit,
+}: {
+  draft: EvaluationResultAnswers;
+  saving: boolean;
+  error: string | null;
+  onChange: (draft: EvaluationResultAnswers) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const updateSide = (
+    side: "left" | "right",
+    field: keyof EvaluationResultAnswers["sides"]["left"],
+    value: string,
+  ) =>
+    onChange({
+      ...draft,
+      sides: {
+        ...draft.sides,
+        [side]: { ...draft.sides[side], [field]: value },
+      },
+    } as EvaluationResultAnswers);
+
+  return (
+    <form className="surface-card evaluation-result-form" onSubmit={onSubmit}>
+      <div>
+        <p className="eyebrow">你的评估</p>
+        <h2>记录评估结果</h2>
+        <p className="evaluation-guidance">
+          左右侧分别记录。保存只会留下事实，不会自动判定完成或调整计划。
+        </p>
+      </div>
+      <label>
+        <span>目标完成情况</span>
+        <select
+          value={draft.goalCompletion}
+          onChange={(event) =>
+            onChange({
+              ...draft,
+              goalCompletion: event.target
+                .value as EvaluationResultAnswers["goalCompletion"],
+            })
+          }
+        >
+          {Object.entries(goalLabels).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {(["left", "right"] as const).map((side) => {
+        const sideLabel = side === "left" ? "左侧" : "右侧";
+        return (
+          <fieldset key={side}>
+            <legend>{sideLabel}</legend>
+            <label>
+              <span>{sideLabel}反应</span>
+              <select
+                value={draft.sides[side].symptomResponse}
+                onChange={(event) =>
+                  updateSide(side, "symptomResponse", event.target.value)
+                }
+              >
+                {Object.entries(symptomLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>{sideLabel}力量和动作控制</span>
+              <select
+                value={draft.sides[side].strengthAndControl}
+                onChange={(event) =>
+                  updateSide(side, "strengthAndControl", event.target.value)
+                }
+              >
+                {Object.entries(capacityLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>{sideLabel}负荷耐受</span>
+              <select
+                value={draft.sides[side].loadTolerance}
+                onChange={(event) =>
+                  updateSide(side, "loadTolerance", event.target.value)
+                }
+              >
+                {Object.entries(capacityLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </fieldset>
+        );
+      })}
+      <label>
+        <span>下一阶段意向</span>
+        <select
+          value={draft.nextStageIntent}
+          onChange={(event) =>
+            onChange({
+              ...draft,
+              nextStageIntent: event.target
+                .value as EvaluationResultAnswers["nextStageIntent"],
+            })
+          }
+        >
+          {Object.entries(intentLabels).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        <span>补充说明（可选）</span>
+        <textarea
+          maxLength={2_000}
+          value={draft.note ?? ""}
+          onChange={(event) => onChange({ ...draft, note: event.target.value })}
+        />
+      </label>
+      {error ? (
+        <p className="inline-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <button className="primary-button" disabled={saving} type="submit">
+        {saving ? "正在保存…" : "保存评估结果"}
+      </button>
+    </form>
+  );
+}
+
 export function EvaluationClient() {
   const queryClient = useQueryClient();
   const queryKey = trackerQueryKeys.evaluation(trackerKey);
@@ -83,8 +325,13 @@ export function EvaluationClient() {
     staleTime: 60_000,
   });
   const pending = useRef<PendingClientCommand | null>(null);
+  const resultPending = useRef<PendingClientCommand | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
+  const [resultDraft, setResultDraft] =
+    useState<EvaluationResultAnswers>(emptyResultDraft);
+  const [resultSaving, setResultSaving] = useState(false);
+  const [resultError, setResultError] = useState<string | null>(null);
 
   async function openEvaluation() {
     setSaving(true);
@@ -103,6 +350,49 @@ export function EvaluationClient() {
       setSaveError(true);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function saveResult(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (
+      resultSaving ||
+      query.data?.state !== "opened" ||
+      !query.data.resultSubmission.allowed
+    ) {
+      return;
+    }
+    setResultSaving(true);
+    setResultError(null);
+    const answers: EvaluationResultAnswers = {
+      ...resultDraft,
+      ...(resultDraft.note?.trim()
+        ? { note: resultDraft.note.trim() }
+        : { note: undefined }),
+    };
+    resultPending.current = createOrReuseClientCommand(
+      resultPending.current,
+      answers,
+    );
+    try {
+      const result = await submitEvaluationResult(trackerKey, {
+        ...resultPending.current.metadata,
+        sessionId: query.data.session.id,
+        answers,
+      });
+      queryClient.setQueryData(queryKey, result);
+      resultPending.current = null;
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      setResultError(
+        code === "red_safety"
+          ? "当前有红灯反馈，请先停止并重新评估。草稿仍会保留。"
+          : code === "evaluation_result_context_changed"
+            ? "近期记录或计划已经变化，请保留当前内容并重试。"
+            : "暂时无法保存，当前内容仍会保留，请重试。",
+      );
+    } finally {
+      setResultSaving(false);
     }
   }
 
@@ -193,7 +483,11 @@ export function EvaluationClient() {
         ) : data.state === "unavailable" ? (
           <p>当前计划还没有可用于评估的目标任务日期。</p>
         ) : (
-          <p>证据已冻结，可先回顾记录；左右侧评估和下一步选择将在后续完成。</p>
+          <p>
+            {data.result
+              ? "评估结果已经保存，可继续回顾冻结证据。"
+              : "证据已冻结，可以分别记录左右侧评估。"}
+          </p>
         )}
         {saveError ? (
           <p className="inline-error" role="alert">
@@ -201,6 +495,34 @@ export function EvaluationClient() {
           </p>
         ) : null}
       </section>
+
+      {data.state === "opened" && data.result ? (
+        <ResultSummary result={data.result} />
+      ) : null}
+
+      {data.state === "opened" &&
+      !data.result &&
+      data.resultSubmission.allowed ? (
+        <ResultForm
+          draft={resultDraft}
+          saving={resultSaving}
+          error={resultError}
+          onChange={setResultDraft}
+          onSubmit={(event) => void saveResult(event)}
+        />
+      ) : null}
+
+      {data.state === "opened" &&
+      !data.result &&
+      data.resultSubmission.blockedReason === "red_safety" ? (
+        <section
+          className="surface-card evaluation-result-blocked"
+          role="alert"
+        >
+          <h2>先停止并重新评估</h2>
+          <p>当前有红灯反馈，暂不保存阶段评估结果。</p>
+        </section>
+      ) : null}
 
       {(data.state === "opened" || data.state === "expired") && data.session ? (
         <Evidence snapshot={data.session} />

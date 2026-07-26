@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildEvaluationEvidenceSnapshot,
+  buildEvaluationResultDocument,
   deriveEvaluationTargetDate,
+  evaluationResultDocumentSchema,
   evaluationSessionSnapshotSchema,
 } from "@/domain/evaluation";
 import { schemaVersion, type PlanVersion } from "@/domain/schemas";
@@ -167,6 +169,53 @@ describe("P4c-1 evaluation evidence domain", () => {
       evaluationSessionSnapshotSchema.safeParse({
         ...snapshot,
         feedbackNote: "must not be mirrored",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("P4c-2a immutable evaluation result domain", () => {
+  it("records both sides independently in a strict versioned document", () => {
+    const result = buildEvaluationResultDocument({
+      id: "019c0000-0000-7000-8000-000000000807",
+      sessionId: "019c0000-0000-7000-8000-000000000802",
+      trackerKey: "anonymous-tracker",
+      kind: "final",
+      submittedAt: "2026-06-09T09:00:00.000Z",
+      submittedLocalDate: "2026-06-09",
+      basePlanVersionId: plan.id,
+      timelineHeadPlanVersionId: plan.id,
+      answers: {
+        goalCompletion: "partially_met",
+        sides: {
+          left: {
+            symptomResponse: "mild",
+            strengthAndControl: "ready",
+            loadTolerance: "limited",
+          },
+          right: {
+            symptomResponse: "none",
+            strengthAndControl: "limited",
+            loadTolerance: "ready",
+          },
+        },
+        nextStageIntent: "undecided",
+        note: "Anonymous optional note",
+      },
+    });
+
+    expect(result).toMatchObject({
+      schemaVersion,
+      resultVersion: "evaluation-result-v1",
+      sides: {
+        left: { symptomResponse: "mild", loadTolerance: "limited" },
+        right: { symptomResponse: "none", loadTolerance: "ready" },
+      },
+    });
+    expect(
+      evaluationResultDocumentSchema.safeParse({
+        ...result,
+        providerRaw: { hidden: true },
       }).success,
     ).toBe(false);
   });

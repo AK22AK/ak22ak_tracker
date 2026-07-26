@@ -28,7 +28,10 @@ import type {
   TrackerEvent,
 } from "@/domain/schemas";
 import type { ResumptionAssessmentSnapshot } from "@/domain/resumption";
-import type { EvaluationSessionSnapshot } from "@/domain/evaluation";
+import type {
+  EvaluationResultDocument,
+  EvaluationSessionSnapshot,
+} from "@/domain/evaluation";
 import type { TrackerSafetyPolicyDocument } from "@/domain/safety-policy";
 
 export const taskStatus = pgEnum("task_status", [
@@ -420,6 +423,40 @@ export const evaluationSessions = pgTable(
     check(
       "evaluation_sessions_range_check",
       sql`${table.triggerDate} >= ${table.targetDate}`,
+    ),
+  ],
+);
+
+export const evaluationResults = pgTable(
+  "evaluation_results",
+  {
+    id: uuid("id").primaryKey(),
+    trackerId: uuid("tracker_id")
+      .notNull()
+      .references(() => trackers.id, { onDelete: "cascade" }),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => evaluationSessions.id, { onDelete: "restrict" }),
+    basePlanVersionId: uuid("base_plan_version_id")
+      .notNull()
+      .references(() => planVersions.id, { onDelete: "restrict" }),
+    timelineHeadPlanVersionId: uuid("timeline_head_plan_version_id")
+      .notNull()
+      .references(() => planVersions.id, { onDelete: "restrict" }),
+    submittedOn: date("submitted_on").notNull(),
+    resultVersion: text("result_version").notNull(),
+    document: jsonb("document").$type<EvaluationResultDocument>().notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("evaluation_results_session_unique").on(table.sessionId),
+    index("evaluation_results_tracker_index").on(table.trackerId),
+    check(
+      "evaluation_results_version_check",
+      sql`${table.resultVersion} = 'evaluation-result-v1'`,
     ),
   ],
 );
