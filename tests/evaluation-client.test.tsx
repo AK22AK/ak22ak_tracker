@@ -215,30 +215,16 @@ describe("P4c-2a immutable evaluation result UI", () => {
     vi.unstubAllGlobals();
   });
 
-  it("records independent left and right answers without choosing a branch", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        response({
-          ...base,
-          state: "opened",
-          session: { ...snapshot, status: "open" },
-          result: null,
-          resultSubmission: { allowed: true, blockedReason: null },
-        }),
-      )
-      .mockResolvedValueOnce(
-        response({
-          ...base,
-          state: "opened",
-          session: { ...snapshot, status: "open" },
-          result: savedResult,
-          resultSubmission: {
-            allowed: false,
-            blockedReason: "already_recorded",
-          },
-        }),
-      );
+  it("previews independent left and right answers before any permanent write", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      response({
+        ...base,
+        state: "opened",
+        session: { ...snapshot, status: "open" },
+        result: null,
+        resultSubmission: { allowed: true, blockedReason: null },
+      }),
+    );
     vi.stubGlobal("fetch", fetchMock);
     vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(savedResult.id);
     renderClient();
@@ -270,14 +256,90 @@ describe("P4c-2a immutable evaluation result UI", () => {
     fireEvent.change(screen.getByLabelText("补充说明（可选）"), {
       target: { value: "Anonymous note" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "保存评估结果" }));
+    fireEvent.click(screen.getByRole("button", { name: "检查评估结果" }));
 
-    expect(await screen.findByText("评估结果已保存")).toBeTruthy();
-    expect(screen.getByText(/不会自动修改计划/)).toBeTruthy();
+    expect(await screen.findByText("确认评估结果")).toBeTruthy();
+    expect(screen.getByText("轻微反应 · 表现稳定 · 仍有限制")).toBeTruthy();
+    expect(screen.getByText("没有不适反应 · 仍有限制 · 表现稳定")).toBeTruthy();
+    expect(screen.getByText("Anonymous note")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("button", { name: /维护|进阶|延长/ })).toBeNull();
-    const submitted = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
-    expect(submitted.answers.sides.left.symptomResponse).toBe("mild");
-    expect(submitted.answers.sides.right.symptomResponse).toBe("none");
+  });
+
+  it("returns from confirmation with the complete draft unchanged", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      response({
+        ...base,
+        state: "opened",
+        session: { ...snapshot, status: "open" },
+        result: null,
+        resultSubmission: { allowed: true, blockedReason: null },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    renderClient();
+
+    fireEvent.change(await screen.findByLabelText("右侧反应"), {
+      target: { value: "moderate" },
+    });
+    fireEvent.change(screen.getByLabelText("补充说明（可选）"), {
+      target: { value: "Anonymous editable note" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "检查评估结果" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回修改" }));
+
+    expect((screen.getByLabelText("右侧反应") as HTMLSelectElement).value).toBe(
+      "moderate",
+    );
+    expect(
+      (screen.getByLabelText("补充说明（可选）") as HTMLTextAreaElement).value,
+    ).toBe("Anonymous editable note");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends only one permanent write while confirmation is in flight", async () => {
+    let resolvePost: (value: Response) => void = () => undefined;
+    const postResponse = new Promise<Response>((resolve) => {
+      resolvePost = resolve;
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        response({
+          ...base,
+          state: "opened",
+          session: { ...snapshot, status: "open" },
+          result: null,
+          resultSubmission: { allowed: true, blockedReason: null },
+        }),
+      )
+      .mockReturnValueOnce(postResponse);
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(savedResult.id);
+    renderClient();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "检查评估结果" }),
+    );
+    const confirm = screen.getByRole("button", { name: "确认并保存" });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    resolvePost(
+      response({
+        ...base,
+        state: "opened",
+        session: { ...snapshot, status: "open" },
+        result: savedResult,
+        resultSubmission: {
+          allowed: false,
+          blockedReason: "already_recorded",
+        },
+      }),
+    );
+    expect(await screen.findByText("评估结果已保存")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("keeps the complete draft and command id when a save retry is unchanged", async () => {
@@ -315,15 +377,14 @@ describe("P4c-2a immutable evaluation result UI", () => {
     fireEvent.change(screen.getByLabelText("补充说明（可选）"), {
       target: { value: "Anonymous note" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "保存评估结果" }));
+    fireEvent.click(screen.getByRole("button", { name: "检查评估结果" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认并保存" }));
     expect((await screen.findByRole("alert")).textContent).toContain(
       "当前内容仍会保留",
     );
-    expect(
-      (screen.getByLabelText("补充说明（可选）") as HTMLTextAreaElement).value,
-    ).toBe("Anonymous note");
+    expect(screen.getByText("Anonymous note")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "保存评估结果" }));
+    fireEvent.click(screen.getByRole("button", { name: "重试保存" }));
     expect(await screen.findByText("评估结果已保存")).toBeTruthy();
     const first = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
     const retry = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
@@ -351,24 +412,36 @@ describe("P4c-2a immutable evaluation result UI", () => {
             blockedReason: "red_safety",
           },
         }),
-      );
+      )
+      .mockResolvedValueOnce(response(opened));
     vi.stubGlobal("fetch", fetchMock);
     const { client } = renderClient();
 
     fireEvent.change(await screen.findByLabelText("补充说明（可选）"), {
       target: { value: "Draft survives refresh" },
     });
+    fireEvent.click(screen.getByRole("button", { name: "检查评估结果" }));
+    expect(screen.getByRole("button", { name: "确认并保存" })).toBeTruthy();
     await client.refetchQueries({
       queryKey: ["evaluation", "knee-rehab"],
     });
-    expect(
-      (screen.getByLabelText("补充说明（可选）") as HTMLTextAreaElement).value,
-    ).toBe("Draft survives refresh");
+    expect(screen.getByText("Draft survives refresh")).toBeTruthy();
 
     await client.refetchQueries({
       queryKey: ["evaluation", "knee-rehab"],
     });
     expect(await screen.findByText("先停止并重新评估")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "保存评估结果" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "确认并保存" })).toBeNull();
+
+    await client.refetchQueries({
+      queryKey: ["evaluation", "knee-rehab"],
+    });
+    expect(
+      (
+        (await screen.findByLabelText(
+          "补充说明（可选）",
+        )) as HTMLTextAreaElement
+      ).value,
+    ).toBe("Draft survives refresh");
   });
 });

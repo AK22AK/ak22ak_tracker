@@ -1753,6 +1753,7 @@ summary:focus-visible {
 .evaluation-evidence-card,
 .evaluation-result-card,
 .evaluation-result-form,
+.evaluation-result-confirmation,
 .evaluation-result-blocked,
 .evaluation-week-list,
 .evaluation-week {
@@ -1765,11 +1766,13 @@ summary:focus-visible {
 .evaluation-evidence-card h2,
 .evaluation-result-card h2,
 .evaluation-result-form h2,
+.evaluation-result-confirmation h2,
 .evaluation-result-blocked h2,
 .evaluation-status-card p,
 .evaluation-evidence-card p,
 .evaluation-result-card p,
 .evaluation-result-form p,
+.evaluation-result-confirmation p,
 .evaluation-result-blocked p {
   margin: 0;
 }
@@ -1863,6 +1866,22 @@ summary:focus-visible {
   background: var(--color-surface-soft);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.evaluation-result-confirmation {
+  min-width: 0;
+}
+
+.evaluation-confirmation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.evaluation-confirmation-actions button {
+  flex: 1 1 10rem;
+  min-width: 0;
+  min-height: 44px;
 }
 
 @media (max-width: 360px) {

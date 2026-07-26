@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { type FormEvent, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import { trackerQueryKeys } from "@/client/query-keys";
 import {
@@ -15,12 +15,14 @@ import {
   type PendingClientCommand,
 } from "@/domain/client-command";
 import type {
+  EvaluationPageDto,
   EvaluationResultAnswers,
   EvaluationResultDocument,
   EvaluationSessionSnapshot,
 } from "@/domain/evaluation";
 
 const trackerKey = "knee-rehab";
+const evaluationQueryKey = trackerQueryKeys.evaluation(trackerKey);
 
 const emptyResultDraft: EvaluationResultAnswers = {
   goalCompletion: "uncertain",
@@ -137,6 +139,14 @@ function ResultSummary({ result }: { result: EvaluationResultDocument }) {
       <p className="evaluation-guidance">
         这份结果不会被覆盖。记录评估结果不等于完成，也不会自动修改计划。
       </p>
+      <ResultDetails result={result} />
+    </section>
+  );
+}
+
+function ResultDetails({ result }: { result: EvaluationResultAnswers }) {
+  return (
+    <>
       <dl className="evaluation-result-summary">
         <div>
           <dt>目标完成情况</dt>
@@ -166,20 +176,64 @@ function ResultSummary({ result }: { result: EvaluationResultDocument }) {
       {result.note ? (
         <p className="evaluation-result-note">{result.note}</p>
       ) : null}
+    </>
+  );
+}
+
+function ResultConfirmation({
+  result,
+  saving,
+  error,
+  onEdit,
+  onConfirm,
+}: {
+  result: EvaluationResultAnswers;
+  saving: boolean;
+  error: string | null;
+  onEdit: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <section className="surface-card evaluation-result-confirmation">
+      <p className="eyebrow">保存前检查</p>
+      <h2>确认评估结果</h2>
+      <p className="evaluation-guidance">
+        确认保存后不能修改。记录评估结果不等于康复完成，也不会自动修改计划。
+      </p>
+      <ResultDetails result={result} />
+      {error ? (
+        <p className="inline-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <div className="evaluation-confirmation-actions">
+        <button
+          className="secondary-button"
+          disabled={saving}
+          type="button"
+          onClick={onEdit}
+        >
+          返回修改
+        </button>
+        <button
+          className="primary-button"
+          disabled={saving}
+          type="button"
+          onClick={onConfirm}
+        >
+          {saving ? "正在保存…" : error ? "重试保存" : "确认并保存"}
+        </button>
+      </div>
     </section>
   );
 }
 
 function ResultForm({
   draft,
-  saving,
-  error,
   onChange,
   onSubmit,
 }: {
   draft: EvaluationResultAnswers;
-  saving: boolean;
-  error: string | null;
   onChange: (draft: EvaluationResultAnswers) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
@@ -304,13 +358,8 @@ function ResultForm({
           onChange={(event) => onChange({ ...draft, note: event.target.value })}
         />
       </label>
-      {error ? (
-        <p className="inline-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-      <button className="primary-button" disabled={saving} type="submit">
-        {saving ? "正在保存…" : "保存评估结果"}
+      <button className="primary-button" type="submit">
+        检查评估结果
       </button>
     </form>
   );
@@ -318,7 +367,7 @@ function ResultForm({
 
 export function EvaluationClient() {
   const queryClient = useQueryClient();
-  const queryKey = trackerQueryKeys.evaluation(trackerKey);
+  const queryKey = evaluationQueryKey;
   const query = useQuery({
     queryKey,
     queryFn: ({ signal }) => fetchEvaluation(trackerKey, signal),
@@ -326,12 +375,32 @@ export function EvaluationClient() {
   });
   const pending = useRef<PendingClientCommand | null>(null);
   const resultPending = useRef<PendingClientCommand | null>(null);
+  const resultInFlight = useRef(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [resultDraft, setResultDraft] =
     useState<EvaluationResultAnswers>(emptyResultDraft);
   const [resultSaving, setResultSaving] = useState(false);
   const [resultError, setResultError] = useState<string | null>(null);
+  const [resultConfirmation, setResultConfirmation] =
+    useState<EvaluationResultAnswers | null>(null);
+
+  useEffect(() => {
+    const trackedQuery = queryClient
+      .getQueryCache()
+      .find({ queryKey, exact: true });
+    return queryClient.getQueryCache().subscribe((event) => {
+      if (event.query !== trackedQuery) return;
+      const data = event.query.state.data as EvaluationPageDto | undefined;
+      if (data?.state === "opened" && data.resultSubmission.allowed) {
+        return;
+      }
+      setResultConfirmation(null);
+    });
+  }, [queryClient, queryKey]);
+
+  const resultSubmissionAllowed =
+    query.data?.state === "opened" && query.data.resultSubmission.allowed;
 
   async function openEvaluation() {
     setSaving(true);
@@ -353,17 +422,9 @@ export function EvaluationClient() {
     }
   }
 
-  async function saveResult(event: FormEvent<HTMLFormElement>) {
+  function prepareResult(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (
-      resultSaving ||
-      query.data?.state !== "opened" ||
-      !query.data.resultSubmission.allowed
-    ) {
-      return;
-    }
-    setResultSaving(true);
-    setResultError(null);
+    if (!resultSubmissionAllowed) return;
     const answers: EvaluationResultAnswers = {
       ...resultDraft,
       ...(resultDraft.note?.trim()
@@ -374,11 +435,33 @@ export function EvaluationClient() {
       resultPending.current,
       answers,
     );
+    setResultError(null);
+    setResultConfirmation(answers);
+  }
+
+  async function saveResult() {
+    if (
+      resultInFlight.current ||
+      !resultConfirmation ||
+      query.data?.state !== "opened" ||
+      !query.data.resultSubmission.allowed
+    ) {
+      return;
+    }
+    resultInFlight.current = true;
+    setResultSaving(true);
+    setResultError(null);
+    const pendingCommand = resultPending.current;
+    if (!pendingCommand) {
+      resultInFlight.current = false;
+      setResultSaving(false);
+      return;
+    }
     try {
       const result = await submitEvaluationResult(trackerKey, {
-        ...resultPending.current.metadata,
+        ...pendingCommand.metadata,
         sessionId: query.data.session.id,
-        answers,
+        answers: resultConfirmation,
       });
       queryClient.setQueryData(queryKey, result);
       resultPending.current = null;
@@ -392,6 +475,7 @@ export function EvaluationClient() {
             : "暂时无法保存，当前内容仍会保留，请重试。",
       );
     } finally {
+      resultInFlight.current = false;
       setResultSaving(false);
     }
   }
@@ -502,13 +586,28 @@ export function EvaluationClient() {
 
       {data.state === "opened" &&
       !data.result &&
-      data.resultSubmission.allowed ? (
-        <ResultForm
-          draft={resultDraft}
+      data.resultSubmission.allowed &&
+      resultConfirmation ? (
+        <ResultConfirmation
+          result={resultConfirmation}
           saving={resultSaving}
           error={resultError}
+          onEdit={() => {
+            setResultConfirmation(null);
+            setResultError(null);
+          }}
+          onConfirm={() => void saveResult()}
+        />
+      ) : null}
+
+      {data.state === "opened" &&
+      !data.result &&
+      data.resultSubmission.allowed &&
+      !resultConfirmation ? (
+        <ResultForm
+          draft={resultDraft}
           onChange={setResultDraft}
-          onSubmit={(event) => void saveResult(event)}
+          onSubmit={prepareResult}
         />
       ) : null}
 

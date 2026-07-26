@@ -270,6 +270,42 @@ const rollbackAdvice = {
   },
 };
 
+const evaluationSnapshot = {
+  schemaVersion: "1.0.0",
+  id: "019c0000-0000-7000-8000-000000000041",
+  trackerKey: "knee-rehab",
+  kind: "final",
+  triggerDate: localDate,
+  targetDate: localDate,
+  planningTimeZone: "Asia/Shanghai",
+  calculationVersion: "evaluation-evidence-v1",
+  createdAt: `${localDate}T00:00:00.000Z`,
+  evidenceRange: { from: localDate, through: localDate },
+  basePlanVersion: {
+    id: "019c0000-0000-7000-8000-000000000042",
+    version: 1,
+    effectiveFrom: localDate,
+  },
+  timelineHeadPlanVersion: {
+    id: "019c0000-0000-7000-8000-000000000042",
+    version: 1,
+    effectiveFrom: localDate,
+  },
+  effectiveness: { status: "needs_policy", policyVersion: null },
+  weeks: [],
+};
+
+const evaluationAggregate = {
+  trackerKey: "knee-rehab",
+  currentDate: localDate,
+  targetDate: localDate,
+  planningTimeZone: "Asia/Shanghai",
+  state: "opened",
+  session: { ...evaluationSnapshot, status: "open" },
+  result: null,
+  resultSubmission: { allowed: true, blockedReason: null },
+};
+
 type RequestCounters = {
   today: number;
   month: number;
@@ -279,6 +315,7 @@ type RequestCounters = {
   mirror: number;
   trends: number;
   advice: number;
+  evaluation: number;
 };
 
 async function authorize(context: BrowserContext) {
@@ -311,6 +348,7 @@ async function mockPrivateReads(
     mirror: 0,
     trends: 0,
     advice: 0,
+    evaluation: 0,
   };
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -340,6 +378,9 @@ async function mockPrivateReads(
     } else if (url.pathname.endsWith("/trends")) {
       counters.trends += 1;
       body = trendsAggregate;
+    } else if (url.pathname.endsWith("/evaluation")) {
+      counters.evaluation += 1;
+      body = evaluationAggregate;
     } else if (url.pathname === "/api/mirror/sync") {
       body = {
         result: {
@@ -501,6 +542,60 @@ async function expectActiveTab(
 test.beforeEach(async ({ context }) => {
   await authorize(context);
 });
+
+for (const width of [320, 375, 390, 430]) {
+  test(`evaluation confirmation fits a ${width}px mobile viewport`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    const counters = await mockPrivateReads(page, 0);
+    await page.goto("/trends/evaluation");
+
+    await page.getByLabel("左侧反应").selectOption("mild");
+    await page.getByLabel("右侧反应").selectOption("moderate");
+    await page
+      .getByLabel("补充说明（可选）")
+      .fill("Anonymous mobile confirmation note");
+    await page.getByRole("button", { name: "检查评估结果" }).click();
+
+    await expect(
+      page.getByRole("heading", { name: "确认评估结果" }),
+    ).toBeVisible();
+    await expect(page.getByText(/确认保存后不能修改/)).toBeVisible();
+    expect(counters.evaluation).toBe(1);
+
+    const layout = await page.evaluate(() => {
+      const card = document.querySelector<HTMLElement>(
+        ".evaluation-result-confirmation",
+      );
+      const controls = [
+        ...document.querySelectorAll<HTMLElement>(
+          ".evaluation-result-confirmation button",
+        ),
+      ];
+      const cardRect = card?.getBoundingClientRect();
+      return {
+        clientWidth: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        cardLeft: cardRect?.left ?? -1,
+        cardRight: cardRect?.right ?? Number.POSITIVE_INFINITY,
+        controls: controls.map((control) => {
+          const rect = control.getBoundingClientRect();
+          return { height: rect.height, left: rect.left, right: rect.right };
+        }),
+      };
+    });
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+    expect(layout.cardLeft).toBeGreaterThanOrEqual(0);
+    expect(layout.cardRight).toBeLessThanOrEqual(layout.clientWidth);
+    expect(
+      layout.controls.every(
+        ({ height, left, right }) =>
+          height >= 44 && left >= 0 && right <= layout.clientWidth,
+      ),
+    ).toBe(true);
+  });
+}
 
 for (const width of [320, 375, 390, 430]) {
   test(`plan decision preview remains accessible at ${width}px`, async ({
