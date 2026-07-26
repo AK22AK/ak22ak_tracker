@@ -254,6 +254,34 @@ export async function markIntegrationConnectionFailure(input: {
     });
 }
 
+export async function markIntegrationConnectionSuccess(input: {
+  trackerId: string;
+  provider: string;
+  succeededAt: Date;
+  database?: Database;
+}) {
+  const database = input.database ?? getDatabase();
+  const succeeded = {
+    status: "succeeded" as const,
+    lastAttemptAt: input.succeededAt,
+    lastSucceededAt: input.succeededAt,
+    lastErrorCode: null,
+    updatedAt: input.succeededAt,
+  };
+  await database
+    .insert(integrationSyncState)
+    .values({
+      trackerId: input.trackerId,
+      provider: input.provider,
+      cursor: null,
+      ...succeeded,
+    })
+    .onConflictDoUpdate({
+      target: [integrationSyncState.trackerId, integrationSyncState.provider],
+      set: succeeded,
+    });
+}
+
 export async function readIntegrationCredential(input: {
   trackerId: string;
   provider: string;

@@ -138,6 +138,16 @@ const garminStatus = {
   lastErrorCode: null,
 };
 
+const deepSeekStatus = {
+  schemaVersion: "1.0.0",
+  provider: "deepseek",
+  hasCredential: false,
+  state: "not_connected",
+  verifiedAt: null,
+  updatedAt: null,
+  lastErrorCode: null,
+};
+
 const mirrorStatus = {
   configuration: "configured",
   pendingCount: 0,
@@ -379,6 +389,7 @@ type RequestCounters = {
   day: number;
   integration: number;
   garmin: number;
+  deepseek: number;
   mirror: number;
   trends: number;
   advice: number;
@@ -413,6 +424,7 @@ async function mockPrivateReads(
     day: 0,
     integration: 0,
     garmin: 0,
+    deepseek: 0,
     mirror: 0,
     trends: 0,
     advice: 0,
@@ -437,6 +449,9 @@ async function mockPrivateReads(
     } else if (url.pathname.endsWith("/integrations/garmin/credential")) {
       counters.garmin += 1;
       body = garminStatus;
+    } else if (url.pathname.endsWith("/integrations/deepseek/credential")) {
+      counters.deepseek += 1;
+      body = deepSeekStatus;
     } else if (url.pathname === "/api/mirror/status") {
       counters.mirror += 1;
       body = mirrorStatus;
@@ -768,6 +783,7 @@ for (const width of [320, 375, 390, 430]) {
     await page.goto("/settings");
     await expect(page.getByRole("heading", { name: "Garmin" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "训记" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "DeepSeek" })).toBeVisible();
     await expect(
       page.getByRole("button", { name: "同步活动记录" }),
     ).toBeVisible();
@@ -888,7 +904,7 @@ test("warm Calendar and Settings content remains visible without aggregate refet
     '[data-tab-panel="settings"] .integration-card',
   );
   expect(settingsFirst).toBeLessThan(100);
-  await page.getByLabel("API Key").fill("anonymous-ui-draft");
+  await page.getByLabel("API Key", { exact: true }).fill("anonymous-ui-draft");
   await page.evaluate(() => window.scrollTo(0, 640));
 
   const calendarReturn = await measureTabClick(
@@ -907,7 +923,9 @@ test("warm Calendar and Settings content remains visible without aggregate refet
     '[data-tab-panel="settings"] .integration-card',
   );
   expect(settingsReturn).toBeLessThan(100);
-  await expect(page.getByLabel("API Key")).toHaveValue("anonymous-ui-draft");
+  await expect(page.getByLabel("API Key", { exact: true })).toHaveValue(
+    "anonymous-ui-draft",
+  );
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(640);
 });
 

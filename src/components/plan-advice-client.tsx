@@ -2,9 +2,9 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { trackerQueryKeys } from "@/client/query-keys";
+import { integrationQueryKeys, trackerQueryKeys } from "@/client/query-keys";
 import {
   decidePlanChange,
   fetchPlanAdvice,
@@ -165,6 +165,13 @@ export function PlanAdviceClient() {
     },
   });
   const job = query.data?.job ?? null;
+  useEffect(() => {
+    if (job?.status !== "failed" || !job.errorCode) return;
+    void queryClient.invalidateQueries({
+      queryKey: integrationQueryKeys.providerStatus(trackerKey, "deepseek"),
+      exact: true,
+    });
+  }, [job?.errorCode, job?.status, queryClient]);
   const unavailable =
     query.data?.configuration === "not_configured" ||
     query.data?.configuration === "invalid_configuration";

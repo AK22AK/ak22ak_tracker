@@ -1,8 +1,12 @@
 import "server-only";
 
-import type { IntegrationProvider } from "./core/external-records";
-
 export const integrationProviderDefinitions = {
+  deepseek: {
+    provider: "deepseek",
+    displayName: "DeepSeek",
+    description: "生成受约束的训练调整建议。",
+    capabilities: ["plan-advice:read"] as const,
+  },
   garmin: {
     provider: "garmin",
     displayName: "Garmin",
@@ -15,7 +19,7 @@ export const integrationProviderDefinitions = {
     description: "只读同步力量训练动作、重量、组次与训练备注。",
     capabilities: ["training:read"] as const,
   },
-} satisfies Partial<Record<IntegrationProvider, unknown>>;
+} as const;
 
 export type SupportedIntegrationProvider =
   keyof typeof integrationProviderDefinitions;

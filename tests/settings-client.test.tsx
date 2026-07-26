@@ -35,6 +35,16 @@ const garminStatus = {
   lastErrorCode: null,
 };
 
+const deepSeekStatus = {
+  schemaVersion: "1.0.0",
+  provider: "deepseek",
+  hasCredential: false,
+  state: "not_connected",
+  verifiedAt: null,
+  updatedAt: null,
+  lastErrorCode: null,
+};
+
 const mirrorStatus = {
   configuration: "configured",
   pendingCount: 0,
@@ -83,6 +93,7 @@ describe("settings client data boundary", () => {
     expect(screen.getByRole("main", { name: "设置页面" })).toBeTruthy();
     expect(screen.getByText("正在加载：Garmin 活动…")).toBeTruthy();
     expect(screen.getByText("正在加载：训练数据源…")).toBeTruthy();
+    expect(screen.getByText("正在加载：训练建议…")).toBeTruthy();
     expect(screen.getByText("正在加载：GitHub 数据备份…")).toBeTruthy();
     expect(screen.queryByText(/正在切换/)).toBeNull();
   });
@@ -94,9 +105,11 @@ describe("settings client data boundary", () => {
         jsonResponse(
           url === "/api/mirror/status"
             ? mirrorStatus
-            : url.includes("/garmin/")
-              ? garminStatus
-              : integrationStatus,
+            : url.includes("/deepseek/")
+              ? deepSeekStatus
+              : url.includes("/garmin/")
+                ? garminStatus
+                : integrationStatus,
         ),
       );
     });
@@ -115,6 +128,7 @@ describe("settings client data boundary", () => {
       expect.arrayContaining([
         "/api/trackers/knee-rehab/integrations/xunji/credential",
         "/api/trackers/knee-rehab/integrations/garmin/credential",
+        "/api/trackers/knee-rehab/integrations/deepseek/credential",
         "/api/mirror/status",
       ]),
     );

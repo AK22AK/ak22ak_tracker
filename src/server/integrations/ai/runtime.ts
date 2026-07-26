@@ -3,6 +3,7 @@ import "server-only";
 import {
   aiAnalysisJobDtoSchema,
   aiAnalysisPageDtoSchema,
+  type AiConfigurationStatus,
   type AiAnalysisErrorCode,
   type AiAnalysisPageDto,
 } from "@/domain/ai-analysis";
@@ -11,7 +12,8 @@ import { localDateInTimeZone } from "@/domain/planning-time";
 import { planChangeProposalSchema, schemaVersion } from "@/domain/schemas";
 import { rollbackAffectedDates } from "@/server/commands/plan-version-rollback-core";
 
-import { readDeepSeekConfiguration } from "./config";
+import type { DeepSeekConfiguration } from "./config";
+import { deepSeekCredentialRuntime } from "./credential-runtime";
 import {
   prepareAiAnalysisContext,
   type PreparedAiAnalysisContext,
@@ -213,7 +215,7 @@ function proposalRollback(job: AiAnalysisJobRecord, currentTime: Date) {
 }
 
 function pageDto(
-  configuration: ReturnType<typeof readDeepSeekConfiguration>["status"],
+  configuration: AiConfigurationStatus,
   job: AiAnalysisJobRecord | null,
   currentTime: Date,
   context: PreparedAiAnalysisContext | null = null,
@@ -265,8 +267,18 @@ export function createAiAnalysisRuntime({
   store = createNeonAiAnalysisStore(),
   prepareContext = (trackerKey: string, now: Date) =>
     prepareAiAnalysisContext({ trackerKey, now }),
-  readConfiguration = readDeepSeekConfiguration,
+  readConfiguration = (trackerKey: string) =>
+    deepSeekCredentialRuntime.resolveConfiguration(trackerKey),
   createAdvisor = createDeepSeekPlanAdvisor,
+  recordCredentialFailure = (input: {
+    trackerKey: string;
+    errorCode: AiAnalysisErrorCode;
+    failedAt: Date;
+  }) => deepSeekCredentialRuntime.recordFailure(input),
+  recordCredentialSuccess = (input: {
+    trackerKey: string;
+    succeededAt: Date;
+  }) => deepSeekCredentialRuntime.recordSuccess(input),
   now = () => new Date(),
 }: {
   store?: AiAnalysisStore;
@@ -274,20 +286,35 @@ export function createAiAnalysisRuntime({
     trackerKey: string,
     now: Date,
   ) => Promise<PreparedAiAnalysisContext>;
-  readConfiguration?: typeof readDeepSeekConfiguration;
-  createAdvisor?: (
-    configuration: Extract<
-      ReturnType<typeof readDeepSeekConfiguration>,
-      { status: "configured" }
-    >["value"],
-  ) => PlanAdvisor;
+  readConfiguration?: (trackerKey: string) =>
+    | Promise<
+        | { status: "configured"; value: DeepSeekConfiguration }
+        | { status: Exclude<AiConfigurationStatus, "configured"> }
+      >
+    | {
+        status: "configured";
+        value: DeepSeekConfiguration;
+      }
+    | { status: Exclude<AiConfigurationStatus, "configured"> };
+  createAdvisor?: (configuration: DeepSeekConfiguration) => PlanAdvisor;
+  recordCredentialFailure?: (input: {
+    trackerKey: string;
+    errorCode: AiAnalysisErrorCode;
+    failedAt: Date;
+  }) => Promise<void>;
+  recordCredentialSuccess?: (input: {
+    trackerKey: string;
+    succeededAt: Date;
+  }) => Promise<void>;
   now?: () => Date;
 } = {}) {
   async function load(trackerKey: string, jobId?: string) {
-    const configuration = readConfiguration();
-    const found = jobId
-      ? await store.findJob(trackerKey, jobId)
-      : await store.findLatestJob(trackerKey);
+    const [configuration, found] = await Promise.all([
+      readConfiguration(trackerKey),
+      jobId
+        ? store.findJob(trackerKey, jobId)
+        : store.findLatestJob(trackerKey),
+    ]);
     const currentTime = now();
     const current = found
       ? await ensureCurrentProposal(found, store, prepareContext, currentTime)
@@ -302,7 +329,7 @@ export function createAiAnalysisRuntime({
 
   async function request(input: { trackerKey: string; commandId: string }) {
     const requestedAt = now();
-    const configuration = readConfiguration();
+    const configuration = await readConfiguration(input.trackerKey);
     const context = await prepareContext(input.trackerKey, requestedAt);
     const job = await store.createJob({
       ...context,
@@ -388,6 +415,10 @@ export function createAiAnalysisRuntime({
         responseHash: result.responseHash,
         completedAt,
       });
+      await recordCredentialSuccess({
+        trackerKey: input.trackerKey,
+        succeededAt: completedAt,
+      }).catch(() => undefined);
     } catch (error) {
       const errorCode =
         error instanceof PlanAdvisorError
@@ -400,6 +431,11 @@ export function createAiAnalysisRuntime({
         errorCode,
         completedAt: now(),
       });
+      await recordCredentialFailure({
+        trackerKey: input.trackerKey,
+        errorCode,
+        failedAt: now(),
+      }).catch(() => undefined);
     }
     return load(input.trackerKey, job.id);
   }

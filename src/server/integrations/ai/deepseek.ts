@@ -79,7 +79,10 @@ const chatResponseSchema = z
 
 const MAX_RESPONSE_BYTES = 256 * 1024;
 
-async function readBoundedBody(response: Response) {
+async function readBoundedBody(
+  response: Response,
+  maxBytes = MAX_RESPONSE_BYTES,
+) {
   if (!response.body) return "";
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -89,7 +92,7 @@ async function readBoundedBody(response: Response) {
     const chunk = await reader.read();
     if (chunk.done) break;
     bytes += chunk.value.byteLength;
-    if (bytes > MAX_RESPONSE_BYTES) {
+    if (bytes > maxBytes) {
       await reader.cancel();
       throw new PlanAdvisorError("invalid_response");
     }
@@ -171,6 +174,88 @@ function classifyHttpStatus(status: number) {
   if (status === 429) return "rate_limited" as const;
   if (status >= 500) return "provider_unavailable" as const;
   return "invalid_response" as const;
+}
+
+const credentialVerificationOutputSchema = z
+  .object({ ok: z.literal(true) })
+  .strict();
+const MAX_VERIFICATION_RESPONSE_BYTES = 32 * 1024;
+
+export async function verifyDeepSeekCredential(
+  configuration: DeepSeekConfiguration,
+  fetchImpl: typeof fetch = fetch,
+) {
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    Math.min(configuration.timeoutMs, 10_000),
+  );
+  let response: Response;
+  try {
+    response = await fetchImpl(configuration.endpoint, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${configuration.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: configuration.model,
+        stream: false,
+        thinking: { type: "disabled" },
+        response_format: { type: "json_object" },
+        max_tokens: Math.min(configuration.maxTokens, 64),
+        messages: [
+          {
+            role: "system",
+            content: 'Return strict json matching exactly {"ok":true}.',
+          },
+          {
+            role: "user",
+            content: "Return the anonymous connection-check json now.",
+          },
+        ],
+      }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    throw new PlanAdvisorError(
+      error instanceof DOMException && error.name === "AbortError"
+        ? "timeout"
+        : "provider_unavailable",
+      { cause: error },
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (!response.ok) {
+    throw new PlanAdvisorError(classifyHttpStatus(response.status));
+  }
+  const contentLength = Number(response.headers.get("content-length"));
+  if (
+    Number.isFinite(contentLength) &&
+    contentLength > MAX_VERIFICATION_RESPONSE_BYTES
+  ) {
+    throw new PlanAdvisorError("invalid_response");
+  }
+  const raw = await readBoundedBody(response, MAX_VERIFICATION_RESPONSE_BYTES);
+  try {
+    const parsedResponse = chatResponseSchema.parse(JSON.parse(raw));
+    const choice = parsedResponse.choices[0]!;
+    if (choice.finish_reason !== "stop" || !choice.message.content?.trim()) {
+      throw new PlanAdvisorError(
+        choice.finish_reason === "length"
+          ? "truncated_response"
+          : "invalid_response",
+      );
+    }
+    credentialVerificationOutputSchema.parse(
+      JSON.parse(choice.message.content),
+    );
+  } catch (error) {
+    if (error instanceof PlanAdvisorError) throw error;
+    throw new PlanAdvisorError("invalid_response", { cause: error });
+  }
 }
 
 export function createDeepSeekPlanAdvisor(

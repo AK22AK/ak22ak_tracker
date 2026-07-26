@@ -1,6 +1,9 @@
 import { z, ZodError } from "zod";
 
+import { deepSeekCredentialInputSchema } from "@/domain/deepseek";
 import { getAuthorizedSession } from "@/server/auth/session";
+import { deepSeekCredentialRuntime } from "@/server/integrations/ai/credential-runtime";
+import { PlanAdvisorError } from "@/server/integrations/ai/errors";
 import {
   getIntegrationStatus,
   IntegrationTrackerNotFoundError,
@@ -51,6 +54,16 @@ function providerFailure(error: XunjiProviderError) {
   return Response.json({ error: error.code }, { status });
 }
 
+function deepSeekFailure(error: PlanAdvisorError) {
+  const status =
+    error.code === "authentication"
+      ? 401
+      : error.code === "rate_limited"
+        ? 429
+        : 502;
+  return Response.json({ error: error.code }, { status });
+}
+
 async function context(
   params: Promise<{ trackerKey: string; provider: string }>,
 ) {
@@ -73,6 +86,12 @@ export async function GET(
     );
   }
   try {
+    if (value.provider === "deepseek") {
+      return Response.json(
+        await deepSeekCredentialRuntime.status(value.trackerKey),
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
     const status =
       value.provider === "garmin"
         ? await createDefaultGarminRuntime().status(value.trackerKey)
@@ -104,6 +123,16 @@ export async function PUT(
   }
   try {
     const body = await readCredentialInput(request);
+    if (value.provider === "deepseek") {
+      const { apiKey } = deepSeekCredentialInputSchema.parse(body);
+      return Response.json(
+        await deepSeekCredentialRuntime.save({
+          trackerKey: value.trackerKey,
+          apiKey,
+        }),
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
     if (value.provider === "xunji") {
       const { apiKey } = xunjiCredentialInputSchema.parse(body);
       await validateAndSaveXunjiCredential({
@@ -131,6 +160,7 @@ export async function PUT(
       return Response.json({ error: "invalid_request" }, { status: 400 });
     }
     if (error instanceof XunjiProviderError) return providerFailure(error);
+    if (error instanceof PlanAdvisorError) return deepSeekFailure(error);
     if (error instanceof IntegrationTrackerNotFoundError) {
       return Response.json({ error: error.message }, { status: 404 });
     }

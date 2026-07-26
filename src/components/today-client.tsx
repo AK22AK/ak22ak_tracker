@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
 import {
+  fetchDeepSeekConnectionStatus,
   fetchGarminConnectionStatus,
   fetchGitHubMirrorStatus,
   fetchIntegrationStatus,
@@ -155,6 +156,12 @@ export function TodayClient() {
           queryKey: integrationQueryKeys.providerStatus(trackerKey, "garmin"),
           queryFn: ({ signal }) =>
             fetchGarminConnectionStatus(trackerKey, signal),
+          staleTime: 5 * 60_000,
+        }),
+        queryClient.prefetchQuery({
+          queryKey: integrationQueryKeys.providerStatus(trackerKey, "deepseek"),
+          queryFn: ({ signal }) =>
+            fetchDeepSeekConnectionStatus(trackerKey, signal),
           staleTime: 5 * 60_000,
         }),
         queryClient.prefetchQuery({

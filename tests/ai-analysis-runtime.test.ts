@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { schemaVersion } from "@/domain/schemas";
 import type { PreparedAiAnalysisContext } from "@/server/integrations/ai/context";
 import type { PlanAdvisor } from "@/server/integrations/ai/contracts";
+import { PlanAdvisorError } from "@/server/integrations/ai/errors";
 import {
   type AiAnalysisJobRecord,
   type AiAnalysisStore,
@@ -159,6 +160,40 @@ function configured() {
 }
 
 describe("AI analysis runtime", () => {
+  it("uses the tracker private credential resolver and marks an authentication failure", async () => {
+    const memory = memoryStore([]);
+    const readConfiguration = vi.fn(async () => configured());
+    const recordCredentialFailure = vi.fn().mockResolvedValue(undefined);
+    const runtime = createAiAnalysisRuntime({
+      store: memory.store,
+      prepareContext: async () => prepared(),
+      readConfiguration,
+      createAdvisor: () => ({
+        proposeAdjustment: async () => {
+          throw new PlanAdvisorError("authentication");
+        },
+      }),
+      recordCredentialFailure,
+      now: () => new Date("2026-07-24T08:00:00.000Z"),
+    });
+
+    const result = await runtime.request({
+      trackerKey: "knee-rehab",
+      commandId: jobId,
+    });
+
+    expect(readConfiguration).toHaveBeenCalledWith("knee-rehab");
+    expect(recordCredentialFailure).toHaveBeenCalledWith({
+      trackerKey: "knee-rehab",
+      errorCode: "authentication",
+      failedAt: new Date("2026-07-24T08:00:00.000Z"),
+    });
+    expect(result.job).toMatchObject({
+      status: "failed",
+      errorCode: "authentication",
+    });
+  });
+
   it("exposes a rollback preview only while the applied AI plan is the timeline head", async () => {
     const memory = memoryStore([]);
     const context = prepared();

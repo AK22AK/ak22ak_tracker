@@ -1,9 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { schemaVersion, type PlanVersion } from "@/domain/schemas";
-import { readDeepSeekConfiguration } from "@/server/integrations/ai/config";
+import {
+  createDeepSeekConfiguration,
+  readDeepSeekRuntimeConfiguration,
+} from "@/server/integrations/ai/config";
 import type { PlanAdjustmentContext } from "@/server/integrations/ai/contracts";
-import { createDeepSeekPlanAdvisor } from "@/server/integrations/ai/deepseek";
+import {
+  createDeepSeekPlanAdvisor,
+  verifyDeepSeekCredential,
+} from "@/server/integrations/ai/deepseek";
 import { PlanAdvisorError } from "@/server/integrations/ai/errors";
 
 const plan: PlanVersion = {
@@ -67,16 +73,23 @@ function providerResponse(
 }
 
 describe("DeepSeek plan advisor", () => {
-  it("requires a complete environment-owned configuration", () => {
-    expect(readDeepSeekConfiguration({})).toEqual({
-      status: "not_configured",
+  it("keeps the API key out of environment-owned runtime configuration", () => {
+    expect(readDeepSeekRuntimeConfiguration({})).toEqual({
+      status: "configured",
+      value: {
+        endpoint: "https://api.deepseek.com/chat/completions",
+        model: "deepseek-v4-pro",
+        timeoutMs: 15_000,
+        maxTokens: 1_800,
+      },
     });
     expect(
-      readDeepSeekConfiguration({ DEEPSEEK_API_KEY: "anonymous" }),
+      readDeepSeekRuntimeConfiguration({
+        DEEPSEEK_BASE_URL: "http://api.example.invalid",
+      }),
     ).toEqual({ status: "invalid_configuration" });
     expect(
-      readDeepSeekConfiguration({
-        DEEPSEEK_API_KEY: "anonymous",
+      readDeepSeekRuntimeConfiguration({
         DEEPSEEK_BASE_URL: "https://api.example.invalid",
         DEEPSEEK_MODEL: "model-from-env",
         DEEPSEEK_TIMEOUT_MS: "12000",
@@ -85,13 +98,77 @@ describe("DeepSeek plan advisor", () => {
     ).toEqual({
       status: "configured",
       value: {
-        apiKey: "anonymous",
         endpoint: "https://api.example.invalid/chat/completions",
         model: "model-from-env",
         timeoutMs: 12_000,
         maxTokens: 1_600,
       },
     });
+    expect(
+      createDeepSeekConfiguration(
+        {
+          endpoint: "https://api.example.invalid/chat/completions",
+          model: "model-from-env",
+          timeoutMs: 12_000,
+          maxTokens: 1_600,
+        },
+        "anonymous-private-key",
+      ),
+    ).toMatchObject({ apiKey: "anonymous-private-key" });
+  });
+
+  it("validates a candidate key with a small anonymous JSON request", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      providerResponse({
+        ok: true,
+      }),
+    );
+
+    await expect(
+      verifyDeepSeekCredential(configuration, fetchMock),
+    ).resolves.toBeUndefined();
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    const body = JSON.parse(String((init as RequestInit).body));
+    expect(url).toBe(configuration.endpoint);
+    expect((init as RequestInit).headers).toEqual(
+      expect.objectContaining({
+        Authorization: "Bearer anonymous-fake-key",
+      }),
+    );
+    expect(body.max_tokens).toBeLessThanOrEqual(64);
+    expect(body.thinking).toEqual({ type: "disabled" });
+    expect(JSON.stringify(body)).not.toContain("knee-rehab");
+    expect(JSON.stringify(body)).not.toContain("pain");
+  });
+
+  it.each([
+    [401, "authentication"],
+    [429, "rate_limited"],
+    [503, "provider_unavailable"],
+  ])(
+    "classifies credential verification HTTP %s as %s",
+    async (status, code) => {
+      await expect(
+        verifyDeepSeekCredential(
+          configuration,
+          vi.fn().mockResolvedValue(new Response("private", { status })),
+        ),
+      ).rejects.toMatchObject({ code });
+    },
+  );
+
+  it("rejects an invalid credential verification response", async () => {
+    await expect(
+      verifyDeepSeekCredential(
+        configuration,
+        vi
+          .fn()
+          .mockResolvedValue(
+            providerResponse({ ok: true, internal: "not-allowed" }),
+          ),
+      ),
+    ).rejects.toMatchObject({ code: "invalid_response" });
   });
 
   it("uses JSON Output and returns a strictly validated proposal", async () => {

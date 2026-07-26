@@ -29,7 +29,9 @@ AI 不获得 PostgreSQL、GitHub、Garmin 或部署环境凭证。接受按钮�
 ## Provider 与结构化输出
 
 AI 层通过 `PlanAdvisor` 适配器调用 OpenAI-compatible API，服务端配置至少包含
-`baseUrl`、`apiKey`、`model`、超时和最大输出长度。领域代码不引用具体模型名。
+`baseUrl`、`model`、超时和最大输出长度。API Key 由已登录使用者在设置页录入，先用
+匿名小请求验证，再以通用集成凭证的 AES-256-GCM 密文保存；浏览器不能回读。生成建议
+时，服务端按 Tracker 解密取得 Key 并组合运行配置，领域代码不引用具体模型名。
 
 DeepSeek 支持 JSON Output，但官方文档仍要求提示词包含 `json` 和输出示例、请求设置
 `response_format: { type: "json_object" }` 并合理配置 `max_tokens`，同时说明 JSON

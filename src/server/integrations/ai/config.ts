@@ -10,13 +10,23 @@ const modelSchema = z
   .max(120)
   .regex(/^[a-zA-Z0-9._-]+$/);
 
-export type DeepSeekConfiguration = {
-  apiKey: string;
+export type DeepSeekRuntimeConfiguration = {
   endpoint: string;
   model: string;
   timeoutMs: number;
   maxTokens: number;
 };
+
+export type DeepSeekConfiguration = DeepSeekRuntimeConfiguration & {
+  apiKey: string;
+};
+
+const defaults = {
+  baseUrl: "https://api.deepseek.com",
+  model: "deepseek-v4-pro",
+  timeoutMs: "15000",
+  maxTokens: "1800",
+} as const;
 
 function endpointFromBaseUrl(value: string): string | null {
   try {
@@ -39,27 +49,30 @@ function endpointFromBaseUrl(value: string): string | null {
   }
 }
 
-export function readDeepSeekConfiguration(
+export function readDeepSeekRuntimeConfiguration(
   environment: Record<string, string | undefined> = process.env,
 ):
-  | { status: "configured"; value: DeepSeekConfiguration }
+  | { status: "configured"; value: DeepSeekRuntimeConfiguration }
   | { status: Exclude<AiConfigurationStatus, "configured"> } {
-  const names = [
-    "DEEPSEEK_API_KEY",
-    "DEEPSEEK_BASE_URL",
-    "DEEPSEEK_MODEL",
-    "DEEPSEEK_TIMEOUT_MS",
-    "DEEPSEEK_MAX_TOKENS",
-  ] as const;
-  const values = names.map((name) => environment[name]?.trim() ?? "");
-  if (values.every((value) => value === "")) {
-    return { status: "not_configured" };
-  }
+  const values = [
+    environment.DEEPSEEK_BASE_URL === undefined
+      ? defaults.baseUrl
+      : environment.DEEPSEEK_BASE_URL.trim(),
+    environment.DEEPSEEK_MODEL === undefined
+      ? defaults.model
+      : environment.DEEPSEEK_MODEL.trim(),
+    environment.DEEPSEEK_TIMEOUT_MS === undefined
+      ? defaults.timeoutMs
+      : environment.DEEPSEEK_TIMEOUT_MS.trim(),
+    environment.DEEPSEEK_MAX_TOKENS === undefined
+      ? defaults.maxTokens
+      : environment.DEEPSEEK_MAX_TOKENS.trim(),
+  ];
   if (values.some((value) => value === "")) {
     return { status: "invalid_configuration" };
   }
 
-  const [apiKey, baseUrl, modelInput, timeoutInput, maxTokensInput] = values;
+  const [baseUrl, modelInput, timeoutInput, maxTokensInput] = values;
   const endpoint = endpointFromBaseUrl(baseUrl);
   const model = modelSchema.safeParse(modelInput);
   const timeoutMs = Number(timeoutInput);
@@ -78,6 +91,13 @@ export function readDeepSeekConfiguration(
   }
   return {
     status: "configured",
-    value: { apiKey, endpoint, model: model.data, timeoutMs, maxTokens },
+    value: { endpoint, model: model.data, timeoutMs, maxTokens },
   };
+}
+
+export function createDeepSeekConfiguration(
+  runtime: DeepSeekRuntimeConfiguration,
+  apiKey: string,
+): DeepSeekConfiguration {
+  return { ...runtime, apiKey };
 }

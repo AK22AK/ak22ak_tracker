@@ -267,6 +267,7 @@ describe("today background refresh", () => {
           "/api/trackers/knee-rehab/days/2026-07-19",
           "/api/trackers/knee-rehab/integrations/xunji/credential",
           "/api/trackers/knee-rehab/integrations/garmin/credential",
+          "/api/trackers/knee-rehab/integrations/deepseek/credential",
           "/api/mirror/status",
         ]),
       );

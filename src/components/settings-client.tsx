@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import {
+  fetchDeepSeekConnectionStatus,
   fetchGarminConnectionStatus,
   fetchGitHubMirrorStatus,
   fetchIntegrationStatus,
@@ -10,6 +11,7 @@ import {
 import { integrationQueryKeys } from "@/client/query-keys";
 
 import { GitHubMirrorCard } from "./github-mirror-card";
+import { DeepSeekIntegrationCard } from "./deepseek-integration-card";
 import { GarminIntegrationCard } from "./garmin-integration-card";
 import { IntegrationCard } from "./integration-card";
 import { LocalDataCard } from "./local-data-card";
@@ -57,6 +59,11 @@ export function SettingsClient() {
     queryFn: ({ signal }) => fetchGarminConnectionStatus(trackerKey, signal),
     staleTime: 5 * 60_000,
   });
+  const deepSeekQuery = useQuery({
+    queryKey: integrationQueryKeys.providerStatus(trackerKey, "deepseek"),
+    queryFn: ({ signal }) => fetchDeepSeekConnectionStatus(trackerKey, signal),
+    staleTime: 5 * 60_000,
+  });
   const mirrorQuery = useQuery({
     queryKey: integrationQueryKeys.githubMirrorStatus(),
     queryFn: ({ signal }) => fetchGitHubMirrorStatus(signal),
@@ -94,6 +101,18 @@ export function SettingsClient() {
           label="训练数据源"
           error={integrationQuery.isError}
           onRetry={() => void integrationQuery.refetch()}
+        />
+      )}
+      {deepSeekQuery.data ? (
+        <DeepSeekIntegrationCard
+          trackerKey={trackerKey}
+          initialStatus={deepSeekQuery.data}
+        />
+      ) : (
+        <SettingsSectionState
+          label="训练建议"
+          error={deepSeekQuery.isError}
+          onRetry={() => void deepSeekQuery.refetch()}
         />
       )}
       {mirrorQuery.data ? (
