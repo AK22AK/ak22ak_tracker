@@ -746,3 +746,192 @@ describe("P5a-2a Garmin single-day wellness runtime", () => {
     expect(committedRecords).toEqual([]);
   });
 });
+
+describe("P5a-2b Garmin wellness catch-up", () => {
+  it("uses a server-owned five-day batch and an isolated wellness cursor", async () => {
+    const { runtime, client, catchUpStore } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+    vi.mocked(client.fetchWellnessForDate).mockImplementation(
+      async ({ date }) => ({
+        wellness: {
+          localDate: date,
+          steps: { status: "available", totalSteps: 0, stepGoal: null },
+          sleep: {
+            status: "missing",
+            sleepStart: null,
+            sleepEnd: null,
+            totalSleepSeconds: null,
+            deepSleepSeconds: null,
+            lightSleepSeconds: null,
+            remSleepSeconds: null,
+            awakeSleepSeconds: null,
+            sleepScore: null,
+          },
+        },
+        refreshedCredential: credential,
+      }),
+    );
+
+    const result = await runtime.syncWellnessHistory({
+      trackerKey: "knee-rehab",
+    });
+
+    expect(result.days.map((day) => day.date)).toEqual([
+      "2026-07-18",
+      "2026-07-19",
+      "2026-07-20",
+      "2026-07-21",
+      "2026-07-22",
+    ]);
+    expect(result.nextCursor).toBe("2026-07-23");
+    expect(catchUpStore.loadProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "garmin_wellness",
+        startedOn: "2026-07-18",
+        targetDate: "2026-07-24",
+      }),
+    );
+  });
+
+  it("rechecks the two-day overlap after initial wellness coverage", async () => {
+    const { runtime, client, catchUpStore } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+    vi.mocked(catchUpStore.loadProgress).mockResolvedValueOnce({
+      cursorDate: null,
+      overallStatus: "succeeded",
+      states: [
+        "2026-07-18",
+        "2026-07-19",
+        "2026-07-20",
+        "2026-07-21",
+        "2026-07-22",
+        "2026-07-23",
+        "2026-07-24",
+      ].map((date) => ({ date, status: "succeeded" as const })),
+    });
+    vi.mocked(client.fetchWellnessForDate).mockImplementation(
+      async ({ date }) => ({
+        wellness: {
+          localDate: date,
+          steps: { status: "available", totalSteps: 0, stepGoal: null },
+          sleep: {
+            status: "missing",
+            sleepStart: null,
+            sleepEnd: null,
+            totalSleepSeconds: null,
+            deepSleepSeconds: null,
+            lightSleepSeconds: null,
+            remSleepSeconds: null,
+            awakeSleepSeconds: null,
+            sleepScore: null,
+          },
+        },
+        refreshedCredential: credential,
+      }),
+    );
+
+    const result = await runtime.syncWellnessHistory({
+      trackerKey: "knee-rehab",
+    });
+
+    expect(result.batch).toEqual({
+      from: "2026-07-22",
+      to: "2026-07-24",
+    });
+    expect(result.complete).toBe(true);
+    expect(client.fetchWellnessForDate).toHaveBeenCalledTimes(3);
+  });
+
+  it("skips foreground wellness recovery until the credential is connected", async () => {
+    const { runtime, client, automaticRecoveryStore } = fixture();
+
+    await expect(
+      runtime.recoverWellnessHistory({ trackerKey: "knee-rehab" }),
+    ).resolves.toMatchObject({
+      status: "skipped",
+      reason: "not_connected",
+    });
+    expect(automaticRecoveryStore.claim).not.toHaveBeenCalled();
+    expect(client.fetchWellnessForDate).not.toHaveBeenCalled();
+  });
+
+  it("marks the shared Garmin credential when wellness authentication fails", async () => {
+    const { runtime, client, store, catchUpStore } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+    vi.mocked(client.fetchWellnessForDate).mockRejectedValueOnce(
+      new GarminProviderError("authentication"),
+    );
+
+    const result = await runtime.syncWellnessHistory({
+      trackerKey: "knee-rehab",
+    });
+
+    expect(result).toMatchObject({
+      days: [
+        {
+          date: "2026-07-18",
+          status: "failed",
+          errorCode: "authentication",
+        },
+      ],
+      nextCursor: "2026-07-18",
+      complete: false,
+    });
+    expect(store.markFailure).toHaveBeenCalledWith(
+      "019c0000-0000-7000-8000-000000000001",
+      new Date("2026-07-24T02:00:00.000Z"),
+      "authentication",
+    );
+    expect(catchUpStore.saveProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "garmin_wellness",
+        cursorDate: "2026-07-18",
+        status: "failed",
+        lastErrorCode: "authentication",
+      }),
+    );
+  });
+
+  it("claims an independent wellness recovery lease without touching activity scope", async () => {
+    const { runtime, client, automaticRecoveryStore } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+    await runtime.syncWellness({
+      trackerKey: "knee-rehab",
+      date: "2026-07-24",
+    });
+    vi.mocked(client.fetchWellnessForDate).mockImplementation(
+      async ({ date }) => ({
+        wellness: {
+          localDate: date,
+          steps: { status: "missing", totalSteps: null, stepGoal: null },
+          sleep: {
+            status: "missing",
+            sleepStart: null,
+            sleepEnd: null,
+            totalSleepSeconds: null,
+            deepSleepSeconds: null,
+            lightSleepSeconds: null,
+            remSleepSeconds: null,
+            awakeSleepSeconds: null,
+            sleepScore: null,
+          },
+        },
+        refreshedCredential: credential,
+      }),
+    );
+
+    await expect(
+      runtime.recoverWellnessHistory({ trackerKey: "knee-rehab" }),
+    ).resolves.toMatchObject({ status: "completed" });
+    expect(automaticRecoveryStore.claim).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: "garmin_wellness",
+        minimumIntervalMs: 30 * 60_000,
+        leaseMs: 2 * 60_000,
+      }),
+    );
+    expect(automaticRecoveryStore.claim).not.toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "garmin" }),
+    );
+  });
+});

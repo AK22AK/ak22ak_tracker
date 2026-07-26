@@ -35,6 +35,18 @@ const garminStatus = {
   lastErrorCode: null,
 };
 
+const garminWellnessProgress = {
+  provider: "garmin",
+  kind: "daily_wellness",
+  sync: {
+    status: "idle",
+    lastAttemptAt: null,
+    lastSucceededDate: null,
+    nextCursor: null,
+    lastErrorCode: null,
+  },
+};
+
 const deepSeekStatus = {
   schemaVersion: "1.0.0",
   provider: "deepseek",
@@ -107,9 +119,11 @@ describe("settings client data boundary", () => {
             ? mirrorStatus
             : url.includes("/deepseek/")
               ? deepSeekStatus
-              : url.includes("/garmin/")
-                ? garminStatus
-                : integrationStatus,
+              : url.endsWith("/garmin/wellness")
+                ? garminWellnessProgress
+                : url.includes("/garmin/")
+                  ? garminStatus
+                  : integrationStatus,
         ),
       );
     });
@@ -128,6 +142,7 @@ describe("settings client data boundary", () => {
       expect.arrayContaining([
         "/api/trackers/knee-rehab/integrations/xunji/credential",
         "/api/trackers/knee-rehab/integrations/garmin/credential",
+        "/api/trackers/knee-rehab/integrations/garmin/wellness",
         "/api/trackers/knee-rehab/integrations/deepseek/credential",
         "/api/mirror/status",
       ]),

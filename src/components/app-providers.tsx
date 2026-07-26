@@ -9,6 +9,7 @@ import { OfflineCommandProvider } from "@/offline/offline-command-context";
 
 import { GitHubMirrorRecovery } from "./github-mirror-recovery";
 import { GarminActivityRecovery } from "./garmin-activity-recovery";
+import { GarminWellnessRecovery } from "./garmin-wellness-recovery";
 
 export function AppProviders({
   githubUserId,
@@ -43,6 +44,7 @@ export function AppProviders({
     <QueryClientProvider client={queryClient}>
       <GitHubMirrorRecovery />
       <GarminActivityRecovery trackerKey="knee-rehab" />
+      <GarminWellnessRecovery trackerKey="knee-rehab" />
       <PrivateOfflineIdentityProvider githubUserId={githubUserId}>
         <OfflineCommandProvider githubUserId={githubUserId}>
           {children}

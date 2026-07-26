@@ -3,8 +3,9 @@ import type { GarminRecoveryReference } from "@/domain/garmin";
 import { SectionHeading, StatusPill, SurfaceCard } from "./ui/primitives";
 
 function formatSleep(seconds: number) {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.round((seconds % 3600) / 60);
+  const totalMinutes = Math.round(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
   return `${hours} 小时 ${minutes} 分钟`;
 }
 

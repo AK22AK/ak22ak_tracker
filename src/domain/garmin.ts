@@ -123,6 +123,57 @@ export type GarminWellnessSyncResponse = z.infer<
   typeof garminWellnessSyncResponseSchema
 >;
 
+export const garminWellnessProgressSchema = z
+  .object({
+    provider: z.literal("garmin"),
+    kind: z.literal("daily_wellness"),
+    sync: z
+      .object({
+        status: z.enum(["idle", "running", "succeeded", "failed"]),
+        lastAttemptAt: z.string().datetime().nullable(),
+        lastSucceededDate: localDateSchema.nullable(),
+        nextCursor: localDateSchema.nullable(),
+        lastErrorCode: garminProviderErrorCodeSchema.nullable(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type GarminWellnessProgress = z.infer<
+  typeof garminWellnessProgressSchema
+>;
+
+export const garminWellnessRecoveryResponseSchema = z.discriminatedUnion(
+  "status",
+  [
+    z
+      .object({
+        status: z.literal("skipped"),
+        reason: z.enum([
+          "not_connected",
+          "needs_validation",
+          "needs_refresh",
+          "invalid",
+          "not_due",
+          "in_progress",
+        ]),
+        progress: garminWellnessProgressSchema,
+      })
+      .strict(),
+    z
+      .object({
+        status: z.literal("completed"),
+        sync: integrationCatchUpResultSchema,
+        progress: garminWellnessProgressSchema,
+      })
+      .strict(),
+  ],
+);
+
+export type GarminWellnessRecoveryResponse = z.infer<
+  typeof garminWellnessRecoveryResponseSchema
+>;
+
 const garminRecoveryStepsSchema = z
   .object({
     status: z.enum(["available", "missing"]),

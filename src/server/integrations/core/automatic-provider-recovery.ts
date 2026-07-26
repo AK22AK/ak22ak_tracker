@@ -1,14 +1,12 @@
 import "server-only";
 
-import type { IntegrationProvider } from "./external-records";
-
 export type AutomaticProviderRecoveryClaimResult =
   "claimed" | "not_due" | "in_progress";
 
 export type AutomaticProviderRecoveryClaimStore = {
   claim(input: {
     trackerId: string;
-    provider: IntegrationProvider;
+    provider: string;
     attemptedAt: Date;
     minimumIntervalMs: number;
     leaseMs: number;
@@ -17,7 +15,7 @@ export type AutomaticProviderRecoveryClaimStore = {
 
 export async function runAutomaticProviderRecovery<Result>(input: {
   trackerId: string;
-  provider: IntegrationProvider;
+  provider: string;
   now: Date;
   minimumIntervalMs: number;
   leaseMs: number;

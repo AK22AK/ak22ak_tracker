@@ -16,17 +16,19 @@ export type ProviderCatchUpState = {
 export type ProviderCatchUpStore = {
   loadProgress(input: {
     trackerId: string;
-    provider: IntegrationProvider;
+    provider: string;
     startedOn: string;
     targetDate: string;
   }): Promise<{
     cursorDate: string | null;
     overallStatus: "idle" | "running" | "succeeded" | "failed";
+    lastAttemptAt?: Date | null;
+    lastErrorCode?: string | null;
     states: ProviderCatchUpState[];
   }>;
   saveProgress(input: {
     trackerId: string;
-    provider: IntegrationProvider;
+    provider: string;
     attemptedAt: Date;
     cursorDate: string | null;
     status: "running" | "succeeded" | "failed";
@@ -126,6 +128,7 @@ function resolveStartDate(input: {
 export async function syncProviderCatchUpBatch(input: {
   trackerId: string;
   provider: IntegrationProvider;
+  stateProvider?: string;
   startedOn: string;
   today: string;
   now: Date;
@@ -151,7 +154,7 @@ export async function syncProviderCatchUpBatch(input: {
 
   const progress = await input.store.loadProgress({
     trackerId: input.trackerId,
-    provider: input.provider,
+    provider: input.stateProvider ?? input.provider,
     startedOn: input.startedOn,
     targetDate: input.today,
   });
@@ -212,7 +215,7 @@ export async function syncProviderCatchUpBatch(input: {
 
   await input.store.saveProgress({
     trackerId: input.trackerId,
-    provider: input.provider,
+    provider: input.stateProvider ?? input.provider,
     attemptedAt: input.now,
     cursorDate: nextCursor,
     status,

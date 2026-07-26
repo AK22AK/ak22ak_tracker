@@ -38,6 +38,8 @@ export function createNeonProviderCatchUpStore(
           .select({
             cursor: integrationSyncState.cursor,
             status: integrationSyncState.status,
+            lastAttemptAt: integrationSyncState.lastAttemptAt,
+            lastErrorCode: integrationSyncState.lastErrorCode,
           })
           .from(integrationSyncState)
           .where(
@@ -65,6 +67,8 @@ export function createNeonProviderCatchUpStore(
       return {
         cursorDate: cursorDate(syncRows[0]?.cursor),
         overallStatus: syncRows[0]?.status ?? "idle",
+        lastAttemptAt: syncRows[0]?.lastAttemptAt ?? null,
+        lastErrorCode: syncRows[0]?.lastErrorCode ?? null,
         states: states.map((state) => ({
           date: state.date,
           status: state.status,

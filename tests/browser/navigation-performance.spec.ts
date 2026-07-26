@@ -138,6 +138,18 @@ const garminStatus = {
   lastErrorCode: null,
 };
 
+const garminWellnessProgress = {
+  provider: "garmin",
+  kind: "daily_wellness",
+  sync: {
+    status: "idle",
+    lastAttemptAt: null,
+    lastSucceededDate: null,
+    nextCursor: null,
+    lastErrorCode: null,
+  },
+};
+
 const deepSeekStatus = {
   schemaVersion: "1.0.0",
   provider: "deepseek",
@@ -449,6 +461,8 @@ async function mockPrivateReads(
     } else if (url.pathname.endsWith("/integrations/garmin/credential")) {
       counters.garmin += 1;
       body = garminStatus;
+    } else if (url.pathname.endsWith("/integrations/garmin/wellness")) {
+      body = garminWellnessProgress;
     } else if (url.pathname.endsWith("/integrations/deepseek/credential")) {
       counters.deepseek += 1;
       body = deepSeekStatus;

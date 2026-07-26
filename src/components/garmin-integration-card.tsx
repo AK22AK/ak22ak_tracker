@@ -9,7 +9,9 @@ import {
   garminConnectionStatusSchema,
   garminProviderErrorCodeSchema,
   garminWellnessSyncResponseSchema,
+  garminWellnessProgressSchema,
   type GarminConnectionStatus,
+  type GarminWellnessProgress,
 } from "@/domain/garmin";
 import {
   integrationCatchUpResultSchema,
@@ -67,9 +69,11 @@ async function safeErrorCode(response: Response) {
 export function GarminIntegrationCard({
   trackerKey,
   initialStatus,
+  initialWellnessProgress,
 }: {
   trackerKey: string;
   initialStatus: GarminConnectionStatus;
+  initialWellnessProgress?: GarminWellnessProgress;
 }) {
   const queryClient = useQueryClient();
   const statusQueryKey = integrationQueryKeys.providerStatus(
@@ -87,13 +91,28 @@ export function GarminIntegrationCard({
       | GarminConnectionStatus
       | ((current: GarminConnectionStatus) => GarminConnectionStatus),
   ) => queryClient.setQueryData(statusQueryKey, value);
+  const wellnessProgressQueryKey = integrationQueryKeys.providerStatus(
+    trackerKey,
+    "garmin_wellness",
+  );
+  const { data: persistedWellnessProgress } = useQuery({
+    queryKey: wellnessProgressQueryKey,
+    queryFn: async () => {
+      if (!initialWellnessProgress) throw new Error("progress_unavailable");
+      return initialWellnessProgress;
+    },
+    initialData: initialWellnessProgress,
+    enabled: false,
+  });
   const [syncDate, setSyncDate] = useState(todayInPlanningTimeZone);
   const [wellnessDate, setWellnessDate] = useState(todayInPlanningTimeZone);
   const [busy, setBusy] = useState<
-    "credential" | "sync" | "catch_up" | "wellness" | null
+    "credential" | "sync" | "catch_up" | "wellness" | "wellness_catch_up" | null
   >(null);
   const [message, setMessage] = useState<string | null>(null);
   const [catchUpResult, setCatchUpResult] =
+    useState<IntegrationCatchUpResult | null>(null);
+  const [wellnessCatchUpResult, setWellnessCatchUpResult] =
     useState<IntegrationCatchUpResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const wellnessInFlightRef = useRef(false);
@@ -338,6 +357,79 @@ export function GarminIntegrationCard({
     }
   }
 
+  async function syncWellnessHistory() {
+    if (wellnessInFlightRef.current) return;
+    wellnessInFlightRef.current = true;
+    setBusy("wellness_catch_up");
+    setMessage(null);
+    try {
+      const response = await fetch(`${baseUrl}/wellness`, { method: "POST" });
+      const body: unknown = await response.json();
+      if (!response.ok) throw new Error("sync_failed");
+      const result = integrationCatchUpResultSchema.parse(body);
+      setWellnessCatchUpResult(result);
+      const failedDay = result.days.find((day) => day.status === "failed");
+      if (failedDay?.errorCode === "authentication") {
+        setStatus((current) => ({
+          ...current,
+          state: "needs_refresh",
+          lastErrorCode: "authentication",
+        }));
+      }
+      const progress = garminWellnessProgressSchema.parse({
+        provider: "garmin",
+        kind: "daily_wellness",
+        sync: {
+          status: failedDay
+            ? "failed"
+            : result.complete
+              ? "succeeded"
+              : "running",
+          lastAttemptAt: new Date().toISOString(),
+          lastSucceededDate: result.lastSucceededDate,
+          nextCursor: result.nextCursor,
+          lastErrorCode:
+            failedDay &&
+            garminProviderErrorCodeSchema.safeParse(failedDay.errorCode).success
+              ? garminProviderErrorCodeSchema.parse(failedDay.errorCode)
+              : null,
+        },
+      });
+      queryClient.setQueryData(wellnessProgressQueryKey, progress);
+      const affectedDates = result.days
+        .filter((day) => day.status === "succeeded")
+        .map((day) => day.date);
+      void Promise.all(
+        affectedDates.flatMap((date) => [
+          queryClient.invalidateQueries({
+            queryKey: trackerQueryKeys.today(trackerKey, date),
+            exact: true,
+          }),
+          queryClient.invalidateQueries({
+            queryKey: trackerQueryKeys.day(trackerKey, date),
+            exact: true,
+          }),
+        ]),
+      ).catch(() => undefined);
+      if (failedDay) {
+        setMessage(safeFailureMessage(failedDay.errorCode));
+      } else if (result.complete) {
+        setMessage(
+          `恢复数据已同步到今天：本批成功 ${result.summary.succeeded} 天。`,
+        );
+      } else {
+        setMessage(
+          `恢复数据本批成功 ${result.summary.succeeded} 天，可以继续同步。`,
+        );
+      }
+    } catch {
+      setMessage("恢复数据同步没有完成，请稍后重试。");
+    } finally {
+      wellnessInFlightRef.current = false;
+      setBusy(null);
+    }
+  }
+
   const catchUpFailure = catchUpResult?.days.find(
     (day) => day.status === "failed",
   );
@@ -349,6 +441,19 @@ export function GarminIntegrationCard({
         : catchUpResult?.nextCursor || status.sync?.nextCursor
           ? "继续同步"
           : "同步活动记录";
+  const wellnessCatchUpFailure = wellnessCatchUpResult?.days.find(
+    (day) => day.status === "failed",
+  );
+  const wellnessCatchUpButtonLabel =
+    busy === "wellness_catch_up"
+      ? "正在同步…"
+      : wellnessCatchUpFailure ||
+          persistedWellnessProgress?.sync.status === "failed"
+        ? "重试同步恢复数据"
+        : wellnessCatchUpResult?.nextCursor ||
+            persistedWellnessProgress?.sync.nextCursor
+          ? "继续同步恢复数据"
+          : "同步恢复数据";
 
   return (
     <section className="feedback-card integration-card">
@@ -448,6 +553,44 @@ export function GarminIntegrationCard({
             {busy === "wellness" ? "正在同步…" : "同步睡眠与步数"}
           </button>
         </div>
+        <div className="integration-actions garmin-catch-up-actions">
+          <button
+            type="button"
+            disabled={status.state === "not_connected" || busy !== null}
+            onClick={() => void syncWellnessHistory()}
+          >
+            {wellnessCatchUpButtonLabel}
+          </button>
+          <p>
+            最近成功日期：
+            {wellnessCatchUpResult?.lastSucceededDate ??
+              persistedWellnessProgress?.sync.lastSucceededDate ??
+              "暂无"}
+          </p>
+        </div>
+        {wellnessCatchUpResult?.batch ? (
+          <div className="integration-progress" aria-label="恢复数据同步进度">
+            <p>
+              本批范围：{wellnessCatchUpResult.batch.from} 至{" "}
+              {wellnessCatchUpResult.batch.to}。
+            </p>
+            {wellnessCatchUpFailure ? (
+              <p>
+                失败日期：{wellnessCatchUpFailure.date}。处理后可从这一天重试。
+              </p>
+            ) : wellnessCatchUpResult.nextCursor ? (
+              <p>下一次从 {wellnessCatchUpResult.nextCursor} 继续。</p>
+            ) : (
+              <p>已追赶到 {wellnessCatchUpResult.targetDate}。</p>
+            )}
+          </div>
+        ) : null}
+        {!wellnessCatchUpResult &&
+        persistedWellnessProgress?.sync.nextCursor ? (
+          <p className="integration-progress">
+            下一次从 {persistedWellnessProgress.sync.nextCursor} 继续。
+          </p>
+        ) : null}
       </div>
       {catchUpResult?.batch ? (
         <div className="integration-progress" aria-label="活动同步进度">

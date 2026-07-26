@@ -1,8 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getAuthorizedSession, syncWellness } = vi.hoisted(() => ({
+const {
+  getAuthorizedSession,
+  syncWellness,
+  syncWellnessHistory,
+  wellnessProgress,
+} = vi.hoisted(() => ({
   getAuthorizedSession: vi.fn(),
   syncWellness: vi.fn(),
+  syncWellnessHistory: vi.fn(),
+  wellnessProgress: vi.fn(),
 }));
 
 vi.mock("@/server/auth/session", () => ({ getAuthorizedSession }));
@@ -13,11 +20,18 @@ vi.mock("@/server/integrations/garmin/runtime", async (importOriginal) => {
     >();
   return {
     ...original,
-    createDefaultGarminRuntime: () => ({ syncWellness }),
+    createDefaultGarminRuntime: () => ({
+      syncWellness,
+      syncWellnessHistory,
+      wellnessProgress,
+    }),
   };
 });
 
-import { POST } from "@/app/api/trackers/[trackerKey]/integrations/garmin/wellness/route";
+import {
+  GET,
+  POST,
+} from "@/app/api/trackers/[trackerKey]/integrations/garmin/wellness/route";
 import { GarminProviderError } from "@/server/integrations/garmin/errors";
 import { GarminPreviewDateOutOfRangeError } from "@/server/integrations/garmin/runtime";
 
@@ -33,7 +47,73 @@ describe("P5a-2a Garmin wellness route", () => {
   beforeEach(() => {
     getAuthorizedSession.mockReset();
     syncWellness.mockReset();
+    syncWellnessHistory.mockReset();
+    wellnessProgress.mockReset();
     getAuthorizedSession.mockResolvedValue({ user: { id: "1" } });
+  });
+
+  it("returns the isolated persisted wellness progress", async () => {
+    wellnessProgress.mockResolvedValue({
+      provider: "garmin",
+      kind: "daily_wellness",
+      sync: {
+        status: "running",
+        lastAttemptAt: "2026-07-24T03:00:00.000Z",
+        lastSucceededDate: "2026-07-22",
+        nextCursor: "2026-07-23",
+        lastErrorCode: null,
+      },
+    });
+    const response = await GET(new Request("https://anonymous.invalid"), {
+      params,
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      kind: "daily_wellness",
+      sync: { nextCursor: "2026-07-23" },
+    });
+  });
+
+  it("uses an empty body for the server-owned bounded catch-up range", async () => {
+    syncWellnessHistory.mockResolvedValue({
+      provider: "garmin",
+      batch: { from: "2026-07-18", to: "2026-07-22" },
+      targetDate: "2026-07-24",
+      days: [],
+      summary: {
+        succeeded: 0,
+        failed: 0,
+        created: 0,
+        changed: 0,
+        unchanged: 0,
+      },
+      nextCursor: "2026-07-23",
+      complete: false,
+      lastSucceededDate: "2026-07-22",
+    });
+    const response = await POST(
+      new Request("https://anonymous.invalid/api/wellness", {
+        method: "POST",
+      }),
+      { params },
+    );
+
+    expect(response.status).toBe(200);
+    expect(syncWellnessHistory).toHaveBeenCalledWith({
+      trackerKey: "anonymous-tracker",
+    });
+    expect(syncWellness).not.toHaveBeenCalled();
+
+    const expanded = await POST(
+      new Request("https://anonymous.invalid/api/wellness", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startedOn: "2000-01-01", batchSize: 31 }),
+      }),
+      { params },
+    );
+    expect(expanded.status).toBe(400);
+    expect(syncWellnessHistory).toHaveBeenCalledTimes(1);
   });
 
   it("requires authentication and returns only a strict sync summary", async () => {

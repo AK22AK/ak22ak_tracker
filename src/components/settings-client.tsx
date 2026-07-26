@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   fetchDeepSeekConnectionStatus,
   fetchGarminConnectionStatus,
+  fetchGarminWellnessProgress,
   fetchGitHubMirrorStatus,
   fetchIntegrationStatus,
 } from "@/client/integration-api";
@@ -59,6 +60,14 @@ export function SettingsClient() {
     queryFn: ({ signal }) => fetchGarminConnectionStatus(trackerKey, signal),
     staleTime: 5 * 60_000,
   });
+  const garminWellnessQuery = useQuery({
+    queryKey: integrationQueryKeys.providerStatus(
+      trackerKey,
+      "garmin_wellness",
+    ),
+    queryFn: ({ signal }) => fetchGarminWellnessProgress(trackerKey, signal),
+    staleTime: 60_000,
+  });
   const deepSeekQuery = useQuery({
     queryKey: integrationQueryKeys.providerStatus(trackerKey, "deepseek"),
     queryFn: ({ signal }) => fetchDeepSeekConnectionStatus(trackerKey, signal),
@@ -82,6 +91,7 @@ export function SettingsClient() {
         <GarminIntegrationCard
           trackerKey={trackerKey}
           initialStatus={garminQuery.data}
+          initialWellnessProgress={garminWellnessQuery.data}
         />
       ) : (
         <SettingsSectionState

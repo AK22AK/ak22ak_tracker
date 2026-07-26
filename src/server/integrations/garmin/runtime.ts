@@ -7,6 +7,8 @@ import {
   garminConnectionStatusSchema,
   garminProviderErrorCodeSchema,
   garminWellnessSyncResponseSchema,
+  garminWellnessProgressSchema,
+  garminWellnessRecoveryResponseSchema,
   type GarminConnectionStatus,
 } from "@/domain/garmin";
 import {
@@ -259,7 +261,15 @@ export function createGarminRuntime({
         JSON.parse(await store.read(input.tracker.id)) as unknown,
       );
     } catch (error) {
-      throw new GarminProviderError("invalid_token_bundle", { cause: error });
+      const providerError = new GarminProviderError("invalid_token_bundle", {
+        cause: error,
+      });
+      await store.markFailure(
+        input.tracker.id,
+        input.requestedAt,
+        providerError.code,
+      );
+      throw providerError;
     }
     try {
       const result = await client.fetchWellnessForDate({
@@ -277,9 +287,22 @@ export function createGarminRuntime({
       });
       return result.wellness;
     } catch (error) {
-      throw error instanceof GarminProviderError
-        ? error
-        : new GarminProviderError("provider_unavailable", { cause: error });
+      const providerError =
+        error instanceof GarminProviderError
+          ? error
+          : new GarminProviderError("provider_unavailable", { cause: error });
+      if (
+        providerError.code === "authentication" ||
+        providerError.code === "invalid_token_bundle" ||
+        providerError.code === "unsupported_client_version"
+      ) {
+        await store.markFailure(
+          input.tracker.id,
+          input.requestedAt,
+          providerError.code,
+        );
+      }
+      throw providerError;
     }
   }
 
@@ -359,6 +382,54 @@ export function createGarminRuntime({
     });
   }
 
+  async function syncWellnessHistoryForTracker(tracker: Tracker) {
+    const requestedAt = now();
+    const today = localDateInTimeZone(requestedAt, tracker.planningTimeZone);
+    return syncProviderCatchUpBatch({
+      trackerId: tracker.id,
+      provider: "garmin",
+      stateProvider: "garmin_wellness",
+      startedOn: tracker.startedOn,
+      today,
+      now: requestedAt,
+      batchSize: 5,
+      overlapDays: 2,
+      store: createCatchUpStore(),
+      syncDate: (date) =>
+        syncWellnessDate({ tracker, date, requestedAt: now() }),
+    });
+  }
+
+  async function wellnessProgressForTracker(tracker: Tracker) {
+    const today = localDateInTimeZone(now(), tracker.planningTimeZone);
+    const progress = await createCatchUpStore().loadProgress({
+      trackerId: tracker.id,
+      provider: "garmin_wellness",
+      startedOn: tracker.startedOn,
+      targetDate: today,
+    });
+    const lastSucceededDate =
+      progress.states
+        .filter((state) => state.status === "succeeded")
+        .map((state) => state.date)
+        .sort()
+        .at(-1) ?? null;
+    const errorCode = garminProviderErrorCodeSchema.safeParse(
+      progress.lastErrorCode,
+    );
+    return garminWellnessProgressSchema.parse({
+      provider: "garmin",
+      kind: "daily_wellness",
+      sync: {
+        status: progress.overallStatus,
+        lastAttemptAt: progress.lastAttemptAt?.toISOString() ?? null,
+        lastSucceededDate,
+        nextCursor: progress.cursorDate,
+        lastErrorCode: errorCode.success ? errorCode.data : null,
+      },
+    });
+  }
+
   return {
     async status(trackerKey: string) {
       return connectionStatus(await store.getStatus(trackerKey));
@@ -432,6 +503,53 @@ export function createGarminRuntime({
         date,
         sync,
       });
+    },
+
+    async syncWellnessHistory(input: { trackerKey: string }) {
+      const tracker = await store.requireTracker(input.trackerKey);
+      return syncWellnessHistoryForTracker(tracker);
+    },
+
+    async wellnessProgress(input: { trackerKey: string }) {
+      return wellnessProgressForTracker(
+        await store.requireTracker(input.trackerKey),
+      );
+    },
+
+    async recoverWellnessHistory(input: { trackerKey: string }) {
+      const connection = connectionStatus(
+        await store.getStatus(input.trackerKey),
+      );
+      const tracker = await store.requireTracker(input.trackerKey);
+      if (connection.state !== "connected") {
+        return garminWellnessRecoveryResponseSchema.parse({
+          status: "skipped",
+          reason: connection.state,
+          progress: await wellnessProgressForTracker(tracker),
+        });
+      }
+      const recovery = await runAutomaticProviderRecovery({
+        trackerId: tracker.id,
+        provider: "garmin_wellness",
+        now: now(),
+        minimumIntervalMs: automaticRecoveryMinimumIntervalMs,
+        leaseMs: automaticRecoveryLeaseMs,
+        store: automaticRecoveryStore,
+        recover: () => syncWellnessHistoryForTracker(tracker),
+      });
+      return garminWellnessRecoveryResponseSchema.parse(
+        recovery.status === "completed"
+          ? {
+              status: "completed",
+              sync: recovery.result,
+              progress: await wellnessProgressForTracker(tracker),
+            }
+          : {
+              status: "skipped",
+              reason: recovery.reason,
+              progress: await wellnessProgressForTracker(tracker),
+            },
+      );
     },
 
     async syncActivityHistory(input: { trackerKey: string }) {

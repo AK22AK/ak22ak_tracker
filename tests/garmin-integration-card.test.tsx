@@ -15,6 +15,7 @@ import { GarminIntegrationCard } from "@/components/garmin-integration-card";
 import {
   garminActivityTypeLabel,
   type GarminConnectionStatus,
+  type GarminWellnessProgress,
 } from "@/domain/garmin";
 
 const disconnected = {
@@ -41,7 +42,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function renderCard(initialStatus: GarminConnectionStatus = disconnected) {
+function renderCard(
+  initialStatus: GarminConnectionStatus = disconnected,
+  initialWellnessProgress?: GarminWellnessProgress,
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -50,6 +54,7 @@ function renderCard(initialStatus: GarminConnectionStatus = disconnected) {
       <GarminIntegrationCard
         trackerKey="anonymous-tracker"
         initialStatus={initialStatus}
+        initialWellnessProgress={initialWellnessProgress}
       />
     </QueryClientProvider>,
   );
@@ -57,6 +62,29 @@ function renderCard(initialStatus: GarminConnectionStatus = disconnected) {
 }
 
 describe("Garmin token-only settings flow", () => {
+  it("restores the persisted wellness cursor after the settings page reloads", () => {
+    renderCard(
+      { ...disconnected, state: "connected" },
+      {
+        provider: "garmin",
+        kind: "daily_wellness",
+        sync: {
+          status: "running",
+          lastAttemptAt: "2026-07-27T02:00:00.000Z",
+          lastSucceededDate: "2026-07-25",
+          nextCursor: "2026-07-26",
+          lastErrorCode: null,
+        },
+      },
+    );
+
+    expect(
+      screen.getByRole("button", { name: "继续同步恢复数据" }),
+    ).toBeTruthy();
+    expect(screen.getByText("最近成功日期：2026-07-25")).toBeTruthy();
+    expect(screen.getByText("下一次从 2026-07-26 继续。")).toBeTruthy();
+  });
+
   it("accepts canonical background status without clearing the selected date", async () => {
     const queryClient = new QueryClient();
     const connected: GarminConnectionStatus = {
@@ -372,5 +400,107 @@ describe("Garmin token-only settings flow", () => {
     expect(queryClient.getQueryState(todayKey)?.isInvalidated).toBe(true);
     expect(queryClient.getQueryState(dayKey)?.isInvalidated).toBe(true);
     expect(queryClient.getQueryState(monthKey)?.isInvalidated).toBe(false);
+  });
+
+  it("runs one bounded wellness catch-up batch without clearing either date draft", async () => {
+    const firstBatch = {
+      provider: "garmin",
+      batch: { from: "2026-07-18", to: "2026-07-22" },
+      targetDate: "2026-07-24",
+      days: [
+        {
+          date: "2026-07-18",
+          status: "succeeded",
+          cached: false,
+          created: 1,
+          changed: 0,
+          unchanged: 0,
+          recordCount: 1,
+          syncedAt: "2026-07-24T02:00:00.000Z",
+        },
+      ],
+      summary: {
+        succeeded: 5,
+        failed: 0,
+        created: 1,
+        changed: 0,
+        unchanged: 4,
+      },
+      nextCursor: "2026-07-23",
+      complete: false,
+      lastSucceededDate: "2026-07-22",
+    };
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json(firstBatch),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    renderCard({ ...disconnected, state: "connected" });
+    const activityDate = screen.getByLabelText("同步日期") as HTMLInputElement;
+    const wellnessDate = screen.getByLabelText("日期") as HTMLInputElement;
+    fireEvent.change(activityDate, { target: { value: "2026-07-13" } });
+    fireEvent.change(wellnessDate, { target: { value: "2026-07-23" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "同步恢复数据" }));
+
+    await screen.findByText(/恢复数据本批成功 5 天/);
+    expect(screen.getByText(/下一次从 2026-07-23 继续/)).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "继续同步恢复数据" }),
+    ).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/trackers/anonymous-tracker/integrations/garmin/wellness",
+      { method: "POST" },
+    );
+    expect(activityDate.value).toBe("2026-07-13");
+    expect(wellnessDate.value).toBe("2026-07-23");
+  });
+
+  it("stops wellness catch-up at the failed day and offers a safe retry", async () => {
+    const failedBatch = {
+      provider: "garmin",
+      batch: { from: "2026-07-21", to: "2026-07-22" },
+      targetDate: "2026-07-24",
+      days: [
+        {
+          date: "2026-07-21",
+          status: "succeeded",
+          cached: false,
+          created: 1,
+          changed: 0,
+          unchanged: 0,
+          recordCount: 1,
+          syncedAt: "2026-07-24T02:00:00.000Z",
+        },
+        {
+          date: "2026-07-22",
+          status: "failed",
+          errorCode: "rate_limited",
+        },
+      ],
+      summary: {
+        succeeded: 1,
+        failed: 1,
+        created: 1,
+        changed: 0,
+        unchanged: 0,
+      },
+      nextCursor: "2026-07-22",
+      complete: false,
+      lastSucceededDate: "2026-07-21",
+    };
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json(failedBatch),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    renderCard({ ...disconnected, state: "connected" });
+
+    fireEvent.click(screen.getByRole("button", { name: "同步恢复数据" }));
+
+    await screen.findByText("Garmin 请求过于频繁，请稍后再试。");
+    expect(screen.getByText(/失败日期：2026-07-22/)).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "重试同步恢复数据" }),
+    ).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 });

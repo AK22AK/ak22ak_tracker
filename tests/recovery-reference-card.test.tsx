@@ -8,6 +8,40 @@ import { RecoveryReferenceCard } from "@/components/recovery-reference-card";
 afterEach(cleanup);
 
 describe("P5a-2a recovery reference", () => {
+  it("carries rounded sixty minutes into the next hour", () => {
+    render(
+      <RecoveryReferenceCard
+        reference={{
+          provider: "garmin",
+          localDate: "2026-07-24",
+          sourceVersion: 1,
+          steps: {
+            status: "missing",
+            totalSteps: null,
+            stepGoal: null,
+            observedAt: "2026-07-24T02:00:00.000Z",
+            syncedAt: "2026-07-24T02:00:00.000Z",
+          },
+          sleep: {
+            status: "available",
+            sleepStart: null,
+            sleepEnd: null,
+            totalSleepSeconds: 3_599,
+            deepSleepSeconds: null,
+            lightSleepSeconds: null,
+            remSleepSeconds: null,
+            awakeSleepSeconds: null,
+            sleepScore: null,
+            syncedAt: "2026-07-24T02:00:00.000Z",
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("1 小时 0 分钟")).toBeTruthy();
+    expect(document.body.textContent).not.toContain("0 小时 60 分钟");
+  });
+
   it("distinguishes real zero steps from missing sleep without exposing raw data", () => {
     render(
       <RecoveryReferenceCard

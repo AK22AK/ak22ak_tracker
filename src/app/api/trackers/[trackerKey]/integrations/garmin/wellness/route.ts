@@ -1,6 +1,10 @@
 import { ZodError, z } from "zod";
 
-import { garminWellnessSyncResponseSchema } from "@/domain/garmin";
+import {
+  garminWellnessProgressSchema,
+  garminWellnessSyncResponseSchema,
+} from "@/domain/garmin";
+import { integrationCatchUpResultSchema } from "@/domain/integrations";
 import { localDateSchema } from "@/domain/schemas";
 import { getAuthorizedSession } from "@/server/auth/session";
 import {
@@ -32,6 +36,32 @@ function providerFailure(error: GarminProviderError) {
   );
 }
 
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ trackerKey: string }> },
+) {
+  if (!(await getAuthorizedSession())) {
+    return Response.json({ error: "unauthorized" }, { status: 401 });
+  }
+  try {
+    const { trackerKey } = await params;
+    return Response.json(
+      garminWellnessProgressSchema.parse(
+        await createDefaultGarminRuntime().wellnessProgress({ trackerKey }),
+      ),
+      { headers: { "Cache-Control": "no-store" } },
+    );
+  } catch (error) {
+    if (error instanceof IntegrationTrackerNotFoundError) {
+      return Response.json({ error: "tracker_not_found" }, { status: 404 });
+    }
+    return Response.json(
+      { error: "status_unavailable" },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
+  }
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ trackerKey: string }> },
@@ -48,6 +78,16 @@ export async function POST(
     const text = await request.text();
     if (Buffer.byteLength(text, "utf8") > 1_024) {
       return Response.json({ error: "invalid_request" }, { status: 400 });
+    }
+    if (!text.trim()) {
+      return Response.json(
+        integrationCatchUpResultSchema.parse(
+          await createDefaultGarminRuntime().syncWellnessHistory({
+            trackerKey,
+          }),
+        ),
+        { headers: { "Cache-Control": "no-store" } },
+      );
     }
     const { date } = inputSchema.parse(JSON.parse(text));
     return Response.json(
