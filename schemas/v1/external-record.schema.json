@@ -28,7 +28,13 @@
     },
     "kind": {
       "type": "string",
-      "enum": ["activity", "sleep", "daily_steps", "strength_training"]
+      "enum": [
+        "activity",
+        "sleep",
+        "daily_steps",
+        "daily_wellness",
+        "strength_training"
+      ]
     },
     "occurredAt": {
       "type": "string",

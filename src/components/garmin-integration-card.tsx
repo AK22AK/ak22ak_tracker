@@ -8,6 +8,7 @@ import {
   garminActivitySyncResponseSchema,
   garminConnectionStatusSchema,
   garminProviderErrorCodeSchema,
+  garminWellnessSyncResponseSchema,
   type GarminConnectionStatus,
 } from "@/domain/garmin";
 import {
@@ -87,13 +88,15 @@ export function GarminIntegrationCard({
       | ((current: GarminConnectionStatus) => GarminConnectionStatus),
   ) => queryClient.setQueryData(statusQueryKey, value);
   const [syncDate, setSyncDate] = useState(todayInPlanningTimeZone);
-  const [busy, setBusy] = useState<"credential" | "sync" | "catch_up" | null>(
-    null,
-  );
+  const [wellnessDate, setWellnessDate] = useState(todayInPlanningTimeZone);
+  const [busy, setBusy] = useState<
+    "credential" | "sync" | "catch_up" | "wellness" | null
+  >(null);
   const [message, setMessage] = useState<string | null>(null);
   const [catchUpResult, setCatchUpResult] =
     useState<IntegrationCatchUpResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const wellnessInFlightRef = useRef(false);
   const baseUrl = `/api/trackers/${encodeURIComponent(trackerKey)}/integrations/garmin`;
 
   async function importCredential(event: React.FormEvent<HTMLFormElement>) {
@@ -283,6 +286,58 @@ export function GarminIntegrationCard({
     }
   }
 
+  async function syncWellness() {
+    if (wellnessInFlightRef.current) return;
+    wellnessInFlightRef.current = true;
+    setBusy("wellness");
+    setMessage(null);
+    try {
+      const response = await fetch(`${baseUrl}/wellness`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: wellnessDate }),
+      });
+      if (!response.ok) {
+        const code = await safeErrorCode(response);
+        if (code === "authentication") {
+          setStatus((current) => ({
+            ...current,
+            state: "needs_refresh",
+            lastErrorCode: code,
+          }));
+        }
+        throw new Error(code ?? "sync_failed");
+      }
+      const result = garminWellnessSyncResponseSchema.parse(
+        await response.json(),
+      );
+      void Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: trackerQueryKeys.today(trackerKey, wellnessDate),
+          exact: true,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: trackerQueryKeys.day(trackerKey, wellnessDate),
+          exact: true,
+        }),
+      ]).catch(() => undefined);
+      setMessage(
+        result.sync.changed > 0
+          ? "睡眠与步数已更新。"
+          : result.sync.created > 0
+            ? "睡眠与步数已保存。"
+            : "睡眠与步数已是最新记录。",
+      );
+    } catch (error) {
+      setMessage(
+        safeFailureMessage(error instanceof Error ? error.message : null),
+      );
+    } finally {
+      wellnessInFlightRef.current = false;
+      setBusy(null);
+    }
+  }
+
   const catchUpFailure = catchUpResult?.days.find(
     (day) => day.status === "failed",
   );
@@ -364,6 +419,35 @@ export function GarminIntegrationCard({
             status.sync?.lastSucceededDate ??
             "暂无"}
         </p>
+      </div>
+      <div className="integration-subsection">
+        <div>
+          <p className="eyebrow">恢复参考</p>
+          <h3>睡眠与步数</h3>
+          <p>选择一天同步；数据仅作恢复参考，不代替身体反馈。</p>
+        </div>
+        <div className="integration-actions garmin-preview-actions">
+          <label htmlFor="garmin-wellness-date">日期</label>
+          <input
+            id="garmin-wellness-date"
+            type="date"
+            value={wellnessDate}
+            max={todayInPlanningTimeZone()}
+            disabled={busy !== null}
+            onChange={(event) => setWellnessDate(event.target.value)}
+          />
+          <button
+            type="button"
+            disabled={
+              status.state === "not_connected" ||
+              busy !== null ||
+              wellnessDate.length === 0
+            }
+            onClick={() => void syncWellness()}
+          >
+            {busy === "wellness" ? "正在同步…" : "同步睡眠与步数"}
+          </button>
+        </div>
       </div>
       {catchUpResult?.batch ? (
         <div className="integration-progress" aria-label="活动同步进度">

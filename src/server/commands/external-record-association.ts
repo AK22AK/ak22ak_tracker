@@ -31,6 +31,7 @@ export function createNeonExternalRecordAssociationStore(
           planningTimeZone: trackers.planningTimeZone,
           localDate: externalRecords.localDate,
           provider: externalRecords.provider,
+          kind: externalRecords.kind,
           sourceVersion: externalRecords.sourceVersion,
         })
         .from(externalRecords)
@@ -45,7 +46,8 @@ export function createNeonExternalRecordAssociationStore(
         .limit(1);
       if (
         !record ||
-        (record.provider !== "xunji" && record.provider !== "garmin")
+        (record.provider !== "xunji" && record.provider !== "garmin") ||
+        (record.kind !== "strength_training" && record.kind !== "activity")
       ) {
         return null;
       }

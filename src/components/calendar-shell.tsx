@@ -9,6 +9,7 @@ import type { ExternalRecordAssociation } from "@/domain/external-training";
 
 import { SignOutButton } from "./sign-out-button";
 import { ExternalTrainingSection } from "./external-training-section";
+import { RecoveryReferenceCard } from "./recovery-reference-card";
 import { useNetworkState } from "@/client/use-network-state";
 
 const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
@@ -513,6 +514,10 @@ export function CalendarShell({
                   条来源
                 </span>
               </div>
+              <RecoveryReferenceCard
+                reference={dashboard.recoveryReference}
+                compact
+              />
               <ExternalTrainingSection
                 trackerKey="knee-rehab"
                 records={dashboard.externalTrainingRecords}

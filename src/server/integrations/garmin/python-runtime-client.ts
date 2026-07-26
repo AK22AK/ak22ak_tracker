@@ -9,6 +9,8 @@ import {
   garminActivityReadResultSchema,
   garminCredentialSchema,
   garminPrivateClientDescriptor,
+  garminWellnessEvidenceSchema,
+  garminWellnessReadResultSchema,
   type GarminClient,
   type GarminCredential,
 } from "./contracts";
@@ -27,10 +29,20 @@ const garminRuntimeSuccessSchema = z
   })
   .strict();
 
+const garminWellnessRuntimeSuccessSchema = z
+  .object({
+    ok: z.literal(true),
+    schemaVersion: z.literal(runtimeSchemaVersion),
+    clientVersion: z.literal(garminPrivateClientDescriptor.version),
+    wellness: garminWellnessEvidenceSchema,
+    refreshedTokenBundle: z.string().min(2).max(131_072),
+  })
+  .strict();
+
 const runtimeRequestSchema = z
   .object({
     schemaVersion: z.literal(runtimeSchemaVersion),
-    operation: z.literal("preview_activities"),
+    operation: z.enum(["preview_activities", "read_daily_wellness"]),
     client: z.literal(garminPrivateClientDescriptor.id),
     clientVersion: z.literal(garminPrivateClientDescriptor.version),
     date: localDateSchema,
@@ -171,6 +183,69 @@ export function createGarminPythonRuntimeClient({
     });
   }
 
+  async function requestWellness(input: {
+    credential: GarminCredential;
+    date: string;
+    signal?: AbortSignal;
+  }) {
+    const config = resolveConfig();
+    const body = runtimeRequestSchema.parse({
+      schemaVersion: runtimeSchemaVersion,
+      operation: "read_daily_wellness",
+      client: garminPrivateClientDescriptor.id,
+      clientVersion: garminPrivateClientDescriptor.version,
+      date: input.date,
+      credential: input.credential,
+    });
+    const controller = new AbortController();
+    const abortFromCaller = () => controller.abort(input.signal?.reason);
+    input.signal?.addEventListener("abort", abortFromCaller, { once: true });
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    let response: Response;
+    try {
+      response = await fetchImpl(config.endpoint, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${config.secret}`,
+          "Content-Type": "application/json",
+          "X-AK-Garmin-Runtime-Version": String(runtimeSchemaVersion),
+        },
+        body: JSON.stringify(body),
+        cache: "no-store",
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new GarminProviderError("timeout", { cause: error });
+      }
+      throw new GarminProviderError("provider_unavailable", { cause: error });
+    } finally {
+      clearTimeout(timeout);
+      input.signal?.removeEventListener("abort", abortFromCaller);
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new GarminProviderError("provider_unavailable");
+    }
+    const value = await readLimitedResponse(response);
+    const failure = garminRuntimeFailureSchema.safeParse(value);
+    if (failure.success) throw new GarminProviderError(failure.data.errorCode);
+    if (!response.ok) throw new GarminProviderError("provider_unavailable");
+    const result = garminWellnessRuntimeSuccessSchema.safeParse(value);
+    if (!result.success) throw new GarminProviderError("invalid_response");
+    const refreshedCredential = garminCredentialSchema.safeParse({
+      ...input.credential,
+      tokenBundle: result.data.refreshedTokenBundle,
+    });
+    if (!refreshedCredential.success) {
+      throw new GarminProviderError("invalid_response");
+    }
+    return garminWellnessReadResultSchema.parse({
+      wellness: result.data.wellness,
+      refreshedCredential: refreshedCredential.data,
+    });
+  }
+
   return {
     descriptor: garminPrivateClientDescriptor,
     async validateCredential({ credential, signal }) {
@@ -179,5 +254,6 @@ export function createGarminPythonRuntimeClient({
       return { refreshedCredential: result.refreshedCredential };
     },
     fetchActivitiesForDate: requestActivities,
+    fetchWellnessForDate: requestWellness,
   };
 }

@@ -17,7 +17,10 @@ import {
 } from "@/server/db/schema";
 import { createNeonProviderDateSyncStore } from "@/server/integrations/core/neon-date-sync-store";
 import { syncProviderDate } from "@/server/integrations/core/sync-provider-date";
-import { normalizeGarminActivities } from "@/server/integrations/garmin/normalize";
+import {
+  normalizeGarminActivities,
+  normalizeGarminWellness,
+} from "@/server/integrations/garmin/normalize";
 import { schemaVersion } from "@/domain/schemas";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
@@ -189,5 +192,87 @@ integration("P3b-2b Garmin provider-neutral persistence", () => {
       .from(externalRecordLinks)
       .where(eq(externalRecordLinks.externalRecordId, record!.id));
     expect(link?.needsReview).toBe(true);
+  }, 20_000);
+
+  it("stores daily wellness independently without creating links or changing tasks", async () => {
+    const database = getDatabase();
+    const store = createNeonProviderDateSyncStore(trackerKey, database, {
+      stateProvider: "garmin_wellness",
+    });
+    const wellness = (steps: number) =>
+      normalizeGarminWellness({
+        wellness: {
+          localDate,
+          steps: { status: "available", totalSteps: steps, stepGoal: 8000 },
+          sleep: {
+            status: "missing",
+            sleepStart: null,
+            sleepEnd: null,
+            totalSleepSeconds: null,
+            deepSleepSeconds: null,
+            lightSleepSeconds: null,
+            remSleepSeconds: null,
+            awakeSleepSeconds: null,
+            sleepScore: null,
+          },
+        },
+        localDate,
+        planningTimeZone: "Asia/Shanghai",
+        fetchedAt: new Date("2026-07-24T03:00:00.000Z"),
+      });
+    const first = await syncProviderDate({
+      trackerId,
+      provider: "garmin",
+      date: localDate,
+      now: new Date("2026-07-24T03:00:00.000Z"),
+      store,
+      readSource: async () => wellness(0),
+    });
+    const second = await syncProviderDate({
+      trackerId,
+      provider: "garmin",
+      date: localDate,
+      now: new Date("2026-07-24T03:00:31.000Z"),
+      store,
+      readSource: async () => wellness(0),
+    });
+    const changed = await syncProviderDate({
+      trackerId,
+      provider: "garmin",
+      date: localDate,
+      now: new Date("2026-07-24T03:01:02.000Z"),
+      store,
+      readSource: async () => wellness(1),
+    });
+
+    expect(first).toMatchObject({ created: 1, changed: 0 });
+    expect(second).toMatchObject({ unchanged: 1 });
+    expect(changed).toMatchObject({ created: 0, changed: 1 });
+    const aggregate = await getDayAggregate(trackerKey, localDate);
+    expect(aggregate.day.recoveryReference).toMatchObject({
+      provider: "garmin",
+      sourceVersion: 2,
+      steps: { status: "available", totalSteps: 1 },
+      sleep: { status: "missing", totalSleepSeconds: null },
+    });
+    const [record] = await database
+      .select({ id: externalRecords.id })
+      .from(externalRecords)
+      .where(
+        eq(externalRecords.providerRecordId, `daily_wellness:${localDate}`),
+      );
+    const links = record
+      ? await database
+          .select({ id: externalRecordLinks.id })
+          .from(externalRecordLinks)
+          .where(eq(externalRecordLinks.externalRecordId, record.id))
+      : [];
+    expect(links).toEqual([]);
+    expect(aggregate.day.externalTrainingRecords).toHaveLength(1);
+    const [task] = await database
+      .select({ status: taskInstances.status })
+      .from(taskInstances)
+      .where(eq(taskInstances.id, taskId));
+    expect(task?.status).toBe("planned");
   }, 20_000);
 });

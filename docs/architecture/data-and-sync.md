@@ -55,7 +55,7 @@ GitHub 镜像是最终一致的：数据库写入成功即代表用户操作成�
 - `plan_versions`：不可变计划版本及来源信息。
 - `task_instances`：按日期展开的任务与人工确认状态。
 - `events`：训练、反馈、完成和决策等追加式事件。
-- `external_records`：Garmin 活动与基础睡眠、训记力量训练明细及来源版本。
+- `external_records`：Garmin 活动、单日睡眠/步数恢复参考、训记力量训练明细及来源版本。
 - `external_record_links`：外部记录与任务的建议/确认关联。
 - `plan_change_proposals`：AI 建议、上下文/模型审计、人工决定与应用结果。
 - `plan_change_decisions`：每条建议唯一的人工接受或拒绝决定、决定时上下文 revision

@@ -10,7 +10,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { integrationQueryKeys } from "@/client/query-keys";
+import { integrationQueryKeys, trackerQueryKeys } from "@/client/query-keys";
 import { GarminIntegrationCard } from "@/components/garmin-integration-card";
 import {
   garminActivityTypeLabel,
@@ -327,5 +327,50 @@ describe("Garmin token-only settings flow", () => {
     await screen.findByText("同步日期不能晚于今天。");
     expect(screen.queryByText(/Garmin 暂时无法连接/)).toBeNull();
     expect(screen.queryByText(/本次验证没有完成/)).toBeNull();
+  });
+
+  it("syncs wellness with an independent date draft and invalidates only day views", async () => {
+    const response = {
+      provider: "garmin",
+      kind: "daily_wellness",
+      date: "2026-07-23",
+      sync: {
+        cached: false,
+        created: 1,
+        changed: 0,
+        unchanged: 0,
+        recordCount: 1,
+        syncedAt: "2026-07-24T02:00:00.000Z",
+      },
+    };
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json(response));
+    vi.stubGlobal("fetch", fetchMock);
+    const queryClient = renderCard({ ...disconnected, state: "connected" });
+    const todayKey = trackerQueryKeys.today("anonymous-tracker", "2026-07-23");
+    const dayKey = trackerQueryKeys.day("anonymous-tracker", "2026-07-23");
+    const monthKey = trackerQueryKeys.calendar("anonymous-tracker", "2026-07");
+    queryClient.setQueryData(todayKey, { anonymous: "today" });
+    queryClient.setQueryData(dayKey, { anonymous: "day" });
+    queryClient.setQueryData(monthKey, { anonymous: "month" });
+    const activityDate = screen.getByLabelText("同步日期") as HTMLInputElement;
+    const wellnessDate = screen.getByLabelText("日期") as HTMLInputElement;
+    fireEvent.change(activityDate, { target: { value: "2026-07-13" } });
+    fireEvent.change(wellnessDate, { target: { value: "2026-07-23" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "同步睡眠与步数" }));
+
+    await screen.findByText("睡眠与步数已保存。");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/trackers/anonymous-tracker/integrations/garmin/wellness",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ date: "2026-07-23" }),
+      }),
+    );
+    expect(activityDate.value).toBe("2026-07-13");
+    expect(wellnessDate.value).toBe("2026-07-23");
+    expect(queryClient.getQueryState(todayKey)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(dayKey)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(monthKey)?.isInvalidated).toBe(false);
   });
 });

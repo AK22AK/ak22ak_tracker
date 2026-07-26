@@ -12,6 +12,7 @@ import {
 } from "./safety-policy";
 import { externalTrainingRecordSchema } from "./external-training";
 import { executionContextTodaySchema } from "./execution-context";
+import { garminRecoveryReferenceSchema } from "./garmin";
 
 export const dashboardTaskSchema = z.object({
   id: z.uuid(),
@@ -45,6 +46,7 @@ export const dayDashboardSchema = z.object({
   feedbackCount: z.number().int().nonnegative(),
   feedbacks: z.array(dashboardFeedbackSchema),
   externalTrainingRecords: z.array(externalTrainingRecordSchema),
+  recoveryReference: garminRecoveryReferenceSchema.nullable().optional(),
 });
 
 export const trackerSummarySchema = z.object({

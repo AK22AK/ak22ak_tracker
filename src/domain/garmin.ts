@@ -101,6 +101,67 @@ export type GarminActivitySyncResponse = z.infer<
   typeof garminActivitySyncResponseSchema
 >;
 
+export const garminWellnessSyncResponseSchema = z
+  .object({
+    provider: z.literal("garmin"),
+    kind: z.literal("daily_wellness"),
+    date: localDateSchema,
+    sync: z
+      .object({
+        cached: z.boolean(),
+        created: z.number().int().nonnegative(),
+        changed: z.number().int().nonnegative(),
+        unchanged: z.number().int().nonnegative(),
+        recordCount: z.number().int().nonnegative(),
+        syncedAt: z.string().datetime(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type GarminWellnessSyncResponse = z.infer<
+  typeof garminWellnessSyncResponseSchema
+>;
+
+const garminRecoveryStepsSchema = z
+  .object({
+    status: z.enum(["available", "missing"]),
+    totalSteps: z.number().int().nonnegative().max(1_000_000).nullable(),
+    stepGoal: z.number().int().nonnegative().max(1_000_000).nullable(),
+    observedAt: z.string().datetime(),
+    syncedAt: z.string().datetime(),
+  })
+  .strict();
+
+const garminRecoverySleepSchema = z
+  .object({
+    status: z.enum(["available", "missing"]),
+    sleepStart: z.string().datetime({ offset: true }).nullable(),
+    sleepEnd: z.string().datetime({ offset: true }).nullable(),
+    totalSleepSeconds: z.number().int().nonnegative().max(172_800).nullable(),
+    deepSleepSeconds: z.number().int().nonnegative().max(172_800).nullable(),
+    lightSleepSeconds: z.number().int().nonnegative().max(172_800).nullable(),
+    remSleepSeconds: z.number().int().nonnegative().max(172_800).nullable(),
+    awakeSleepSeconds: z.number().int().nonnegative().max(172_800).nullable(),
+    sleepScore: z.number().int().nonnegative().max(100).nullable(),
+    syncedAt: z.string().datetime(),
+  })
+  .strict();
+
+export const garminRecoveryReferenceSchema = z
+  .object({
+    provider: z.literal("garmin"),
+    localDate: localDateSchema,
+    sourceVersion: z.number().int().positive(),
+    steps: garminRecoveryStepsSchema,
+    sleep: garminRecoverySleepSchema,
+  })
+  .strict();
+
+export type GarminRecoveryReference = z.infer<
+  typeof garminRecoveryReferenceSchema
+>;
+
 export const garminActivityRecoveryResponseSchema = z.discriminatedUnion(
   "status",
   [

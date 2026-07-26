@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getDay: vi.fn(),
   getPolicy: vi.fn(),
   getExternalRecords: vi.fn(),
+  getRecoveryReference: vi.fn(),
   createExecutionStore: vi.fn(() => ({ anonymous: true })),
   getExecution: vi.fn(),
 }));
@@ -23,6 +24,9 @@ vi.mock("@/server/safety-policy/repository", () => ({
 }));
 vi.mock("@/server/integrations/core/external-training-aggregate", () => ({
   getExternalTrainingRecordsForDay: mocks.getExternalRecords,
+}));
+vi.mock("@/server/integrations/garmin/wellness-aggregate", () => ({
+  getGarminRecoveryReferenceForDay: mocks.getRecoveryReference,
 }));
 vi.mock("@/server/execution-context/aggregate", () => ({
   createNeonExecutionContextAggregateStore: mocks.createExecutionStore,
@@ -102,6 +106,7 @@ describe("today aggregate query waves", () => {
     mocks.getDay.mockResolvedValue(day);
     mocks.getPolicy.mockResolvedValue(policy);
     mocks.getExternalRecords.mockResolvedValue([]);
+    mocks.getRecoveryReference.mockResolvedValue(null);
     mocks.getExecution.mockImplementation(
       async (_store, _date, hasRedFeedback: boolean | Promise<boolean>) => {
         await hasRedFeedback;
@@ -130,6 +135,7 @@ describe("today aggregate query waves", () => {
     await vi.waitFor(() => expect(mocks.getDay).toHaveBeenCalledOnce());
     expect(mocks.getPolicy).toHaveBeenCalledOnce();
     expect(mocks.getExecution).toHaveBeenCalledOnce();
+    expect(mocks.getRecoveryReference).toHaveBeenCalledOnce();
     await expect(aggregatePromise).resolves.toMatchObject({
       targetDate: "2026-07-24",
       tracker: { key: tracker.key },

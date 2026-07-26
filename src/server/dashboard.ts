@@ -6,6 +6,7 @@ import { monthBounds } from "@/domain/calendar";
 import { resolveEffectivePlanVersion } from "@/domain/plan-timeline";
 import { planVersionSchema, type TaskActual } from "@/domain/schemas";
 import type { ExternalTrainingRecord } from "@/domain/external-training";
+import type { GarminRecoveryReference } from "@/domain/garmin";
 import { kneeCheckInEventPayloadSchema } from "@/modules/knee-rehab/check-in";
 
 import { getDatabase } from "./db/client";
@@ -62,6 +63,7 @@ export type TodayDashboard = {
   feedbackCount: number;
   feedbacks: DashboardFeedback[];
   externalTrainingRecords: ExternalTrainingRecord[];
+  recoveryReference?: GarminRecoveryReference | null;
 };
 
 export type TrackerDashboardContext = {

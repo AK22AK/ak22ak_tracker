@@ -787,6 +787,9 @@ for (const width of [320, 375, 390, 430]) {
     await expect(
       page.getByRole("button", { name: "同步活动记录" }),
     ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "同步睡眠与步数" }),
+    ).toBeVisible();
 
     const layout = await page.evaluate(() => {
       const controls = [

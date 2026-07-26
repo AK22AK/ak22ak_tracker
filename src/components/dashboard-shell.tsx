@@ -22,6 +22,7 @@ import { usePrivateOfflineIdentity } from "@/offline/private-offline-context";
 
 import { SignOutButton } from "./sign-out-button";
 import { ExternalTrainingSection } from "./external-training-section";
+import { RecoveryReferenceCard } from "./recovery-reference-card";
 import {
   ExecutionContextCard,
   ExecutionPauseCard,
@@ -905,6 +906,8 @@ export function DashboardShell({
           {feedbackCount > 0 ? "再次反馈" : "添加反馈"}
         </Link>
       </SurfaceCard>
+
+      <RecoveryReferenceCard reference={initialDashboard.recoveryReference} />
 
       <SurfaceCard className="pending-sources-card" aria-label="待处理来源">
         <SectionHeading

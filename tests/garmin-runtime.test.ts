@@ -89,6 +89,28 @@ function fixture() {
       ],
       refreshedCredential: credential,
     })),
+    fetchWellnessForDate: vi.fn(async () => ({
+      wellness: {
+        localDate: "2026-07-24",
+        steps: {
+          status: "available" as const,
+          totalSteps: 0,
+          stepGoal: 8000,
+        },
+        sleep: {
+          status: "missing" as const,
+          sleepStart: null,
+          sleepEnd: null,
+          totalSleepSeconds: null,
+          deepSleepSeconds: null,
+          lightSleepSeconds: null,
+          remSleepSeconds: null,
+          awakeSleepSeconds: null,
+          sleepScore: null,
+        },
+      },
+      refreshedCredential: credential,
+    })),
   };
   const committedRecords: unknown[] = [];
   const dateSyncStore: ProviderDateSyncStore = {
@@ -656,5 +678,71 @@ describe("P3b-2a Garmin token-only runtime", () => {
       }),
     );
     expect(dateSyncStore.commitSuccess).not.toHaveBeenCalled();
+  });
+});
+
+describe("P5a-2a Garmin single-day wellness runtime", () => {
+  it("persists one explicit day as a non-training record and refreshes the credential", async () => {
+    const { runtime, client, store, committedRecords } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+
+    await expect(
+      runtime.syncWellness({
+        trackerKey: "knee-rehab",
+        date: "2026-07-24",
+      }),
+    ).resolves.toMatchObject({
+      provider: "garmin",
+      date: "2026-07-24",
+      sync: { created: 1, recordCount: 1 },
+    });
+
+    expect(client.fetchWellnessForDate).toHaveBeenCalledWith({
+      credential,
+      date: "2026-07-24",
+    });
+    expect(store.saveRefreshed).toHaveBeenCalledWith(
+      expect.objectContaining({ plaintext: JSON.stringify(credential) }),
+    );
+    expect(committedRecords).toEqual([
+      expect.objectContaining({
+        provider: "garmin",
+        providerRecordId: "daily_wellness:2026-07-24",
+        kind: "daily_wellness",
+      }),
+    ]);
+  });
+
+  it("rejects a future day before calling the Provider", async () => {
+    const { runtime, client } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+
+    await expect(
+      runtime.syncWellness({
+        trackerKey: "knee-rehab",
+        date: "2026-07-25",
+      }),
+    ).rejects.toMatchObject({ name: "GarminPreviewDateOutOfRangeError" });
+    expect(client.fetchWellnessForDate).not.toHaveBeenCalled();
+  });
+
+  it("records one safe wellness failure without touching committed activity data", async () => {
+    const { runtime, client, dateSyncStore, committedRecords } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+    vi.mocked(client.fetchWellnessForDate).mockRejectedValueOnce(
+      new GarminProviderError("timeout"),
+    );
+
+    await expect(
+      runtime.syncWellness({
+        trackerKey: "knee-rehab",
+        date: "2026-07-24",
+      }),
+    ).rejects.toMatchObject({ code: "timeout" });
+    expect(dateSyncStore.markFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ errorCode: "timeout" }),
+    );
+    expect(dateSyncStore.commitSuccess).not.toHaveBeenCalled();
+    expect(committedRecords).toEqual([]);
   });
 });

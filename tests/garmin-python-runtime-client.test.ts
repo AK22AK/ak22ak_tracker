@@ -125,4 +125,62 @@ describe("Garmin private Python runtime client", () => {
       }),
     ).rejects.toMatchObject({ code: "timeout" });
   });
+
+  it("reads one daily wellness snapshot without returning unlisted fields", async () => {
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        expect(body).toMatchObject({
+          operation: "read_daily_wellness",
+          date: "2026-07-24",
+          credential,
+        });
+        return Response.json({
+          ok: true,
+          schemaVersion: 1,
+          clientVersion: "0.3.6",
+          wellness: {
+            localDate: "2026-07-24",
+            steps: { status: "available", totalSteps: 0, stepGoal: 8000 },
+            sleep: {
+              status: "available",
+              sleepStart: "2026-07-23T22:00:00.000Z",
+              sleepEnd: "2026-07-24T06:00:00.000Z",
+              totalSleepSeconds: 27000,
+              deepSleepSeconds: 3600,
+              lightSleepSeconds: 16200,
+              remSleepSeconds: 5400,
+              awakeSleepSeconds: 1800,
+              sleepScore: 81,
+            },
+          },
+          refreshedTokenBundle: credential.tokenBundle,
+        });
+      },
+    );
+
+    await expect(
+      client(fetchMock as typeof fetch).fetchWellnessForDate({
+        credential,
+        date: "2026-07-24",
+      }),
+    ).resolves.toEqual({
+      wellness: {
+        localDate: "2026-07-24",
+        steps: { status: "available", totalSteps: 0, stepGoal: 8000 },
+        sleep: {
+          status: "available",
+          sleepStart: "2026-07-23T22:00:00.000Z",
+          sleepEnd: "2026-07-24T06:00:00.000Z",
+          totalSleepSeconds: 27000,
+          deepSleepSeconds: 3600,
+          lightSleepSeconds: 16200,
+          remSleepSeconds: 5400,
+          awakeSleepSeconds: 1800,
+          sleepScore: 81,
+        },
+      },
+      refreshedCredential: credential,
+    });
+  });
 });

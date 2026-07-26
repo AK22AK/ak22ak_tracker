@@ -1,10 +1,17 @@
 import "server-only";
 
-import { localDateInTimeZone } from "@/domain/planning-time";
+import {
+  instantAtLocalNoon,
+  localDateInTimeZone,
+} from "@/domain/planning-time";
 import { contentHash } from "@/server/integrations/core/content-hash";
 import type { NormalizedExternalRecord } from "@/server/integrations/core/external-records";
 
-import type { GarminActivityEvidence } from "./contracts";
+import {
+  garminWellnessEvidenceSchema,
+  type GarminActivityEvidence,
+  type GarminWellnessEvidence,
+} from "./contracts";
 import { GarminProviderError } from "./errors";
 
 function persistedPayload(activity: GarminActivityEvidence) {
@@ -44,4 +51,28 @@ export function normalizeGarminActivities(input: {
       payload,
     };
   });
+}
+
+export function normalizeGarminWellness(input: {
+  wellness: GarminWellnessEvidence;
+  localDate: string;
+  planningTimeZone: string;
+  fetchedAt: Date;
+}): NormalizedExternalRecord[] {
+  const payload = garminWellnessEvidenceSchema.parse(input.wellness);
+  if (payload.localDate !== input.localDate) {
+    throw new GarminProviderError("invalid_response");
+  }
+  return [
+    {
+      provider: "garmin",
+      providerRecordId: `daily_wellness:${input.localDate}`,
+      kind: "daily_wellness",
+      localDate: input.localDate,
+      occurredAt: instantAtLocalNoon(input.localDate, input.planningTimeZone),
+      fetchedAt: input.fetchedAt,
+      contentHash: contentHash(payload),
+      payload,
+    },
+  ];
 }

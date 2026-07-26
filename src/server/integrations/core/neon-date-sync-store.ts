@@ -38,7 +38,9 @@ function recordSetHash(
 export function createNeonProviderDateSyncStore(
   trackerKey: string,
   database: Database = getDatabase(),
+  options: { stateProvider?: string } = {},
 ): ProviderDateSyncStore {
+  const stateProvider = (provider: string) => options.stateProvider ?? provider;
   return {
     async getCachedSuccess(input) {
       const [row] = await database
@@ -52,7 +54,10 @@ export function createNeonProviderDateSyncStore(
         .where(
           and(
             eq(integrationDateSyncState.trackerId, input.trackerId),
-            eq(integrationDateSyncState.provider, input.provider),
+            eq(
+              integrationDateSyncState.provider,
+              stateProvider(input.provider),
+            ),
             eq(integrationDateSyncState.localDate, input.date),
           ),
         )
@@ -88,7 +93,7 @@ export function createNeonProviderDateSyncStore(
           .insert(integrationDateSyncState)
           .values({
             trackerId: input.trackerId,
-            provider: input.provider,
+            provider: stateProvider(input.provider),
             localDate: input.date,
             ...state,
           })
@@ -104,7 +109,7 @@ export function createNeonProviderDateSyncStore(
           .insert(integrationSyncState)
           .values({
             trackerId: input.trackerId,
-            provider: input.provider,
+            provider: stateProvider(input.provider),
             ...state,
           })
           .onConflictDoUpdate({
@@ -209,6 +214,14 @@ export function createNeonProviderDateSyncStore(
             ),
         );
       }
+      for (const unchanged of reconciled.unchanged) {
+        statements.push(
+          database
+            .update(externalRecords)
+            .set({ fetchedAt: unchanged.incoming.fetchedAt })
+            .where(eq(externalRecords.id, unchanged.existing.id)),
+        );
+      }
 
       const recordCount = input.records.length;
       const success = {
@@ -222,7 +235,7 @@ export function createNeonProviderDateSyncStore(
           .insert(integrationDateSyncState)
           .values({
             trackerId: input.trackerId,
-            provider: input.provider,
+            provider: stateProvider(input.provider),
             localDate: input.date,
             cachedUntil: input.cachedUntil,
             recordCount,
@@ -246,7 +259,7 @@ export function createNeonProviderDateSyncStore(
           .insert(integrationSyncState)
           .values({
             trackerId: input.trackerId,
-            provider: input.provider,
+            provider: stateProvider(input.provider),
             ...success,
           })
           .onConflictDoUpdate({
@@ -280,7 +293,7 @@ export function createNeonProviderDateSyncStore(
           .insert(integrationDateSyncState)
           .values({
             trackerId: input.trackerId,
-            provider: input.provider,
+            provider: stateProvider(input.provider),
             localDate: input.date,
             ...failed,
           })
@@ -296,7 +309,7 @@ export function createNeonProviderDateSyncStore(
           .insert(integrationSyncState)
           .values({
             trackerId: input.trackerId,
-            provider: input.provider,
+            provider: stateProvider(input.provider),
             ...failed,
           })
           .onConflictDoUpdate({

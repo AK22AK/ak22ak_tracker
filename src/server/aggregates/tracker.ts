@@ -18,6 +18,7 @@ import {
 } from "@/server/dashboard";
 import { getEffectiveTrackerSafetyPolicyByTrackerId } from "@/server/safety-policy/repository";
 import { getExternalTrainingRecordsForDay } from "@/server/integrations/core/external-training-aggregate";
+import { getGarminRecoveryReferenceForDay } from "@/server/integrations/garmin/wellness-aggregate";
 import { createNeonExecutionContextAggregateStore } from "@/server/execution-context/aggregate";
 import { getExecutionContextToday } from "@/server/execution-context/aggregate-core";
 
@@ -63,13 +64,19 @@ async function dayWithExternalTraining(
     localDate: targetDate,
     tasks: dayPromise.then((day) => day.tasks),
   });
-  const [day, externalTrainingRecords] = await Promise.all([
+  const recoveryReferencePromise = getGarminRecoveryReferenceForDay({
+    trackerId: tracker.id,
+    localDate: targetDate,
+  });
+  const [day, externalTrainingRecords, recoveryReference] = await Promise.all([
     dayPromise,
     externalTrainingRecordsPromise,
+    recoveryReferencePromise,
   ]);
   return {
     ...day,
     externalTrainingRecords,
+    recoveryReference,
   };
 }
 

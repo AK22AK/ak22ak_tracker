@@ -40,6 +40,12 @@ def request():
     ).encode()
 
 
+def wellness_request():
+    value = json.loads(request())
+    value["operation"] = "read_daily_wellness"
+    return json.dumps(value).encode()
+
+
 class GarminRuntimeTests(unittest.TestCase):
     def test_rejects_missing_internal_authorization_before_reading_tokens(self):
         calls = []
@@ -122,6 +128,166 @@ class GarminRuntimeTests(unittest.TestCase):
         self.assertEqual(status, 429)
         self.assertEqual(body, {"ok": False, "errorCode": "rate_limited"})
         self.assertNotIn("provider", json.dumps(body))
+
+    def test_projects_daily_steps_and_sleep_through_a_strict_whitelist(self):
+        refreshed = credential()["tokenBundle"]
+        raw_summary = {
+            "calendarDate": "2026-07-24",
+            "totalSteps": 0,
+            "dailyStepGoal": 8000,
+            "totalKilocalories": 2100,
+            "bodyBatteryHighestValue": 72,
+        }
+        raw_sleep = {
+            "dailySleepDTO": {
+                "calendarDate": "2026-07-24",
+                "sleepStartTimestampGMT": 1784844000000,
+                "sleepEndTimestampGMT": 1784872800000,
+                "sleepTimeSeconds": 27000,
+                "deepSleepSeconds": 3600,
+                "lightSleepSeconds": 16200,
+                "remSleepSeconds": 5400,
+                "awakeSleepSeconds": 1800,
+                "sleepScores": {
+                    "overall": {"value": 81, "private": "not-returned"}
+                },
+                "avgSpO2": 97,
+            },
+            "sleepMovement": [{"private": "not-returned"}],
+        }
+
+        status, body = RUNTIME.execute_request(
+            wellness_request(),
+            "Bearer anonymous-internal-secret",
+            "anonymous-internal-secret",
+            wellness_reader=lambda _credential, _date: (
+                raw_summary,
+                raw_sleep,
+                refreshed,
+            ),
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            body["wellness"],
+            {
+                "localDate": "2026-07-24",
+                "steps": {
+                    "status": "available",
+                    "totalSteps": 0,
+                    "stepGoal": 8000,
+                },
+                "sleep": {
+                    "status": "available",
+                    "sleepStart": "2026-07-23T22:00:00Z",
+                    "sleepEnd": "2026-07-24T06:00:00Z",
+                    "totalSleepSeconds": 27000,
+                    "deepSleepSeconds": 3600,
+                    "lightSleepSeconds": 16200,
+                    "remSleepSeconds": 5400,
+                    "awakeSleepSeconds": 1800,
+                    "sleepScore": 81,
+                },
+            },
+        )
+        serialized = json.dumps(body)
+        for forbidden in (
+            "totalKilocalories",
+            "bodyBattery",
+            "avgSpO2",
+            "sleepMovement",
+            "private",
+        ):
+            self.assertNotIn(forbidden, serialized)
+
+    def test_preserves_missing_wellness_without_inventing_zeroes(self):
+        status, body = RUNTIME.execute_request(
+            wellness_request(),
+            "Bearer anonymous-internal-secret",
+            "anonymous-internal-secret",
+            wellness_reader=lambda _credential, _date: (
+                {"calendarDate": "2026-07-24"},
+                {"dailySleepDTO": None},
+                credential()["tokenBundle"],
+            ),
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body["wellness"]["steps"]["status"], "missing")
+        self.assertIsNone(body["wellness"]["steps"]["totalSteps"])
+        self.assertEqual(body["wellness"]["sleep"]["status"], "missing")
+        self.assertIsNone(body["wellness"]["sleep"]["totalSleepSeconds"])
+
+    def test_rejects_invalid_or_cross_date_wellness_and_classifies_reader_failure(self):
+        invalid_values = [
+            (
+                {"calendarDate": "2026-07-23", "totalSteps": 100},
+                {"dailySleepDTO": None},
+            ),
+            (
+                {"calendarDate": "2026-07-24", "totalSteps": -1},
+                {"dailySleepDTO": None},
+            ),
+            (
+                {"calendarDate": "2026-07-24", "totalSteps": 100},
+                {
+                    "dailySleepDTO": {
+                        "calendarDate": "2026-07-24",
+                        "sleepStartTimestampGMT": 1784872800000,
+                        "sleepEndTimestampGMT": 1784844000000,
+                        "sleepTimeSeconds": 100,
+                    }
+                },
+            ),
+            (
+                {"calendarDate": "2026-07-24", "totalSteps": 1000001},
+                {"dailySleepDTO": None},
+            ),
+            (
+                {"calendarDate": "2026-07-24", "totalSteps": 100},
+                {
+                    "dailySleepDTO": {
+                        "calendarDate": "2026-07-24",
+                        "sleepTimeSeconds": -1,
+                    }
+                },
+            ),
+            (
+                {"calendarDate": "2026-07-24", "totalSteps": 100},
+                {
+                    "dailySleepDTO": {
+                        "calendarDate": "2026-07-24",
+                        "sleepTimeSeconds": 100,
+                        "sleepScores": {"overall": {"value": 101}},
+                    }
+                },
+            ),
+        ]
+        for summary, sleep in invalid_values:
+            status, body = RUNTIME.execute_request(
+                wellness_request(),
+                "Bearer anonymous-internal-secret",
+                "anonymous-internal-secret",
+                wellness_reader=lambda _credential, _date, s=summary, p=sleep: (
+                    s,
+                    p,
+                    credential()["tokenBundle"],
+                ),
+            )
+            self.assertEqual(status, 502)
+            self.assertEqual(body, {"ok": False, "errorCode": "invalid_response"})
+
+        def fail_after_summary(*_args):
+            raise RUNTIME.SafeRuntimeError("timeout")
+
+        status, body = RUNTIME.execute_request(
+            wellness_request(),
+            "Bearer anonymous-internal-secret",
+            "anonymous-internal-secret",
+            wellness_reader=fail_after_summary,
+        )
+        self.assertEqual(status, 504)
+        self.assertEqual(body, {"ok": False, "errorCode": "timeout"})
 
 
 if __name__ == "__main__":

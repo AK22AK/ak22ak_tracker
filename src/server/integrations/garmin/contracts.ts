@@ -83,27 +83,88 @@ export type GarminActivityReadResult = z.infer<
   typeof garminActivityReadResultSchema
 >;
 
-export const garminDailyEvidenceSchema = z
+export const garminStepsEvidenceSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("available"),
+      totalSteps: z.number().int().nonnegative().max(1_000_000),
+      stepGoal: z.number().int().nonnegative().max(1_000_000).nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("missing"),
+      totalSteps: z.null(),
+      stepGoal: z.null(),
+    })
+    .strict(),
+]);
+
+export const garminSleepEvidenceSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("available"),
+      sleepStart: z.string().datetime({ offset: true }).nullable(),
+      sleepEnd: z.string().datetime({ offset: true }).nullable(),
+      totalSleepSeconds: z.number().int().nonnegative().max(172_800),
+      deepSleepSeconds: z.number().int().nonnegative().max(172_800).nullable(),
+      lightSleepSeconds: z.number().int().nonnegative().max(172_800).nullable(),
+      remSleepSeconds: z.number().int().nonnegative().max(172_800).nullable(),
+      awakeSleepSeconds: z.number().int().nonnegative().max(172_800).nullable(),
+      sleepScore: z.number().int().nonnegative().max(100).nullable(),
+    })
+    .strict()
+    .superRefine((sleep, context) => {
+      if ((sleep.sleepStart === null) !== (sleep.sleepEnd === null)) {
+        context.addIssue({
+          code: "custom",
+          message: "Incomplete sleep window",
+        });
+      }
+      if (
+        sleep.sleepStart !== null &&
+        sleep.sleepEnd !== null &&
+        sleep.sleepEnd < sleep.sleepStart
+      ) {
+        context.addIssue({ code: "custom", message: "Invalid sleep window" });
+      }
+    }),
+  z
+    .object({
+      status: z.literal("missing"),
+      sleepStart: z.null(),
+      sleepEnd: z.null(),
+      totalSleepSeconds: z.null(),
+      deepSleepSeconds: z.null(),
+      lightSleepSeconds: z.null(),
+      remSleepSeconds: z.null(),
+      awakeSleepSeconds: z.null(),
+      sleepScore: z.null(),
+    })
+    .strict(),
+]);
+
+export const garminWellnessEvidenceSchema = z
   .object({
     localDate: localDateSchema,
-    steps: z.number().int().nonnegative().max(1_000_000).nullable(),
-    walkingDistanceMeters: z.number().nonnegative().max(10_000_000).nullable(),
+    steps: garminStepsEvidenceSchema,
+    sleep: garminSleepEvidenceSchema,
   })
   .strict();
 
-export type GarminDailyEvidence = z.infer<typeof garminDailyEvidenceSchema>;
-
-export const garminSleepEvidenceSchema = z
+export const garminWellnessReadResultSchema = z
   .object({
-    localDate: localDateSchema,
-    sleepStartedAt: z.string().datetime({ offset: true }).nullable(),
-    sleepEndedAt: z.string().datetime({ offset: true }).nullable(),
-    durationSeconds: z.number().nonnegative().max(172_800).nullable(),
-    score: z.number().nonnegative().max(100).nullable(),
+    wellness: garminWellnessEvidenceSchema,
+    refreshedCredential: garminCredentialSchema,
   })
   .strict();
 
-export type GarminSleepEvidence = z.infer<typeof garminSleepEvidenceSchema>;
+export type GarminWellnessEvidence = z.infer<
+  typeof garminWellnessEvidenceSchema
+>;
+export type GarminWellnessReadResult = z.infer<
+  typeof garminWellnessReadResultSchema
+>;
 
 export const kneeRehabGarminScope = {
   activityTypes: [
@@ -121,12 +182,16 @@ export const kneeRehabGarminScope = {
     "pace",
     "heartRate",
   ],
-  laterDailyFields: ["steps", "walkingDistanceMeters"],
+  laterDailyFields: ["totalSteps", "stepGoal"],
   laterSleepFields: [
-    "sleepStartedAt",
-    "sleepEndedAt",
-    "durationSeconds",
-    "score",
+    "sleepStart",
+    "sleepEnd",
+    "totalSleepSeconds",
+    "deepSleepSeconds",
+    "lightSleepSeconds",
+    "remSleepSeconds",
+    "awakeSleepSeconds",
+    "sleepScore",
   ],
 } as const;
 
@@ -144,15 +209,9 @@ export interface GarminClient<TCredential = unknown> {
     signal?: AbortSignal;
   }): Promise<GarminActivityReadResult>;
 
-  fetchDailyEvidenceForDate?(input: {
+  fetchWellnessForDate(input: {
     credential: TCredential;
     date: string;
     signal?: AbortSignal;
-  }): Promise<GarminDailyEvidence>;
-
-  fetchSleepEvidenceForDate?(input: {
-    credential: TCredential;
-    date: string;
-    signal?: AbortSignal;
-  }): Promise<GarminSleepEvidence>;
+  }): Promise<GarminWellnessReadResult>;
 }

@@ -6,6 +6,7 @@ import {
   garminActivityPreviewResponseSchema,
   garminConnectionStatusSchema,
   garminProviderErrorCodeSchema,
+  garminWellnessSyncResponseSchema,
   type GarminConnectionStatus,
 } from "@/domain/garmin";
 import {
@@ -46,7 +47,10 @@ import {
   type GarminCredential,
 } from "./contracts";
 import { GarminProviderError } from "./errors";
-import { normalizeGarminActivities } from "./normalize";
+import {
+  normalizeGarminActivities,
+  normalizeGarminWellness,
+} from "./normalize";
 import { createGarminPythonRuntimeClient } from "./python-runtime-client";
 
 type Database = ReturnType<typeof getDatabase>;
@@ -172,7 +176,10 @@ export function createGarminRuntime({
 }: {
   store: GarminCredentialStore;
   client: GarminClient<GarminCredential>;
-  createDateSyncStore: (trackerKey: string) => ProviderDateSyncStore;
+  createDateSyncStore: (
+    trackerKey: string,
+    stateProvider?: "garmin" | "garmin_wellness",
+  ) => ProviderDateSyncStore;
   createCatchUpStore: () => ProviderCatchUpStore;
   automaticRecoveryStore: AutomaticProviderRecoveryClaimStore;
   now?: () => Date;
@@ -241,6 +248,41 @@ export function createGarminRuntime({
     }
   }
 
+  async function readWellness(input: {
+    tracker: Tracker;
+    date: string;
+    requestedAt: Date;
+  }) {
+    let credential: GarminCredential;
+    try {
+      credential = garminCredentialSchema.parse(
+        JSON.parse(await store.read(input.tracker.id)) as unknown,
+      );
+    } catch (error) {
+      throw new GarminProviderError("invalid_token_bundle", { cause: error });
+    }
+    try {
+      const result = await client.fetchWellnessForDate({
+        credential,
+        date: input.date,
+      });
+      if (result.wellness.localDate !== input.date) {
+        throw new GarminProviderError("invalid_response");
+      }
+      await store.saveRefreshed({
+        trackerId: input.tracker.id,
+        plaintext: JSON.stringify(result.refreshedCredential),
+        verifiedAt: input.requestedAt,
+        attemptedAt: input.requestedAt,
+      });
+      return result.wellness;
+    } catch (error) {
+      throw error instanceof GarminProviderError
+        ? error
+        : new GarminProviderError("provider_unavailable", { cause: error });
+    }
+  }
+
   async function requirePreviewDate(trackerKey: string, dateInput: string) {
     const date = localDateSchema.parse(dateInput);
     const tracker = await store.requireTracker(trackerKey);
@@ -269,6 +311,27 @@ export function createGarminRuntime({
             requestedAt: input.requestedAt,
             markCredentialFailure: false,
           }),
+          localDate: input.date,
+          planningTimeZone: input.tracker.planningTimeZone,
+          fetchedAt: input.requestedAt,
+        }),
+    });
+  }
+
+  async function syncWellnessDate(input: {
+    tracker: Tracker;
+    date: string;
+    requestedAt: Date;
+  }) {
+    return syncProviderDate({
+      trackerId: input.tracker.id,
+      provider: "garmin",
+      date: input.date,
+      now: input.requestedAt,
+      store: createDateSyncStore(input.tracker.key, "garmin_wellness"),
+      readSource: async () =>
+        normalizeGarminWellness({
+          wellness: await readWellness(input),
           localDate: input.date,
           planningTimeZone: input.tracker.planningTimeZone,
           fetchedAt: input.requestedAt,
@@ -357,6 +420,20 @@ export function createGarminRuntime({
       });
     },
 
+    async syncWellness(input: { trackerKey: string; date: string }) {
+      const { date, tracker, requestedAt } = await requirePreviewDate(
+        input.trackerKey,
+        input.date,
+      );
+      const sync = await syncWellnessDate({ tracker, date, requestedAt });
+      return garminWellnessSyncResponseSchema.parse({
+        provider: "garmin",
+        kind: "daily_wellness",
+        date,
+        sync,
+      });
+    },
+
     async syncActivityHistory(input: { trackerKey: string }) {
       const tracker = await store.requireTracker(input.trackerKey);
       return syncActivityHistoryForTracker(tracker, 5);
@@ -414,8 +491,10 @@ export function createDefaultGarminRuntime(database?: Database) {
   return createGarminRuntime({
     store: createNeonGarminCredentialStore(database),
     client: createGarminPythonRuntimeClient(),
-    createDateSyncStore: (trackerKey) =>
-      createNeonProviderDateSyncStore(trackerKey, database ?? getDatabase()),
+    createDateSyncStore: (trackerKey, stateProvider) =>
+      createNeonProviderDateSyncStore(trackerKey, database ?? getDatabase(), {
+        stateProvider,
+      }),
     createCatchUpStore: () =>
       createNeonProviderCatchUpStore(database ?? getDatabase()),
     automaticRecoveryStore: createNeonAutomaticProviderRecoveryClaimStore(
