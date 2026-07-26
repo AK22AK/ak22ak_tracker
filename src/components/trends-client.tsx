@@ -319,6 +319,17 @@ export function TrendsClient() {
         </Link>
       </section>
 
+      <section className="surface-card trend-advice-card">
+        <div>
+          <p className="eyebrow">计划阶段</p>
+          <h2>到目标日期了吗？</h2>
+          <p>到达计划目标日后，可以开启阶段评估并回顾训练周证据。</p>
+        </div>
+        <Link className="secondary-button" href="/trends/evaluation">
+          查看阶段评估
+        </Link>
+      </section>
+
       {allEmpty ? (
         <section className="surface-card trend-empty-card">
           <h2>记录还不够</h2>

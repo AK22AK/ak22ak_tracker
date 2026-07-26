@@ -28,6 +28,7 @@ import type {
   TrackerEvent,
 } from "@/domain/schemas";
 import type { ResumptionAssessmentSnapshot } from "@/domain/resumption";
+import type { EvaluationSessionSnapshot } from "@/domain/evaluation";
 import type { TrackerSafetyPolicyDocument } from "@/domain/safety-policy";
 
 export const taskStatus = pgEnum("task_status", [
@@ -366,6 +367,59 @@ export const resumptionDecisions = pgTable(
     check(
       "resumption_decisions_decision_check",
       sql`${table.decision} IN ('keep_original', 'shift')`,
+    ),
+  ],
+);
+
+export const evaluationSessions = pgTable(
+  "evaluation_sessions",
+  {
+    id: uuid("id").primaryKey(),
+    trackerId: uuid("tracker_id")
+      .notNull()
+      .references(() => trackers.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    status: text("status").default("open").notNull(),
+    triggerDate: date("trigger_date").notNull(),
+    targetDate: date("target_date").notNull(),
+    basePlanVersionId: uuid("base_plan_version_id")
+      .notNull()
+      .references(() => planVersions.id, { onDelete: "restrict" }),
+    timelineHeadPlanVersionId: uuid("timeline_head_plan_version_id")
+      .notNull()
+      .references(() => planVersions.id, { onDelete: "restrict" }),
+    planningTimeZone: text("planning_time_zone").notNull(),
+    calculationVersion: text("calculation_version").notNull(),
+    snapshot: jsonb("snapshot").$type<EvaluationSessionSnapshot>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("evaluation_sessions_target_head_unique").on(
+      table.trackerId,
+      table.kind,
+      table.targetDate,
+      table.timelineHeadPlanVersionId,
+    ),
+    index("evaluation_sessions_tracker_created_index").on(
+      table.trackerId,
+      table.createdAt,
+    ),
+    check(
+      "evaluation_sessions_kind_check",
+      sql`${table.kind} IN ('stage', 'final')`,
+    ),
+    check(
+      "evaluation_sessions_status_check",
+      sql`${table.status} IN ('open', 'expired')`,
+    ),
+    check(
+      "evaluation_sessions_range_check",
+      sql`${table.triggerDate} >= ${table.targetDate}`,
     ),
   ],
 );

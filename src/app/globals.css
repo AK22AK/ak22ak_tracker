@@ -1735,6 +1735,57 @@ summary:focus-visible {
   gap: 0.875rem;
 }
 
+.evaluation-page {
+  display: grid;
+  gap: 1rem;
+  padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+}
+
+.evaluation-page-header,
+.evaluation-week-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.evaluation-status-card,
+.evaluation-evidence-card,
+.evaluation-week-list,
+.evaluation-week {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.evaluation-status-card h2,
+.evaluation-status-card h3,
+.evaluation-evidence-card h2,
+.evaluation-status-card p,
+.evaluation-evidence-card p {
+  margin: 0;
+}
+
+.evaluation-guidance {
+  color: var(--color-muted);
+}
+
+.evaluation-week {
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.75rem;
+}
+
+.evaluation-week:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+@media (max-width: 360px) {
+  .evaluation-page-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .trend-page-header,
 .trend-section-heading,
 .trend-row-heading,

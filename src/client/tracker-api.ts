@@ -29,6 +29,11 @@ import {
 } from "@/domain/resumption";
 import { trendsAggregateSchema } from "@/domain/trends";
 import {
+  createEvaluationSessionCommandSchema,
+  evaluationPageDtoSchema,
+  type CreateEvaluationSessionCommand,
+} from "@/domain/evaluation";
+import {
   aiAnalysisPageDtoSchema,
   planChangeDecisionCommandSchema,
   planChangeDecisionResultSchema,
@@ -97,6 +102,42 @@ export async function fetchTrendsAggregate(
       signal,
     ),
   );
+}
+
+export async function fetchEvaluation(
+  trackerKey: string,
+  signal?: AbortSignal,
+) {
+  return evaluationPageDtoSchema.parse(
+    await getJson(
+      `/api/trackers/${encodeURIComponent(trackerKey)}/evaluation`,
+      signal,
+    ),
+  );
+}
+
+export async function createEvaluationSession(
+  trackerKey: string,
+  input: CreateEvaluationSessionCommand,
+) {
+  const response = await fetch(
+    `/api/trackers/${encodeURIComponent(trackerKey)}/evaluation`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(createEvaluationSessionCommandSchema.parse(input)),
+    },
+  );
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(payload?.error ?? `request_failed_${response.status}`);
+  }
+  return evaluationPageDtoSchema.parse(await response.json());
 }
 
 export async function fetchPlanAdvice(

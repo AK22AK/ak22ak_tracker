@@ -69,7 +69,10 @@ GitHub 镜像是最终一致的：数据库写入成功即代表用户操作成�
   状态和人工方案选择。
 - `resumption_assessments` / `resumption_decisions`：结束临时上下文或暂停后的不可变
   接续快照、人工决定和计划时间线并发边界。
-- `evaluation_sessions`：阶段/结项评估草稿、结果和下一阶段决定。
+- `evaluation_sessions`：阶段/结项评估会话、冻结证据和后续结果。当前计划格式没有
+  显式 `targetDate` 时，结项目标日由服务端从时间线头完整计划的最后任务日期派生；
+  该派生值与基础计划、时间线头和证据范围一起冻结。阶段目标必须以后由结构化计划或
+  私人版本化策略提供，不能从公开代码猜测。
 - `ai_analysis_jobs`：AI 请求、稳定命令、上下文 hash/范围、重试、模型、校验和完成
   状态；不保存提示词全文或模型原始响应。
 - `integration_sync_state`：各外部服务的整体游标和最近成功/失败时间。
@@ -84,6 +87,11 @@ AI 审计使用两个稳定的可变快照路径：`ai/analysis-jobs/<job-id>.js
 审计，`ai/proposals/<proposal-id>.json` 保存已校验建议及其状态、决定和回滚关系。
 相同 ID 的状态演进更新同一路径；不可变决定事件和计划版本仍使用各自的追加式路径。
 审计快照不包含提示词、Provider 原始响应或完整私人上下文。
+
+阶段评估创建事件携带通过 `evaluation-session.schema.json` 校验的冻结证据。周证据只
+包含计划任务状态、反馈覆盖和日级最高疼痛/最严重已保存安全级别、暂停/受限/降级天数
+以及可测训练覆盖；不包含自由文本、处方正文、外部来源内部标识或私人阈值。尚未导入
+版本化 `EvaluationPolicy` 时，系统只标记 `needs_policy`，不会自行宣布有效训练周。
 
 每份交换数据包含 `schemaVersion`、稳定 UUID、发生时间、记录时间、本地日期和
 来源信息。手机提交携带 `idempotencyKey`；Garmin 和训记使用

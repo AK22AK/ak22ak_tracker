@@ -92,6 +92,7 @@ export const trackerEventSchema = z.object({
     "resumption_assessment_created",
     "resumption_assessment_expired",
     "resumption_decision",
+    "evaluation_session_created",
   ]),
   occurredAt: instantSchema,
   recordedAt: instantSchema,
