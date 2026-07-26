@@ -708,6 +708,9 @@ DeepSeek；后续由使用者本人在设置页录入并完成一次受控验证
 - activity 与 wellness 继续使用彼此独立的业务游标和到期状态；`0019` 只为通用加密凭证
   增加共享 Provider I/O 租约。随机 owner、到期恢复和 owner 条件写回防止并发刷新覆盖；
   用户替换 Token 会使旧请求立即失去写回资格，租约忙不会污染任一业务日期状态。
+- 前台只保留一个 Garmin 恢复协调入口，每次触发严格依次尝试 activity 和 wellness；
+  非认证类跳过或临时失败不阻断后一类。首次遇到共享 I/O 租约忙时只安排一次有界重试，
+  避免两个独立组件反复竞争而让 wellness 长期没有推进机会。
 - P5a-2a 的外部记录 JSON Schema 公私同步新增 `daily_wellness` kind；P5a-2b 的 `0019`
   不改变镜像业务 Schema。
 
