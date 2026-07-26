@@ -3,6 +3,7 @@ import "server-only";
 import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 
 import {
+  evaluationDecisionDocumentSchema,
   evaluationResultDocumentSchema,
   evaluationSessionSnapshotSchema,
 } from "@/domain/evaluation";
@@ -17,6 +18,7 @@ import { getDatabase } from "@/server/db/client";
 import {
   evaluationSessions,
   evaluationResults,
+  evaluationDecisions,
   events,
   executionContexts,
   executionDayDecisions,
@@ -344,6 +346,20 @@ export function createNeonEvaluationStore(
       return row ? evaluationResultDocumentSchema.parse(row.document) : null;
     },
 
+    async findDecisionBySessionId(trackerId, sessionId) {
+      const [row] = await database
+        .select({ document: evaluationDecisions.document })
+        .from(evaluationDecisions)
+        .where(
+          and(
+            eq(evaluationDecisions.trackerId, trackerId),
+            eq(evaluationDecisions.sessionId, sessionId),
+          ),
+        )
+        .limit(1);
+      return row ? evaluationDecisionDocumentSchema.parse(row.document) : null;
+    },
+
     async hasRedSafetySignal(trackerId, localDate) {
       const rows = await database
         .select({ document: events.document })
@@ -454,6 +470,50 @@ export function createNeonEvaluationStore(
         database.insert(githubSyncOutbox).values(prepared.outbox),
       ]);
     },
+
+    async commitDecisionAtomically(prepared) {
+      await database.batch([
+        database.execute(sql`
+          select assert_evaluation_decision_context(
+            ${prepared.trackerId}::uuid,
+            ${prepared.decision.sessionId}::uuid,
+            ${prepared.decision.resultId}::uuid,
+            ${prepared.decision.basePlanVersionId}::uuid,
+            ${prepared.decision.timelineHeadPlanVersionId}::uuid,
+            ${prepared.expectedContextRevision}::integer,
+            ${prepared.decision.decidedLocalDate}::date,
+            ${prepared.decision.branch}::text
+          )
+        `),
+        database.insert(evaluationDecisions).values({
+          id: prepared.decision.id,
+          trackerId: prepared.trackerId,
+          sessionId: prepared.decision.sessionId,
+          resultId: prepared.decision.resultId,
+          basePlanVersionId: prepared.decision.basePlanVersionId,
+          timelineHeadPlanVersionId:
+            prepared.decision.timelineHeadPlanVersionId,
+          decidedOn: prepared.decision.decidedLocalDate,
+          decisionVersion: prepared.decision.decisionVersion,
+          branch: prepared.decision.branch,
+          document: prepared.decision,
+          recordedAt: new Date(prepared.decision.decidedAt),
+        }),
+        database.insert(events).values({
+          id: prepared.event.id,
+          trackerId: prepared.trackerId,
+          kind: prepared.event.kind,
+          localDate: prepared.event.localDate,
+          occurredAt: new Date(prepared.event.occurredAt),
+          recordedAt: new Date(prepared.event.recordedAt),
+          occurredTimeZone: prepared.event.occurredTimeZone,
+          occurredUtcOffsetMinutes: prepared.event.occurredUtcOffsetMinutes,
+          idempotencyKey: prepared.event.idempotencyKey,
+          document: prepared.event,
+        }),
+        database.insert(githubSyncOutbox).values(prepared.outbox),
+      ]);
+    },
   };
 }
 
@@ -466,6 +526,8 @@ const lazyEvaluationStore: EvaluationStore = {
     createNeonEvaluationStore().findEventByCommandId(...arguments_),
   findResultBySessionId: (...arguments_) =>
     createNeonEvaluationStore().findResultBySessionId(...arguments_),
+  findDecisionBySessionId: (...arguments_) =>
+    createNeonEvaluationStore().findDecisionBySessionId(...arguments_),
   hasRedSafetySignal: (...arguments_) =>
     createNeonEvaluationStore().hasRedSafetySignal(...arguments_),
   expireSession: (...arguments_) =>
@@ -474,6 +536,8 @@ const lazyEvaluationStore: EvaluationStore = {
     createNeonEvaluationStore().commitAtomically(...arguments_),
   commitResultAtomically: (...arguments_) =>
     createNeonEvaluationStore().commitResultAtomically(...arguments_),
+  commitDecisionAtomically: (...arguments_) =>
+    createNeonEvaluationStore().commitDecisionAtomically(...arguments_),
 };
 
 export const evaluationRuntime = createEvaluationRuntime({

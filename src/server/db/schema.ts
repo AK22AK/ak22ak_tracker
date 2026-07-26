@@ -29,6 +29,7 @@ import type {
 } from "@/domain/schemas";
 import type { ResumptionAssessmentSnapshot } from "@/domain/resumption";
 import type {
+  EvaluationDecisionDocument,
   EvaluationResultDocument,
   EvaluationSessionSnapshot,
 } from "@/domain/evaluation";
@@ -457,6 +458,49 @@ export const evaluationResults = pgTable(
     check(
       "evaluation_results_version_check",
       sql`${table.resultVersion} = 'evaluation-result-v1'`,
+    ),
+  ],
+);
+
+export const evaluationDecisions = pgTable(
+  "evaluation_decisions",
+  {
+    id: uuid("id").primaryKey(),
+    trackerId: uuid("tracker_id")
+      .notNull()
+      .references(() => trackers.id, { onDelete: "cascade" }),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => evaluationSessions.id, { onDelete: "restrict" }),
+    resultId: uuid("result_id")
+      .notNull()
+      .references(() => evaluationResults.id, { onDelete: "restrict" }),
+    basePlanVersionId: uuid("base_plan_version_id")
+      .notNull()
+      .references(() => planVersions.id, { onDelete: "restrict" }),
+    timelineHeadPlanVersionId: uuid("timeline_head_plan_version_id")
+      .notNull()
+      .references(() => planVersions.id, { onDelete: "restrict" }),
+    decidedOn: date("decided_on").notNull(),
+    decisionVersion: text("decision_version").notNull(),
+    branch: text("branch").notNull(),
+    document: jsonb("document").$type<EvaluationDecisionDocument>().notNull(),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("evaluation_decisions_session_unique").on(table.sessionId),
+    uniqueIndex("evaluation_decisions_result_unique").on(table.resultId),
+    index("evaluation_decisions_tracker_index").on(table.trackerId),
+    check(
+      "evaluation_decisions_version_check",
+      sql`${table.decisionVersion} = 'evaluation-decision-v1'`,
+    ),
+    check(
+      "evaluation_decisions_branch_check",
+      sql`${table.branch} IN ('maintain', 'progress', 'extend', 'professional_review')`,
     ),
   ],
 );

@@ -445,3 +445,255 @@ describe("P4c-2a immutable evaluation result UI", () => {
     ).toBe("Draft survives refresh");
   });
 });
+
+describe("P4c-2b manual evaluation decision UI", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("previews weekly confirmations and the user branch before one permanent write", async () => {
+    const opened = {
+      ...base,
+      state: "opened",
+      session: { ...snapshot, status: "open" },
+      result: savedResult,
+      decision: null,
+      resultSubmission: { allowed: false, blockedReason: "already_recorded" },
+      decisionSubmission: {
+        allowed: true,
+        blockedReason: null,
+        allowedBranches: ["maintain", "extend", "professional_review"],
+        progressBlockedReason: "yellow_evidence",
+      },
+    };
+    const savedDecision = {
+      schemaVersion,
+      decisionVersion: "evaluation-decision-v1",
+      id: "019c0000-0000-7000-8000-000000000826",
+      sessionId: snapshot.id,
+      resultId: savedResult.id,
+      trackerKey: "knee-rehab",
+      decidedAt: "2026-06-09T10:00:00.000Z",
+      decidedLocalDate: "2026-06-09",
+      basePlanVersionId: snapshot.basePlanVersion.id,
+      timelineHeadPlanVersionId: snapshot.timelineHeadPlanVersion.id,
+      weeklyConfirmations: [
+        {
+          weekStart: "2026-06-01",
+          weekEnd: "2026-06-07",
+          status: "not_effective",
+          reason: "safety_response",
+        },
+      ],
+      branch: "extend",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(opened))
+      .mockResolvedValueOnce(
+        response({
+          ...opened,
+          decision: savedDecision,
+          decisionSubmission: {
+            ...opened.decisionSubmission,
+            allowed: false,
+            blockedReason: "already_recorded",
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(savedDecision.id);
+    renderClient();
+
+    fireEvent.change(await screen.findByLabelText("这一周"), {
+      target: { value: "not_effective" },
+    });
+    fireEvent.change(screen.getByLabelText("原因（可选）"), {
+      target: { value: "safety_response" },
+    });
+    fireEvent.change(screen.getByLabelText("下一步"), {
+      target: { value: "extend" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "检查你的选择" }));
+
+    expect(await screen.findByText("确认训练周和下一步")).toBeTruthy();
+    expect(screen.getByText("不计为有效")).toBeTruthy();
+    expect(screen.getByText("出现需要留意的反应")).toBeTruthy();
+    expect(screen.getByText("下一步：延长当前阶段")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    const confirm = screen.getByRole("button", { name: "确认并保存选择" });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(await screen.findByText("已由你完成选择")).toBeTruthy();
+    expect(screen.getByText(/未来训练计划仍需单独制定/)).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not offer progress when yellow evidence is frozen", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        response({
+          ...base,
+          state: "opened",
+          session: { ...snapshot, status: "open" },
+          result: savedResult,
+          decision: null,
+          resultSubmission: {
+            allowed: false,
+            blockedReason: "already_recorded",
+          },
+          decisionSubmission: {
+            allowed: true,
+            blockedReason: null,
+            allowedBranches: ["maintain", "extend", "professional_review"],
+            progressBlockedReason: "yellow_evidence",
+          },
+        }),
+      ),
+    );
+    renderClient();
+
+    const select = (await screen.findByLabelText(
+      "下一步",
+    )) as HTMLSelectElement;
+    expect([...select.options].map((option) => option.value)).not.toContain(
+      "progress",
+    );
+    expect(screen.getByText(/当前不能选择专项进阶/)).toBeTruthy();
+  });
+
+  it("keeps the decision draft and command id when a save retry is unchanged", async () => {
+    const opened = {
+      ...base,
+      state: "opened",
+      session: { ...snapshot, status: "open" },
+      result: savedResult,
+      decision: null,
+      resultSubmission: { allowed: false, blockedReason: "already_recorded" },
+      decisionSubmission: {
+        allowed: true,
+        blockedReason: null,
+        allowedBranches: ["maintain", "extend", "professional_review"],
+        progressBlockedReason: "yellow_evidence",
+      },
+    };
+    const saved = {
+      schemaVersion,
+      decisionVersion: "evaluation-decision-v1",
+      id: "019c0000-0000-7000-8000-000000000827",
+      sessionId: snapshot.id,
+      resultId: savedResult.id,
+      trackerKey: "knee-rehab",
+      decidedAt: "2026-06-09T10:00:00.000Z",
+      decidedLocalDate: "2026-06-09",
+      basePlanVersionId: snapshot.basePlanVersion.id,
+      timelineHeadPlanVersionId: snapshot.timelineHeadPlanVersion.id,
+      weeklyConfirmations: [
+        {
+          weekStart: "2026-06-01",
+          weekEnd: "2026-06-07",
+          status: "uncertain",
+        },
+      ],
+      branch: "maintain",
+      note: "Anonymous decision note",
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(opened))
+      .mockResolvedValueOnce(response({ error: "evaluation_unavailable" }, 503))
+      .mockResolvedValueOnce(
+        response({
+          ...opened,
+          decision: saved,
+          decisionSubmission: {
+            ...opened.decisionSubmission,
+            allowed: false,
+            blockedReason: "already_recorded",
+          },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(saved.id);
+    renderClient();
+
+    fireEvent.change(await screen.findByLabelText("补充说明（可选）"), {
+      target: { value: "Anonymous decision note" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "检查你的选择" }));
+    fireEvent.click(screen.getByRole("button", { name: "确认并保存选择" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "当前选择仍会保留",
+    );
+    expect(screen.getByText("Anonymous decision note")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "重试保存" }));
+    expect(await screen.findByText("已由你完成选择")).toBeTruthy();
+    const first = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+    const retry = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
+    expect(retry.commandId).toBe(first.commandId);
+    expect(retry.decision).toEqual(first.decision);
+  });
+
+  it("leaves confirmation and preserves weekly choices when refetch changes safety", async () => {
+    const opened = {
+      ...base,
+      state: "opened",
+      session: { ...snapshot, status: "open" },
+      result: savedResult,
+      decision: null,
+      resultSubmission: { allowed: false, blockedReason: "already_recorded" },
+      decisionSubmission: {
+        allowed: true,
+        blockedReason: null,
+        allowedBranches: ["maintain", "extend", "professional_review"],
+        progressBlockedReason: "yellow_evidence",
+      },
+    };
+    const red = {
+      ...opened,
+      decisionSubmission: {
+        allowed: true,
+        blockedReason: null,
+        allowedBranches: ["professional_review"],
+        progressBlockedReason: "red_safety",
+      },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(opened))
+      .mockResolvedValueOnce(response(red));
+    vi.stubGlobal("fetch", fetchMock);
+    const { client } = renderClient();
+
+    fireEvent.change(await screen.findByLabelText("这一周"), {
+      target: { value: "not_effective" },
+    });
+    fireEvent.change(screen.getByLabelText("补充说明（可选）"), {
+      target: { value: "Draft remains local" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "检查你的选择" }));
+    expect(screen.getByRole("button", { name: "确认并保存选择" })).toBeTruthy();
+
+    await client.refetchQueries({ queryKey: ["evaluation", "knee-rehab"] });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "确认并保存选择" }),
+      ).toBeNull(),
+    );
+    expect((screen.getByLabelText("这一周") as HTMLSelectElement).value).toBe(
+      "not_effective",
+    );
+    expect(
+      (screen.getByLabelText("补充说明（可选）") as HTMLTextAreaElement).value,
+    ).toBe("Draft remains local");
+    expect((screen.getByLabelText("下一步") as HTMLSelectElement).value).toBe(
+      "professional_review",
+    );
+    expect(screen.getByText(/当前只能选择联系专业人员复评/)).toBeTruthy();
+  });
+});

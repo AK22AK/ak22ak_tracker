@@ -18,6 +18,7 @@ import { trackerSafetyPolicyDocumentSchema } from "../src/domain/safety-policy";
 import { executionAlternativeBundleSchema } from "../src/domain/execution-context";
 import { resumptionAssessmentDtoSchema } from "../src/domain/resumption";
 import {
+  evaluationDecisionDocumentSchema,
   evaluationResultDocumentSchema,
   evaluationSessionSnapshotSchema,
 } from "../src/domain/evaluation";
@@ -35,6 +36,7 @@ const schemas = {
   "resumption-assessment.schema.json": resumptionAssessmentDtoSchema,
   "evaluation-session.schema.json": evaluationSessionSnapshotSchema,
   "evaluation-result.schema.json": evaluationResultDocumentSchema,
+  "evaluation-decision.schema.json": evaluationDecisionDocumentSchema,
 };
 
 async function main() {

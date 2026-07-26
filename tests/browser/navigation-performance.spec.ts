@@ -306,6 +306,73 @@ const evaluationAggregate = {
   resultSubmission: { allowed: true, blockedReason: null },
 };
 
+const evaluationDecisionAggregate = {
+  ...evaluationAggregate,
+  session: {
+    ...evaluationAggregate.session,
+    weeks: [
+      {
+        weekStart: localDate,
+        weekEnd: localDate,
+        tasks: { total: 1, completed: 1, skipped: 0, planned: 0 },
+        feedback: {
+          feedbackDays: 1,
+          expectedDays: 1,
+          maxPain: 2,
+          worstSafetyLevel: "green",
+        },
+        execution: {
+          pauseDays: 0,
+          travelDays: 0,
+          equipmentLimitedDays: 0,
+          degradedDays: 0,
+        },
+        loadCoverage: {
+          completedTasks: 1,
+          durationCoveredTasks: 1,
+          distanceCoveredTasks: 0,
+          sourceCoveredTasks: 0,
+        },
+        effectiveness: { status: "needs_policy", policyVersion: null },
+      },
+    ],
+  },
+  result: {
+    schemaVersion: "1.0.0",
+    resultVersion: "evaluation-result-v1",
+    id: "019c0000-0000-7000-8000-000000000043",
+    sessionId: evaluationSnapshot.id,
+    trackerKey: "knee-rehab",
+    kind: "final",
+    submittedAt: `${localDate}T01:00:00.000Z`,
+    submittedLocalDate: localDate,
+    basePlanVersionId: evaluationSnapshot.basePlanVersion.id,
+    timelineHeadPlanVersionId: evaluationSnapshot.timelineHeadPlanVersion.id,
+    goalCompletion: "partially_met",
+    sides: {
+      left: {
+        symptomResponse: "mild",
+        strengthAndControl: "ready",
+        loadTolerance: "limited",
+      },
+      right: {
+        symptomResponse: "none",
+        strengthAndControl: "ready",
+        loadTolerance: "ready",
+      },
+    },
+    nextStageIntent: "undecided",
+  },
+  decision: null,
+  resultSubmission: { allowed: false, blockedReason: "already_recorded" },
+  decisionSubmission: {
+    allowed: true,
+    blockedReason: null,
+    allowedBranches: ["maintain", "progress", "extend", "professional_review"],
+    progressBlockedReason: null,
+  },
+};
+
 type RequestCounters = {
   today: number;
   month: number;
@@ -338,6 +405,7 @@ async function mockPrivateReads(
   page: Page,
   delayMs: number,
   advice: unknown = planAdvice,
+  evaluation: unknown = evaluationAggregate,
 ) {
   const counters: RequestCounters = {
     today: 0,
@@ -380,7 +448,7 @@ async function mockPrivateReads(
       body = trendsAggregate;
     } else if (url.pathname.endsWith("/evaluation")) {
       counters.evaluation += 1;
-      body = evaluationAggregate;
+      body = evaluation;
     } else if (url.pathname === "/api/mirror/sync") {
       body = {
         result: {
@@ -402,6 +470,54 @@ async function mockPrivateReads(
     await route.fulfill({ status: 200, json: body });
   });
   return counters;
+}
+
+for (const width of [320, 375, 390, 430]) {
+  test(`manual evaluation decision confirmation fits a ${width}px mobile viewport`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await mockPrivateReads(page, 0, planAdvice, evaluationDecisionAggregate);
+    await page.goto("/trends/evaluation");
+
+    await page.getByLabel("这一周").selectOption("effective");
+    await page.getByLabel("下一步").selectOption("maintain");
+    await page.getByRole("button", { name: "检查你的选择" }).click();
+
+    await expect(
+      page.getByRole("heading", { name: "确认训练周和下一步" }),
+    ).toBeVisible();
+    const layout = await page.evaluate(() => {
+      const card = document.querySelector<HTMLElement>(
+        ".evaluation-decision-confirmation",
+      );
+      const controls = [
+        ...document.querySelectorAll<HTMLElement>(
+          ".evaluation-decision-confirmation button",
+        ),
+      ];
+      const cardRect = card?.getBoundingClientRect();
+      return {
+        clientWidth: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        cardLeft: cardRect?.left ?? -1,
+        cardRight: cardRect?.right ?? Number.POSITIVE_INFINITY,
+        controls: controls.map((control) => {
+          const rect = control.getBoundingClientRect();
+          return { height: rect.height, left: rect.left, right: rect.right };
+        }),
+      };
+    });
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+    expect(layout.cardLeft).toBeGreaterThanOrEqual(0);
+    expect(layout.cardRight).toBeLessThanOrEqual(layout.clientWidth);
+    expect(
+      layout.controls.every(
+        ({ height, left, right }) =>
+          height >= 44 && left >= 0 && right <= layout.clientWidth,
+      ),
+    ).toBe(true);
+  });
 }
 
 for (const width of [320, 375, 390, 430]) {

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   CreateEvaluationResultCommand,
   CreateEvaluationSessionCommand,
+  EvaluationDecisionDocument,
   EvaluationResultDocument,
 } from "@/domain/evaluation";
 import {
@@ -102,6 +103,7 @@ function createStore() {
   let current = context();
   let session: EvaluationSessionRecord | null = null;
   let result: EvaluationResultDocument | null = null;
+  let decision: EvaluationDecisionDocument | null = null;
   const events = new Map<string, TrackerEvent>();
   let failCommit = false;
   let redSafety = false;
@@ -111,6 +113,9 @@ function createStore() {
     findEventByCommandId: vi.fn(async (id) => events.get(id) ?? null),
     findResultBySessionId: vi.fn(async (_trackerId, sessionId) =>
       result?.sessionId === sessionId ? result : null,
+    ),
+    findDecisionBySessionId: vi.fn(async (_trackerId, sessionId) =>
+      decision?.sessionId === sessionId ? decision : null,
     ),
     hasRedSafetySignal: vi.fn(async () => redSafety),
     expireSession: vi.fn(async (id) => {
@@ -133,6 +138,16 @@ function createStore() {
         });
       }
       result = prepared.result;
+      events.set(prepared.event.idempotencyKey, prepared.event);
+    }),
+    commitDecisionAtomically: vi.fn(async (prepared) => {
+      if (failCommit) throw new Error("anonymous_commit_failure");
+      if (decision) {
+        throw Object.assign(new Error("anonymous_unique_conflict"), {
+          code: "23505",
+        });
+      }
+      decision = prepared.decision;
       events.set(prepared.event.idempotencyKey, prepared.event);
     }),
   };
@@ -166,6 +181,7 @@ function createStore() {
       redSafety = value;
     },
     getSession: () => session,
+    getDecision: () => decision,
   };
 }
 
@@ -323,5 +339,92 @@ describe("P4c-2a immutable evaluation result runtime", () => {
       runtime.submitResult("anonymous-tracker", resultCommand()),
     ).rejects.toThrow("evaluation_result_not_eligible");
     expect(holder.store.commitResultAtomically).not.toHaveBeenCalled();
+  });
+});
+
+describe("P4c-2b manual evaluation decision runtime", () => {
+  it("records one canonical manual decision without creating a plan", async () => {
+    const holder = createStore();
+    const runtime = createEvaluationRuntime({
+      store: holder.store,
+      now: () => new Date("2026-06-09T10:05:00.000Z"),
+    });
+    await runtime.create("anonymous-tracker", command());
+    await runtime.submitResult("anonymous-tracker", resultCommand());
+    const decisionCommand = {
+      commandId: "019c0000-0000-7000-8000-000000000818",
+      sessionId: commandId,
+      occurredAt: "2026-06-09T10:00:00.000Z",
+      occurredTimeZone: "Asia/Shanghai",
+      occurredUtcOffsetMinutes: 480,
+      decision: {
+        weeklyConfirmations: [
+          {
+            weekStart: "2026-06-01",
+            weekEnd: "2026-06-07",
+            status: "effective" as const,
+          },
+          {
+            weekStart: "2026-06-08",
+            weekEnd: "2026-06-14",
+            status: "uncertain" as const,
+          },
+        ],
+        branch: "maintain" as const,
+      },
+    };
+
+    const first = await runtime.submitDecision(
+      "anonymous-tracker",
+      decisionCommand,
+    );
+    const replay = await runtime.submitDecision(
+      "anonymous-tracker",
+      decisionCommand,
+    );
+
+    expect(first).toMatchObject({
+      state: "opened",
+      decision: { id: decisionCommand.commandId, branch: "maintain" },
+    });
+    expect(replay).toEqual(first);
+    expect(holder.store.commitDecisionAtomically).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows only professional review when frozen or current evidence is red", async () => {
+    const holder = createStore();
+    const runtime = createEvaluationRuntime({
+      store: holder.store,
+      now: () => new Date("2026-06-09T10:05:00.000Z"),
+    });
+    await runtime.create("anonymous-tracker", command());
+    await runtime.submitResult("anonymous-tracker", resultCommand());
+    holder.setRedSafety(true);
+
+    await expect(
+      runtime.submitDecision("anonymous-tracker", {
+        commandId: "019c0000-0000-7000-8000-000000000819",
+        sessionId: commandId,
+        occurredAt: "2026-06-09T10:00:00.000Z",
+        occurredTimeZone: "Asia/Shanghai",
+        occurredUtcOffsetMinutes: 480,
+        decision: {
+          weeklyConfirmations: [
+            {
+              weekStart: "2026-06-01",
+              weekEnd: "2026-06-07",
+              status: "effective",
+            },
+            {
+              weekStart: "2026-06-08",
+              weekEnd: "2026-06-14",
+              status: "uncertain",
+            },
+          ],
+          branch: "extend",
+        },
+      }),
+    ).rejects.toThrow("red_safety");
+    expect(holder.store.commitDecisionAtomically).not.toHaveBeenCalled();
   });
 });

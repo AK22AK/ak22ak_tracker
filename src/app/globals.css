@@ -1752,8 +1752,10 @@ summary:focus-visible {
 .evaluation-status-card,
 .evaluation-evidence-card,
 .evaluation-result-card,
+.evaluation-decision-card,
 .evaluation-result-form,
 .evaluation-result-confirmation,
+.evaluation-decision-confirmation,
 .evaluation-result-blocked,
 .evaluation-week-list,
 .evaluation-week {
@@ -1765,14 +1767,18 @@ summary:focus-visible {
 .evaluation-status-card h3,
 .evaluation-evidence-card h2,
 .evaluation-result-card h2,
+.evaluation-decision-card h2,
 .evaluation-result-form h2,
 .evaluation-result-confirmation h2,
+.evaluation-decision-confirmation h2,
 .evaluation-result-blocked h2,
 .evaluation-status-card p,
 .evaluation-evidence-card p,
 .evaluation-result-card p,
+.evaluation-decision-card p,
 .evaluation-result-form p,
 .evaluation-result-confirmation p,
+.evaluation-decision-confirmation p,
 .evaluation-result-blocked p {
   margin: 0;
 }
@@ -1870,6 +1876,29 @@ summary:focus-visible {
 
 .evaluation-result-confirmation {
   min-width: 0;
+}
+
+.evaluation-decision-card,
+.evaluation-decision-confirmation,
+.evaluation-decision-form,
+.evaluation-week-decision-list,
+.evaluation-week-confirmation-summary {
+  display: grid;
+  min-width: 0;
+  gap: 0.75rem;
+}
+
+.evaluation-week-confirmation-summary > div {
+  display: grid;
+  min-width: 0;
+  gap: 0.2rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.evaluation-week-confirmation-summary span,
+.evaluation-week-confirmation-summary small {
+  color: var(--color-muted);
 }
 
 .evaluation-confirmation-actions {

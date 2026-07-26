@@ -113,14 +113,15 @@ flowchart TB
 | 计划调整       | 汇总上下文、AI Proposal、差异确认、版本应用和回滚 | `ai_analysis_jobs`、`plan_change_proposals`、新计划版本 |
 | 外部记录与关联 | Garmin 活动/睡眠、训记训练明细及人工确认关联      | `external_records`、`external_record_links`             |
 | 数据同步与镜像 | 离线重放、外部游标、GitHub outbox 和镜像重建      | `integration_sync_state`、`github_sync_outbox`          |
-| 阶段评估       | 目标日期评估、有效训练周和下一阶段决定            | `evaluation_sessions`、决定事件                         |
+| 阶段评估       | 目标日期评估、冻结周证据和人工下一阶段决定        | `evaluation_sessions/results/decisions`、决定事件       |
 
 公共代码只保存通用 Schema、流程和匿名规则接口。膝关节模块保存反馈字段、安全规则以及
 外部数据白名单范围；私人处方、诊断、阈值和医嘱仍属于私人数据域。
 
 当前结构化计划没有单独目标日期字段，因此阶段评估底座将时间线头完整计划中的最后任务
 日期作为可审计的结项目标日。到达该日期只开放评估并冻结证据，不代表完成；阶段目标和
-有效训练周阈值必须来自后续结构化计划或私人版本化评估策略。
+系统不会从公共代码或 AI 猜测有效训练周阈值。当前流程由使用者逐周确认并人工选择下一
+阶段；保存决定不等于康复完成，也不会创建计划版本。
 
 ## 时间与日期语义
 

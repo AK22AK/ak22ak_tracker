@@ -81,6 +81,59 @@ export const evaluationResultDocumentSchema = evaluationResultAnswersSchema
   })
   .strict();
 
+export const evaluationWeekConfirmationStatusSchema = z.enum([
+  "effective",
+  "not_effective",
+  "uncertain",
+]);
+
+export const evaluationWeekConfirmationReasonSchema = z.enum([
+  "completed_as_intended",
+  "interrupted",
+  "safety_response",
+  "insufficient_evidence",
+  "other",
+]);
+
+export const evaluationDecisionBranchSchema = z.enum([
+  "maintain",
+  "progress",
+  "extend",
+  "professional_review",
+]);
+
+export const evaluationWeeklyConfirmationSchema = z
+  .object({
+    weekStart: localDateSchema,
+    weekEnd: localDateSchema,
+    status: evaluationWeekConfirmationStatusSchema,
+    reason: evaluationWeekConfirmationReasonSchema.optional(),
+  })
+  .strict();
+
+export const evaluationDecisionInputSchema = z
+  .object({
+    weeklyConfirmations: z.array(evaluationWeeklyConfirmationSchema).max(520),
+    branch: evaluationDecisionBranchSchema,
+    note: z.string().max(2_000).optional(),
+  })
+  .strict();
+
+export const evaluationDecisionDocumentSchema = evaluationDecisionInputSchema
+  .extend({
+    schemaVersion: z.literal(schemaVersion),
+    decisionVersion: z.literal("evaluation-decision-v1"),
+    id: z.uuid(),
+    sessionId: z.uuid(),
+    resultId: z.uuid(),
+    trackerKey: trackerKeySchema,
+    decidedAt: instantSchema,
+    decidedLocalDate: localDateSchema,
+    basePlanVersionId: z.uuid(),
+    timelineHeadPlanVersionId: z.uuid(),
+  })
+  .strict();
+
 const planPointerSchema = z
   .object({
     id: z.uuid(),
@@ -171,6 +224,17 @@ const evaluationResultSubmissionSchema = z
   })
   .strict();
 
+const evaluationDecisionSubmissionSchema = z
+  .object({
+    allowed: z.boolean(),
+    blockedReason: z.enum(["result_required", "already_recorded"]).nullable(),
+    allowedBranches: z.array(evaluationDecisionBranchSchema),
+    progressBlockedReason: z
+      .enum(["red_safety", "yellow_evidence", "missing_green_evidence"])
+      .nullable(),
+  })
+  .strict();
+
 export const evaluationPageDtoSchema = z.discriminatedUnion("state", [
   z
     .object({
@@ -201,9 +265,16 @@ export const evaluationPageDtoSchema = z.discriminatedUnion("state", [
       planningTimeZone: ianaTimeZoneSchema,
       session: evaluationSessionDtoSchema,
       result: evaluationResultDocumentSchema.nullable().default(null),
+      decision: evaluationDecisionDocumentSchema.nullable().default(null),
       resultSubmission: evaluationResultSubmissionSchema.default({
         allowed: true,
         blockedReason: null,
+      }),
+      decisionSubmission: evaluationDecisionSubmissionSchema.default({
+        allowed: false,
+        blockedReason: "result_required",
+        allowedBranches: ["professional_review"],
+        progressBlockedReason: "missing_green_evidence",
       }),
     })
     .strict(),
@@ -217,6 +288,7 @@ export const evaluationPageDtoSchema = z.discriminatedUnion("state", [
       canOpenReplacement: z.boolean(),
       session: evaluationSessionDtoSchema,
       result: evaluationResultDocumentSchema.nullable().default(null),
+      decision: evaluationDecisionDocumentSchema.nullable().default(null),
     })
     .strict(),
   z
@@ -243,6 +315,13 @@ export const createEvaluationResultCommandSchema = clientCommandMetadataSchema
   })
   .strict();
 
+export const createEvaluationDecisionCommandSchema = clientCommandMetadataSchema
+  .extend({
+    sessionId: z.uuid(),
+    decision: evaluationDecisionInputSchema,
+  })
+  .strict();
+
 export type EvaluationSessionSnapshot = z.infer<
   typeof evaluationSessionSnapshotSchema
 >;
@@ -252,6 +331,12 @@ export type EvaluationResultAnswers = z.infer<
 export type EvaluationResultDocument = z.infer<
   typeof evaluationResultDocumentSchema
 >;
+export type EvaluationDecisionInput = z.infer<
+  typeof evaluationDecisionInputSchema
+>;
+export type EvaluationDecisionDocument = z.infer<
+  typeof evaluationDecisionDocumentSchema
+>;
 export type EvaluationPageDto = z.infer<typeof evaluationPageDtoSchema>;
 export type CreateEvaluationSessionCommand = z.infer<
   typeof createEvaluationSessionCommandSchema
@@ -259,6 +344,79 @@ export type CreateEvaluationSessionCommand = z.infer<
 export type CreateEvaluationResultCommand = z.infer<
   typeof createEvaluationResultCommandSchema
 >;
+export type CreateEvaluationDecisionCommand = z.infer<
+  typeof createEvaluationDecisionCommandSchema
+>;
+
+export function buildEvaluationDecisionDocument(input: {
+  id: string;
+  sessionId: string;
+  resultId: string;
+  trackerKey: string;
+  decidedAt: string;
+  decidedLocalDate: string;
+  basePlanVersionId: string;
+  timelineHeadPlanVersionId: string;
+  snapshotWeeks: readonly { weekStart: string; weekEnd: string }[];
+  input: EvaluationDecisionInput;
+}): EvaluationDecisionDocument {
+  const parsedInput = evaluationDecisionInputSchema.parse(input.input);
+  if (
+    parsedInput.weeklyConfirmations.length !== input.snapshotWeeks.length ||
+    parsedInput.weeklyConfirmations.some(
+      (week, index) =>
+        week.weekStart !== input.snapshotWeeks[index]?.weekStart ||
+        week.weekEnd !== input.snapshotWeeks[index]?.weekEnd,
+    )
+  ) {
+    throw new Error("evaluation_weeks_changed");
+  }
+  return evaluationDecisionDocumentSchema.parse({
+    schemaVersion,
+    decisionVersion: "evaluation-decision-v1",
+    id: input.id,
+    sessionId: input.sessionId,
+    resultId: input.resultId,
+    trackerKey: input.trackerKey,
+    decidedAt: input.decidedAt,
+    decidedLocalDate: input.decidedLocalDate,
+    basePlanVersionId: input.basePlanVersionId,
+    timelineHeadPlanVersionId: input.timelineHeadPlanVersionId,
+    ...parsedInput,
+  });
+}
+
+export function evaluationDecisionSafety(
+  snapshot: EvaluationSessionSnapshot,
+  currentRedSafety: boolean,
+) {
+  type Branch = z.infer<typeof evaluationDecisionBranchSchema>;
+  const frozenLevels = snapshot.weeks.map(
+    (week) => week.feedback.worstSafetyLevel,
+  );
+  const red = currentRedSafety || frozenLevels.includes("red");
+  if (red) {
+    return {
+      allowedBranches: ["professional_review"] as Branch[],
+      progressBlockedReason: "red_safety" as const,
+    };
+  }
+  const yellow = frozenLevels.includes("yellow");
+  const missingGreen = frozenLevels.some((level) => level !== "green");
+  return {
+    allowedBranches: [
+      "maintain",
+      ...(yellow || missingGreen ? [] : (["progress"] as const)),
+      "extend",
+      "professional_review",
+    ] as Branch[],
+    progressBlockedReason: yellow
+      ? ("yellow_evidence" as const)
+      : missingGreen
+        ? ("missing_green_evidence" as const)
+        : null,
+  };
+}
 
 type EvidenceTask = {
   id: string;

@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildEvaluationDecisionDocument,
   buildEvaluationEvidenceSnapshot,
   buildEvaluationResultDocument,
   deriveEvaluationTargetDate,
+  evaluationDecisionDocumentSchema,
+  evaluationDecisionSafety,
   evaluationResultDocumentSchema,
   evaluationSessionSnapshotSchema,
 } from "@/domain/evaluation";
@@ -171,6 +174,25 @@ describe("P4c-1 evaluation evidence domain", () => {
         feedbackNote: "must not be mirrored",
       }).success,
     ).toBe(false);
+    expect(evaluationDecisionSafety(snapshot, false)).toEqual({
+      allowedBranches: ["maintain", "extend", "professional_review"],
+      progressBlockedReason: "yellow_evidence",
+    });
+    expect(
+      evaluationDecisionSafety(
+        {
+          ...snapshot,
+          weeks: snapshot.weeks.map((week) => ({
+            ...week,
+            feedback: { ...week.feedback, worstSafetyLevel: null },
+          })),
+        },
+        false,
+      ),
+    ).toEqual({
+      allowedBranches: ["maintain", "extend", "professional_review"],
+      progressBlockedReason: "missing_green_evidence",
+    });
   });
 });
 
@@ -218,5 +240,67 @@ describe("P4c-2a immutable evaluation result domain", () => {
         providerRaw: { hidden: true },
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("P4c-2b manual evaluation decision domain", () => {
+  const base = {
+    id: "019c0000-0000-7000-8000-000000000808",
+    sessionId: "019c0000-0000-7000-8000-000000000802",
+    resultId: "019c0000-0000-7000-8000-000000000807",
+    trackerKey: "anonymous-tracker",
+    decidedAt: "2026-06-09T10:00:00.000Z",
+    decidedLocalDate: "2026-06-09",
+    basePlanVersionId: plan.id,
+    timelineHeadPlanVersionId: plan.id,
+    snapshotWeeks: [{ weekStart: "2026-06-01", weekEnd: "2026-06-07" }],
+  } as const;
+
+  it("builds one strict decision from the frozen weekly evidence", () => {
+    const decision = buildEvaluationDecisionDocument({
+      ...base,
+      input: {
+        weeklyConfirmations: [
+          {
+            weekStart: "2026-06-01",
+            weekEnd: "2026-06-07",
+            status: "effective",
+            reason: "completed_as_intended",
+          },
+        ],
+        branch: "maintain",
+        note: "Anonymous private note",
+      },
+    });
+
+    expect(decision).toMatchObject({
+      decisionVersion: "evaluation-decision-v1",
+      branch: "maintain",
+      weeklyConfirmations: [{ status: "effective" }],
+    });
+    expect(
+      evaluationDecisionDocumentSchema.safeParse({
+        ...decision,
+        providerRaw: { hidden: true },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects client weeks that do not exactly match the frozen snapshot", () => {
+    expect(() =>
+      buildEvaluationDecisionDocument({
+        ...base,
+        input: {
+          weeklyConfirmations: [
+            {
+              weekStart: "2026-06-02",
+              weekEnd: "2026-06-08",
+              status: "effective",
+            },
+          ],
+          branch: "maintain",
+        },
+      }),
+    ).toThrow("evaluation_weeks_changed");
   });
 });

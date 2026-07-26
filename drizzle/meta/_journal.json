@@ -127,6 +127,13 @@
       "when": 1785033068294,
       "tag": "0017_steep_steve_rogers",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785058349669,
+      "tag": "0018_lonely_moon_knight",
+      "breakpoints": true
     }
   ]
 }

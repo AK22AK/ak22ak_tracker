@@ -36,7 +36,8 @@
         "resumption_assessment_expired",
         "resumption_decision",
         "evaluation_session_created",
-        "evaluation_result_recorded"
+        "evaluation_result_recorded",
+        "evaluation_decision_recorded"
       ]
     },
     "occurredAt": {

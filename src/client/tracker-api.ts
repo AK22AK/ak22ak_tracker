@@ -29,9 +29,11 @@ import {
 } from "@/domain/resumption";
 import { trendsAggregateSchema } from "@/domain/trends";
 import {
+  createEvaluationDecisionCommandSchema,
   createEvaluationResultCommandSchema,
   createEvaluationSessionCommandSchema,
   evaluationPageDtoSchema,
+  type CreateEvaluationDecisionCommand,
   type CreateEvaluationResultCommand,
   type CreateEvaluationSessionCommand,
 } from "@/domain/evaluation";
@@ -163,6 +165,31 @@ export async function submitEvaluationResult(
       error?: string;
     } | null;
     throw new Error(payload?.error ?? `request_failed_${response.status}`);
+  }
+  return evaluationPageDtoSchema.parse(await response.json());
+}
+
+export async function submitEvaluationDecision(
+  trackerKey: string,
+  input: CreateEvaluationDecisionCommand,
+) {
+  const command = createEvaluationDecisionCommandSchema.parse(input);
+  const response = await fetch(
+    `/api/trackers/${encodeURIComponent(trackerKey)}/evaluation/${encodeURIComponent(command.sessionId)}/decision`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(command),
+    },
+  );
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(payload?.error ?? "evaluation_unavailable");
   }
   return evaluationPageDtoSchema.parse(await response.json());
 }

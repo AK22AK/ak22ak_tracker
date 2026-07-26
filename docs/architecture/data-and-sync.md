@@ -76,6 +76,9 @@ GitHub 镜像是最终一致的：数据库写入成功即代表用户操作成�
 - `evaluation_results`：绑定评估会话的唯一不可变结果，分别保存左右侧反应、力量与
   动作控制、负荷耐受、目标完成情况和下一阶段意向。保存结果本身不判定完成，也不修改
   计划；可选补充文字只存在于私人 PostgreSQL 和私有事件镜像。
+- `evaluation_decisions`：绑定会话和不可变结果的唯一人工决定，逐周引用冻结快照中的
+  `weekStart/weekEnd`，并保存使用者选择的维护、进阶、延长或专业复评分支。该决定
+  不创建计划版本；可选说明只存在于私人 PostgreSQL 和私有事件镜像。
 - `ai_analysis_jobs`：AI 请求、稳定命令、上下文 hash/范围、重试、模型、校验和完成
   状态；不保存提示词全文或模型原始响应。
 - `integration_sync_state`：各外部服务的整体游标和最近成功/失败时间。
@@ -100,6 +103,12 @@ AI 审计使用两个稳定的可变快照路径：`ai/analysis-jobs/<job-id>.js
 `evaluation-result.schema.json` 校验。提交事务重新锁定 Tracker 与会话，并核对上下文
 revision、基础计划、时间线头和当天红灯；结果、事件和 outbox 原子提交。结果 Schema
 只定义中性字段形状，任何实际补充文字都属于私人数据，不进入公共仓库。
+
+人工评估决定通过 `evaluation_decision_recorded` 追加式事件进入私有镜像，并由
+`evaluation-decision.schema.json` 校验。客户端必须逐项引用会话快照的全部冻结周，
+不能增加、删除或改写周界限。事务重新锁定 Tracker、会话和结果，并核对上下文 revision、
+基础计划、时间线头和当前红灯。红灯只允许专业复评；黄灯或缺少完整绿灯证据时不允许
+专项进阶。除此之外不使用未确认的完成率、反馈天数或连续周数阈值。
 
 每份交换数据包含 `schemaVersion`、稳定 UUID、发生时间、记录时间、本地日期和
 来源信息。手机提交携带 `idempotencyKey`；Garmin 和训记使用

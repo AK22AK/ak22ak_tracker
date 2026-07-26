@@ -1,15 +1,21 @@
 import "server-only";
 
 import {
+  buildEvaluationDecisionDocument,
   buildEvaluationEvidenceSnapshot,
   buildEvaluationResultDocument,
+  evaluationDecisionDocumentSchema,
+  evaluationDecisionInputSchema,
+  evaluationDecisionSafety,
   deriveEvaluationTargetDate,
   evaluationPageDtoSchema,
   evaluationResultAnswersSchema,
   evaluationResultDocumentSchema,
   evaluationSessionSnapshotSchema,
   type CreateEvaluationSessionCommand,
+  type CreateEvaluationDecisionCommand,
   type CreateEvaluationResultCommand,
+  type EvaluationDecisionDocument,
   type EvaluationPageDto,
   type EvaluationResultDocument,
   type EvaluationSessionSnapshot,
@@ -71,6 +77,19 @@ export type PreparedEvaluationResult = {
   };
 };
 
+export type PreparedEvaluationDecision = {
+  trackerId: string;
+  expectedContextRevision: number;
+  decision: EvaluationDecisionDocument;
+  event: TrackerEvent;
+  outbox: {
+    aggregateType: "event";
+    aggregateId: string;
+    targetPath: string;
+    payload: Record<string, unknown>;
+  };
+};
+
 export type EvaluationStore = {
   loadContext(trackerKey: string): Promise<EvaluationContext | null>;
   findLatestSession(trackerId: string): Promise<EvaluationSessionRecord | null>;
@@ -79,10 +98,15 @@ export type EvaluationStore = {
     trackerId: string,
     sessionId: string,
   ): Promise<EvaluationResultDocument | null>;
+  findDecisionBySessionId(
+    trackerId: string,
+    sessionId: string,
+  ): Promise<EvaluationDecisionDocument | null>;
   hasRedSafetySignal(trackerId: string, localDate: string): Promise<boolean>;
   expireSession(sessionId: string): Promise<boolean>;
   commitAtomically(prepared: PreparedEvaluationSession): Promise<void>;
   commitResultAtomically(prepared: PreparedEvaluationResult): Promise<void>;
+  commitDecisionAtomically(prepared: PreparedEvaluationDecision): Promise<void>;
 };
 
 export class EvaluationTrackerNotFoundError extends Error {
@@ -110,6 +134,13 @@ export class EvaluationResultNotEligibleError extends Error {
   constructor(message = "evaluation_result_not_eligible") {
     super(message);
     this.name = "EvaluationResultNotEligibleError";
+  }
+}
+
+export class EvaluationDecisionNotEligibleError extends Error {
+  constructor(message = "evaluation_decision_not_eligible") {
+    super(message);
+    this.name = "EvaluationDecisionNotEligibleError";
   }
 }
 
@@ -175,11 +206,44 @@ function resultFromEvent(
   return parsed.data;
 }
 
+function decisionFromEvent(
+  event: TrackerEvent,
+  trackerKey: string,
+  command: CreateEvaluationDecisionCommand,
+) {
+  const parsed = evaluationDecisionDocumentSchema.safeParse(
+    event.payload.decision,
+  );
+  if (
+    event.kind !== "evaluation_decision_recorded" ||
+    event.trackerKey !== trackerKey ||
+    event.idempotencyKey !== command.commandId ||
+    event.occurredAt !== command.occurredAt ||
+    event.occurredTimeZone !== command.occurredTimeZone ||
+    event.occurredUtcOffsetMinutes !== command.occurredUtcOffsetMinutes ||
+    !parsed.success ||
+    parsed.data.id !== command.commandId ||
+    parsed.data.sessionId !== command.sessionId ||
+    JSON.stringify(evaluationDecisionInputSchema.parse(command.decision)) !==
+      JSON.stringify(
+        evaluationDecisionInputSchema.parse({
+          weeklyConfirmations: parsed.data.weeklyConfirmations,
+          branch: parsed.data.branch,
+          ...(parsed.data.note === undefined ? {} : { note: parsed.data.note }),
+        }),
+      )
+  ) {
+    throw new EvaluationCommandConflictError();
+  }
+  return parsed.data;
+}
+
 function pageState(input: {
   context: EvaluationContext;
   currentDate: string;
   session: EvaluationSessionRecord | null;
   result: EvaluationResultDocument | null;
+  decision: EvaluationDecisionDocument | null;
   hasRedSafetySignal: boolean;
 }): EvaluationPageDto {
   if (
@@ -221,14 +285,20 @@ function pageState(input: {
       canOpenReplacement: input.currentDate >= targetDate,
       session: { ...input.session.snapshot, status: "expired" },
       result: input.result,
+      decision: input.decision,
     });
   }
   if (input.session) {
+    const safety = evaluationDecisionSafety(
+      input.session.snapshot,
+      input.hasRedSafetySignal,
+    );
     return evaluationPageDtoSchema.parse({
       ...common,
       state: "opened",
       session: { ...input.session.snapshot, status: "open" },
       result: input.result,
+      decision: input.decision,
       resultSubmission: {
         allowed: input.result === null && !input.hasRedSafetySignal,
         blockedReason:
@@ -237,6 +307,17 @@ function pageState(input: {
             : input.hasRedSafetySignal
               ? "red_safety"
               : null,
+      },
+      decisionSubmission: {
+        allowed: input.result !== null && input.decision === null,
+        blockedReason:
+          input.result === null
+            ? "result_required"
+            : input.decision !== null
+              ? "already_recorded"
+              : null,
+        allowedBranches: safety.allowedBranches,
+        progressBlockedReason: safety.progressBlockedReason,
       },
     });
   }
@@ -271,13 +352,24 @@ export function createEvaluationRuntime({
       await store.expireSession(session.snapshot.id);
       session = { ...session, status: "expired" };
     }
-    const [result, hasRedSafetySignal] = session
+    const [result, decision, hasRedSafetySignal] = session
       ? await Promise.all([
           store.findResultBySessionId(context.tracker.id, session.snapshot.id),
+          store.findDecisionBySessionId(
+            context.tracker.id,
+            session.snapshot.id,
+          ),
           store.hasRedSafetySignal(context.tracker.id, currentDate),
         ])
-      : [null, false];
-    return { context, currentDate, session, result, hasRedSafetySignal };
+      : [null, null, false];
+    return {
+      context,
+      currentDate,
+      session,
+      result,
+      decision,
+      hasRedSafetySignal,
+    };
   }
 
   return {
@@ -369,6 +461,7 @@ export function createEvaluationRuntime({
         ...state,
         session: { snapshot, status: "open" },
         result: null,
+        decision: null,
         hasRedSafetySignal: false,
       });
     },
@@ -449,6 +542,99 @@ export function createEvaluationRuntime({
         return pageState({ ...state, result: canonical });
       }
       return pageState({ ...state, result });
+    },
+
+    async submitDecision(
+      trackerKey: string,
+      command: CreateEvaluationDecisionCommand,
+    ) {
+      const existingEvent = await store.findEventByCommandId(command.commandId);
+      if (existingEvent) {
+        decisionFromEvent(existingEvent, trackerKey, command);
+        return pageState(await current(trackerKey));
+      }
+      const state = await current(trackerKey);
+      if (
+        !state.session ||
+        state.session.status !== "open" ||
+        state.session.snapshot.id !== command.sessionId ||
+        !state.result
+      ) {
+        throw new EvaluationDecisionNotEligibleError();
+      }
+      if (state.decision) return pageState(state);
+      const safety = evaluationDecisionSafety(
+        state.session.snapshot,
+        state.hasRedSafetySignal,
+      );
+      if (!safety.allowedBranches.includes(command.decision.branch)) {
+        throw new EvaluationDecisionNotEligibleError(
+          safety.progressBlockedReason ?? "evaluation_decision_safety_blocked",
+        );
+      }
+      const decidedAt = now();
+      let decision: EvaluationDecisionDocument;
+      try {
+        decision = buildEvaluationDecisionDocument({
+          id: command.commandId,
+          sessionId: command.sessionId,
+          resultId: state.result.id,
+          trackerKey,
+          decidedAt: decidedAt.toISOString(),
+          decidedLocalDate: state.currentDate,
+          basePlanVersionId: state.session.snapshot.basePlanVersion.id,
+          timelineHeadPlanVersionId:
+            state.session.snapshot.timelineHeadPlanVersion.id,
+          snapshotWeeks: state.session.snapshot.weeks,
+          input: command.decision,
+        });
+      } catch {
+        throw new EvaluationDecisionNotEligibleError(
+          "evaluation_weeks_changed",
+        );
+      }
+      const event = trackerEventSchema.parse({
+        schemaVersion,
+        id: command.commandId,
+        trackerKey,
+        kind: "evaluation_decision_recorded",
+        occurredAt: command.occurredAt,
+        recordedAt: decidedAt.toISOString(),
+        occurredTimeZone: command.occurredTimeZone,
+        occurredUtcOffsetMinutes: command.occurredUtcOffsetMinutes,
+        localDate: state.currentDate,
+        idempotencyKey: command.commandId,
+        payload: { decision },
+        provenance: { source: "user" },
+      });
+      try {
+        await store.commitDecisionAtomically({
+          trackerId: state.context.tracker.id,
+          expectedContextRevision: state.context.tracker.aiContextRevision,
+          decision,
+          event,
+          outbox: {
+            aggregateType: "event",
+            aggregateId: event.id,
+            targetPath: eventMirrorPath(event),
+            payload: event,
+          },
+        });
+      } catch (error) {
+        if (postgresErrorCode(error) === "40001") {
+          throw new EvaluationDecisionNotEligibleError(
+            "evaluation_decision_context_changed",
+          );
+        }
+        if (postgresErrorCode(error) !== "23505") throw error;
+        const canonical = await store.findDecisionBySessionId(
+          state.context.tracker.id,
+          command.sessionId,
+        );
+        if (!canonical) throw new EvaluationCommandConflictError();
+        return pageState({ ...state, decision: canonical });
+      }
+      return pageState({ ...state, decision });
     },
   };
 }

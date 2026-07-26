@@ -8,6 +8,7 @@ import { trackerQueryKeys } from "@/client/query-keys";
 import {
   createEvaluationSession,
   fetchEvaluation,
+  submitEvaluationDecision,
   submitEvaluationResult,
 } from "@/client/tracker-api";
 import {
@@ -16,6 +17,8 @@ import {
 } from "@/domain/client-command";
 import type {
   EvaluationPageDto,
+  EvaluationDecisionDocument,
+  EvaluationDecisionInput,
   EvaluationResultAnswers,
   EvaluationResultDocument,
   EvaluationSessionSnapshot,
@@ -69,6 +72,27 @@ const intentLabels = {
   extend: "倾向延长当前阶段",
   professional_review: "倾向人工复评",
   undecided: "暂未决定",
+} as const;
+
+const weeklyStatusLabels = {
+  effective: "计为有效",
+  not_effective: "不计为有效",
+  uncertain: "暂不确定",
+} as const;
+
+const weeklyReasonLabels = {
+  completed_as_intended: "按预期完成",
+  interrupted: "受到中断",
+  safety_response: "出现需要留意的反应",
+  insufficient_evidence: "记录不足",
+  other: "其他原因",
+} as const;
+
+const branchLabels = {
+  maintain: "维持当前能力",
+  progress: "进入专项进阶",
+  extend: "延长当前阶段",
+  professional_review: "联系专业人员复评",
 } as const;
 
 function weekLabel(week: EvaluationSessionSnapshot["weeks"][number]) {
@@ -141,6 +165,222 @@ function ResultSummary({ result }: { result: EvaluationResultDocument }) {
       </p>
       <ResultDetails result={result} />
     </section>
+  );
+}
+
+function DecisionSummary({
+  decision,
+}: {
+  decision: EvaluationDecisionDocument;
+}) {
+  return (
+    <section className="surface-card evaluation-decision-card">
+      <p className="eyebrow">你的决定</p>
+      <h2>已由你完成选择</h2>
+      <p className="evaluation-guidance">
+        这是你根据记录作出的选择，不代表系统判定康复完成，也没有修改未来计划。
+      </p>
+      <p>
+        <strong>{branchLabels[decision.branch]}</strong>
+      </p>
+      <p>
+        {decision.branch === "professional_review"
+          ? "下一步：联系医生或康复专业人员复评。"
+          : "决定已记录；未来训练计划仍需单独制定、查看差异并确认。"}
+      </p>
+    </section>
+  );
+}
+
+function DecisionDetails({ decision }: { decision: EvaluationDecisionInput }) {
+  return (
+    <>
+      <div className="evaluation-week-confirmation-summary">
+        {decision.weeklyConfirmations.map((week) => (
+          <div key={week.weekStart}>
+            <strong>
+              {week.weekStart}–{week.weekEnd}
+            </strong>
+            <span>{weeklyStatusLabels[week.status]}</span>
+            {week.reason ? (
+              <small>{weeklyReasonLabels[week.reason]}</small>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      <p>
+        <strong>下一步：{branchLabels[decision.branch]}</strong>
+      </p>
+      {decision.note ? (
+        <p className="evaluation-result-note">{decision.note}</p>
+      ) : null}
+    </>
+  );
+}
+
+function DecisionConfirmation({
+  decision,
+  saving,
+  error,
+  onEdit,
+  onConfirm,
+}: {
+  decision: EvaluationDecisionInput;
+  saving: boolean;
+  error: string | null;
+  onEdit: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <section className="surface-card evaluation-decision-confirmation">
+      <p className="eyebrow">保存前检查</p>
+      <h2>确认训练周和下一步</h2>
+      <p className="evaluation-guidance">
+        确认后不能修改。这是你的人工选择，不会自动宣布完成或改写计划。
+      </p>
+      <DecisionDetails decision={decision} />
+      {error ? (
+        <p className="inline-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <div className="evaluation-confirmation-actions">
+        <button
+          className="secondary-button"
+          disabled={saving}
+          type="button"
+          onClick={onEdit}
+        >
+          返回修改
+        </button>
+        <button
+          className="primary-button"
+          disabled={saving}
+          type="button"
+          onClick={onConfirm}
+        >
+          {saving ? "正在保存…" : error ? "重试保存" : "确认并保存选择"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function DecisionForm({
+  draft,
+  allowedBranches,
+  progressBlockedReason,
+  onChange,
+  onSubmit,
+}: {
+  draft: EvaluationDecisionInput;
+  allowedBranches: EvaluationDecisionInput["branch"][];
+  progressBlockedReason:
+    "red_safety" | "yellow_evidence" | "missing_green_evidence" | null;
+  onChange: (draft: EvaluationDecisionInput) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <form
+      className="surface-card evaluation-result-form evaluation-decision-form"
+      onSubmit={onSubmit}
+    >
+      <div>
+        <p className="eyebrow">你的选择</p>
+        <h2>确认训练周和下一步</h2>
+        <p className="evaluation-guidance">
+          每周是否有效由你根据冻结证据确认；系统不会代替你作医学判断。
+        </p>
+      </div>
+      <div className="evaluation-week-decision-list">
+        {draft.weeklyConfirmations.map((week, index) => (
+          <fieldset key={week.weekStart}>
+            <legend>
+              {week.weekStart}–{week.weekEnd}
+            </legend>
+            <label>
+              <span>这一周</span>
+              <select
+                value={week.status}
+                onChange={(event) => {
+                  const weeklyConfirmations = [...draft.weeklyConfirmations];
+                  weeklyConfirmations[index] = {
+                    ...week,
+                    status: event.target.value as typeof week.status,
+                  };
+                  onChange({ ...draft, weeklyConfirmations });
+                }}
+              >
+                {Object.entries(weeklyStatusLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>原因（可选）</span>
+              <select
+                value={week.reason ?? ""}
+                onChange={(event) => {
+                  const weeklyConfirmations = [...draft.weeklyConfirmations];
+                  weeklyConfirmations[index] = {
+                    ...week,
+                    reason: event.target.value
+                      ? (event.target.value as NonNullable<typeof week.reason>)
+                      : undefined,
+                  };
+                  onChange({ ...draft, weeklyConfirmations });
+                }}
+              >
+                <option value="">不选择原因</option>
+                {Object.entries(weeklyReasonLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </fieldset>
+        ))}
+      </div>
+      <label>
+        <span>下一步</span>
+        <select
+          value={draft.branch}
+          onChange={(event) =>
+            onChange({
+              ...draft,
+              branch: event.target.value as EvaluationDecisionInput["branch"],
+            })
+          }
+        >
+          {allowedBranches.map((branch) => (
+            <option key={branch} value={branch}>
+              {branchLabels[branch]}
+            </option>
+          ))}
+        </select>
+      </label>
+      {progressBlockedReason ? (
+        <p className="evaluation-guidance">
+          {progressBlockedReason === "red_safety"
+            ? "记录中有红灯信号，当前只能选择联系专业人员复评。"
+            : "记录中有黄灯或缺少完整绿灯证据，当前不能选择专项进阶。"}
+        </p>
+      ) : null}
+      <label>
+        <span>补充说明（可选）</span>
+        <textarea
+          maxLength={2_000}
+          value={draft.note ?? ""}
+          onChange={(event) => onChange({ ...draft, note: event.target.value })}
+        />
+      </label>
+      <button className="primary-button" type="submit">
+        检查你的选择
+      </button>
+    </form>
   );
 }
 
@@ -376,6 +616,9 @@ export function EvaluationClient() {
   const pending = useRef<PendingClientCommand | null>(null);
   const resultPending = useRef<PendingClientCommand | null>(null);
   const resultInFlight = useRef(false);
+  const decisionPending = useRef<PendingClientCommand | null>(null);
+  const decisionInFlight = useRef(false);
+  const decisionSession = useRef<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [resultDraft, setResultDraft] =
@@ -384,6 +627,15 @@ export function EvaluationClient() {
   const [resultError, setResultError] = useState<string | null>(null);
   const [resultConfirmation, setResultConfirmation] =
     useState<EvaluationResultAnswers | null>(null);
+  const [decisionDraft, setDecisionDraft] = useState<EvaluationDecisionInput>({
+    weeklyConfirmations: [],
+    branch: "professional_review",
+    note: "",
+  });
+  const [decisionConfirmation, setDecisionConfirmation] =
+    useState<EvaluationDecisionInput | null>(null);
+  const [decisionSaving, setDecisionSaving] = useState(false);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
 
   useEffect(() => {
     const trackedQuery = queryClient
@@ -396,8 +648,56 @@ export function EvaluationClient() {
         return;
       }
       setResultConfirmation(null);
+      if (
+        data?.state === "opened" &&
+        data.decisionSubmission.allowed &&
+        decisionConfirmation &&
+        data.decisionSubmission.allowedBranches.includes(
+          decisionConfirmation.branch,
+        )
+      ) {
+        return;
+      }
+      setDecisionConfirmation(null);
+      if (
+        data?.state === "opened" &&
+        data.result &&
+        !data.decision &&
+        !data.decisionSubmission.allowedBranches.includes(decisionDraft.branch)
+      ) {
+        const firstAllowed =
+          data.decisionSubmission.allowedBranches[0] ?? "professional_review";
+        setDecisionDraft((current) => ({ ...current, branch: firstAllowed }));
+        decisionPending.current = null;
+      }
     });
-  }, [queryClient, queryKey]);
+  }, [decisionConfirmation, decisionDraft.branch, queryClient, queryKey]);
+
+  useEffect(() => {
+    if (
+      query.data?.state !== "opened" ||
+      !query.data.result ||
+      query.data.decision ||
+      decisionSession.current === query.data.session.id
+    ) {
+      return;
+    }
+    decisionSession.current = query.data.session.id;
+    const firstAllowed =
+      query.data.decisionSubmission.allowedBranches[0] ?? "professional_review";
+    setDecisionDraft({
+      weeklyConfirmations: query.data.session.weeks.map((week) => ({
+        weekStart: week.weekStart,
+        weekEnd: week.weekEnd,
+        status: "uncertain",
+      })),
+      branch: firstAllowed,
+      note: "",
+    });
+    decisionPending.current = null;
+    setDecisionConfirmation(null);
+    setDecisionError(null);
+  }, [query.data]);
 
   const resultSubmissionAllowed =
     query.data?.state === "opened" && query.data.resultSubmission.allowed;
@@ -477,6 +777,70 @@ export function EvaluationClient() {
     } finally {
       resultInFlight.current = false;
       setResultSaving(false);
+    }
+  }
+
+  function prepareDecision(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (
+      query.data?.state !== "opened" ||
+      !query.data.decisionSubmission.allowed ||
+      !query.data.decisionSubmission.allowedBranches.includes(
+        decisionDraft.branch,
+      )
+    )
+      return;
+    const decision: EvaluationDecisionInput = {
+      ...decisionDraft,
+      ...(decisionDraft.note?.trim()
+        ? { note: decisionDraft.note.trim() }
+        : { note: undefined }),
+    };
+    decisionPending.current = createOrReuseClientCommand(
+      decisionPending.current,
+      decision,
+    );
+    setDecisionError(null);
+    setDecisionConfirmation(decision);
+  }
+
+  async function saveDecision() {
+    if (
+      decisionInFlight.current ||
+      !decisionConfirmation ||
+      !decisionPending.current ||
+      query.data?.state !== "opened" ||
+      !query.data.decisionSubmission.allowed ||
+      !query.data.decisionSubmission.allowedBranches.includes(
+        decisionConfirmation.branch,
+      )
+    )
+      return;
+    decisionInFlight.current = true;
+    setDecisionSaving(true);
+    setDecisionError(null);
+    try {
+      const result = await submitEvaluationDecision(trackerKey, {
+        ...decisionPending.current.metadata,
+        sessionId: query.data.session.id,
+        decision: decisionConfirmation,
+      });
+      queryClient.setQueryData(queryKey, result);
+      decisionPending.current = null;
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      setDecisionError(
+        code === "red_safety"
+          ? "当前有红灯记录，只能选择联系专业人员复评。草稿仍会保留。"
+          : code === "yellow_evidence" || code === "missing_green_evidence"
+            ? "当前记录不支持专项进阶，请返回修改选择。"
+            : code === "evaluation_decision_context_changed"
+              ? "近期记录或计划已经变化，请保留当前内容并重新检查。"
+              : "暂时无法保存，当前选择仍会保留，请重试。",
+      );
+    } finally {
+      decisionInFlight.current = false;
+      setDecisionSaving(false);
     }
   }
 
@@ -582,6 +946,45 @@ export function EvaluationClient() {
 
       {data.state === "opened" && data.result ? (
         <ResultSummary result={data.result} />
+      ) : null}
+
+      {data.state === "opened" && data.decision ? (
+        <DecisionSummary decision={data.decision} />
+      ) : null}
+
+      {data.state === "opened" &&
+      data.result &&
+      !data.decision &&
+      data.decisionSubmission.allowed &&
+      decisionConfirmation ? (
+        <DecisionConfirmation
+          decision={decisionConfirmation}
+          saving={decisionSaving}
+          error={decisionError}
+          onEdit={() => {
+            setDecisionConfirmation(null);
+            setDecisionError(null);
+          }}
+          onConfirm={() => void saveDecision()}
+        />
+      ) : null}
+
+      {data.state === "opened" &&
+      data.result &&
+      !data.decision &&
+      data.decisionSubmission.allowed &&
+      !decisionConfirmation &&
+      decisionDraft.weeklyConfirmations.length === data.session.weeks.length ? (
+        <DecisionForm
+          draft={decisionDraft}
+          allowedBranches={data.decisionSubmission.allowedBranches}
+          progressBlockedReason={data.decisionSubmission.progressBlockedReason}
+          onChange={(next) => {
+            setDecisionDraft(next);
+            decisionPending.current = null;
+          }}
+          onSubmit={prepareDecision}
+        />
       ) : null}
 
       {data.state === "opened" &&
