@@ -6,12 +6,17 @@ import { isDeepStrictEqual } from "node:util";
 import type { PlanVersionRollbackCommand } from "@/domain/ai-analysis";
 import { localDateInTimeZone } from "@/domain/planning-time";
 import {
+  type PlanChangeProposal,
   type PlanVersion,
   planVersionSchema,
   schemaVersion,
   trackerEventSchema,
   type TrackerEvent,
 } from "@/domain/schemas";
+import {
+  createPlanChangeProposalAuditOutbox,
+  type AiAuditOutbox,
+} from "@/server/mirror/ai-audit";
 import { eventMirrorPath, planVersionMirrorPath } from "@/server/mirror/path";
 
 export type PlanVersionRollbackSource = {
@@ -19,8 +24,19 @@ export type PlanVersionRollbackSource = {
   trackerKey: string;
   planningTimeZone: string;
   proposalId: string;
+  proposal: PlanChangeProposal;
+  analysisJobId: string;
+  model: string;
+  contextVersion: "1";
+  contextHash: string;
+  contextRevision: number;
+  contextFrom: string;
+  contextThrough: string;
+  timelineHeadPlanVersionId: string;
   decisionId: string;
   decision: "accepted" | "rejected";
+  decisionDecidedAt: Date;
+  decisionEffectiveFrom: string | null;
   targetBasePlan: PlanVersion;
   sourceAppliedPlan: PlanVersion | null;
   timelineHeadPlan: PlanVersion;
@@ -64,6 +80,7 @@ export type PreparedPlanVersionRollback = {
   }>;
   event: TrackerEvent;
   outboxes: PreparedOutbox[];
+  proposalAuditOutbox: AiAuditOutbox;
 };
 
 export type PlanVersionRollbackStore = {
@@ -222,7 +239,11 @@ export async function executePlanVersionRollback(
 
   const source = await store.findSource(input.trackerKey, input.proposalId);
   if (!source) throw new PlanVersionRollbackNotFoundError();
-  if (source.decision !== "accepted" || !source.sourceAppliedPlan) {
+  if (
+    source.decision !== "accepted" ||
+    !source.sourceAppliedPlan ||
+    !source.decisionEffectiveFrom
+  ) {
     throw new PlanVersionRollbackNotApplicableError();
   }
   const existingSource = await store.findRollbackByAppliedPlanVersionId(
@@ -320,6 +341,25 @@ export async function executePlanVersionRollback(
         payload: plan,
       },
     ],
+    proposalAuditOutbox: createPlanChangeProposalAuditOutbox({
+      source,
+      proposal: { ...source.proposal, status: "accepted" },
+      decision: {
+        id: source.decisionId,
+        type: "accepted",
+        decidedAt: source.decisionDecidedAt.toISOString(),
+        appliedPlanVersionId: source.sourceAppliedPlan.id,
+        effectiveFrom: source.decisionEffectiveFrom,
+      },
+      rollback: {
+        id: input.commandId,
+        sourceAppliedPlanVersionId: source.sourceAppliedPlan.id,
+        targetBasePlanVersionId: source.targetBasePlan.id,
+        newPlanVersionId: plan.id,
+        effectiveFrom,
+        decidedAt: now.toISOString(),
+      },
+    }),
   };
 
   try {

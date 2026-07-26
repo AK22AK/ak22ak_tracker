@@ -4,6 +4,11 @@ import { resolve } from "node:path";
 import { z } from "zod";
 
 import {
+  aiAnalysisJobAuditDocumentSchema,
+  planChangeProposalAuditDocumentSchema,
+} from "../src/domain/ai-audit";
+
+import {
   externalRecordSchema,
   planChangeProposalSchema,
   planVersionSchema,
@@ -18,6 +23,9 @@ const schemas = {
   "event.schema.json": trackerEventSchema,
   "external-record.schema.json": externalRecordSchema,
   "plan-change-proposal.schema.json": planChangeProposalSchema,
+  "ai-analysis-job-audit.schema.json": aiAnalysisJobAuditDocumentSchema,
+  "plan-change-proposal-audit.schema.json":
+    planChangeProposalAuditDocumentSchema,
   "tracker-safety-policy.schema.json": trackerSafetyPolicyDocumentSchema,
   "execution-alternative-bundle.schema.json": executionAlternativeBundleSchema,
   "resumption-assessment.schema.json": resumptionAssessmentDtoSchema,

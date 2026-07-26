@@ -17,6 +17,7 @@ import {
   taskInstances,
   trackers,
 } from "@/server/db/schema";
+import { upsertAiAuditOutbox } from "@/server/mirror/ai-audit";
 
 import type {
   PlanChangeDecisionRecord,
@@ -41,6 +42,11 @@ function proposalStatus(value: string) {
 function contextVersion(value: string | null): "1" {
   if (value === "1") return value;
   throw new Error("plan_change_context_version_invalid");
+}
+
+function requiredAuditText(value: string | null, field: string) {
+  if (value) return value;
+  throw new Error(`plan_change_audit_${field}_missing`);
 }
 
 function safetyLevel(value: string) {
@@ -148,12 +154,31 @@ export function createNeonPlanChangeDecisionStore(
         trackerKey: row.trackerKey,
         planningTimeZone: row.planningTimeZone,
         proposal: { ...proposal, status: parsedStatus },
+        analysisJobId: requiredAuditText(
+          row.proposal.analysisJobId,
+          "analysis_job_id",
+        ),
+        model: requiredAuditText(row.proposal.model, "model"),
         status: parsedStatus,
         contextVersion: contextVersion(row.proposal.contextVersion),
-        contextHash: row.proposal.contextHash ?? "",
+        contextHash: requiredAuditText(
+          row.proposal.contextHash,
+          "context_hash",
+        ),
         contextRevision: row.proposal.contextRevision,
+        contextFrom: requiredAuditText(
+          row.proposal.contextFrom,
+          "context_from",
+        ),
+        contextThrough: requiredAuditText(
+          row.proposal.contextThrough,
+          "context_through",
+        ),
         basePlanVersionId: row.proposal.basePlanVersionId,
-        timelineHeadPlanVersionId: row.proposal.timelineHeadPlanVersionId ?? "",
+        timelineHeadPlanVersionId: requiredAuditText(
+          row.proposal.timelineHeadPlanVersionId,
+          "timeline_head_plan_version_id",
+        ),
         safetyLevel: safetyLevel(row.proposal.safetyLevel),
       };
     },
@@ -164,18 +189,40 @@ export function createNeonPlanChangeDecisionStore(
       return findDecision(eq(planChangeDecisions.proposalId, proposalId));
     },
     async expireProposal(input) {
-      const rows = await database
-        .update(planChangeProposals)
-        .set({ status: "expired" })
-        .where(
-          and(
-            eq(planChangeProposals.id, input.proposalId),
-            eq(planChangeProposals.trackerId, input.trackerId),
-            eq(planChangeProposals.status, "proposed"),
-          ),
+      const result = await database.execute<{ id: string }>(sql`
+        with expired as (
+          update plan_change_proposals
+          set status = 'expired'
+          where id = ${input.proposalId}::uuid
+            and tracker_id = ${input.trackerId}::uuid
+            and status = 'proposed'
+          returning id
+        ), mirrored as (
+          insert into github_sync_outbox (
+            aggregate_type, aggregate_id, target_path, payload, status,
+            attempts, next_attempt_at, lease_owner, lease_expires_at,
+            last_error_code, created_at, updated_at
+          )
+          select
+            ${input.auditOutbox.aggregateType},
+            ${input.auditOutbox.aggregateId}::uuid,
+            ${input.auditOutbox.targetPath},
+            ${JSON.stringify(input.auditOutbox.payload)}::jsonb,
+            'pending', 0, ${input.updatedAt}, null, null, null,
+            ${input.updatedAt}, ${input.updatedAt}
+          from expired
+          on conflict (aggregate_type, aggregate_id) do update set
+            target_path = excluded.target_path,
+            payload = excluded.payload,
+            status = 'pending', attempts = 0,
+            next_attempt_at = excluded.next_attempt_at,
+            lease_owner = null, lease_expires_at = null,
+            last_error_code = null, updated_at = excluded.updated_at
+          returning aggregate_id
         )
-        .returning({ id: planChangeProposals.id });
-      return rows.length === 1;
+        select id from expired
+      `);
+      return result.rows.length === 1;
     },
     async commitAtomically(command) {
       const guard = database.execute(sql`
@@ -225,12 +272,18 @@ export function createNeonPlanChangeDecisionStore(
       const outboxInsert = database
         .insert(githubSyncOutbox)
         .values(command.outboxes);
+      const proposalAuditUpsert = upsertAiAuditOutbox(
+        database,
+        command.proposalAuditOutbox,
+        command.decision.decidedAt,
+      );
 
       if (command.type === "reject" || !command.plan) {
         await database.batch([
           guard,
           decisionInsert,
           proposalUpdate,
+          proposalAuditUpsert,
           eventInsert,
           outboxInsert,
         ]);
@@ -250,6 +303,7 @@ export function createNeonPlanChangeDecisionStore(
         planInsert,
         decisionInsert,
         proposalUpdate,
+        proposalAuditUpsert,
         eventInsert,
         outboxInsert,
       ] as const;
@@ -272,6 +326,7 @@ export function createNeonPlanChangeDecisionStore(
         common[3],
         common[4],
         common[5],
+        common[6],
       ]);
     },
   };

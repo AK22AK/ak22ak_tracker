@@ -66,8 +66,29 @@ function source(): PlanVersionRollbackSource {
     trackerKey: "knee-rehab",
     planningTimeZone: "Asia/Shanghai",
     proposalId,
+    proposal: {
+      schemaVersion,
+      id: proposalId,
+      trackerKey: "knee-rehab",
+      basePlanVersionId: basePlanId,
+      createdAt: "2026-07-24T07:00:00.000Z",
+      safetyLevel: "green",
+      summary: "Anonymous accepted adjustment",
+      operations: [],
+      status: "accepted",
+    },
+    analysisJobId: proposalId,
+    model: "anonymous-model",
+    contextVersion: "1",
+    contextHash: "a".repeat(64),
+    contextRevision: 7,
+    contextFrom: "2026-07-11",
+    contextThrough: "2026-07-24",
+    timelineHeadPlanVersionId: basePlanId,
     decisionId,
     decision: "accepted",
+    decisionDecidedAt: new Date("2026-07-24T07:30:00.000Z"),
+    decisionEffectiveFrom: "2026-07-25",
     targetBasePlan: basePlan,
     sourceAppliedPlan: appliedPlan,
     timelineHeadPlan: appliedPlan,
@@ -168,6 +189,23 @@ describe("P4b-2b immutable plan rollback", () => {
     expect(
       memory.prepared[0]?.outboxes.map((item) => item.aggregateType),
     ).toEqual(["event", "plan_version"]);
+    expect(memory.prepared[0]?.proposalAuditOutbox).toMatchObject({
+      aggregateType: "plan_change_proposal",
+      aggregateId: proposalId,
+      payload: {
+        status: "accepted",
+        decision: {
+          id: decisionId,
+          type: "accepted",
+          appliedPlanVersionId: appliedPlanId,
+        },
+        rollback: {
+          id: commandId,
+          sourceAppliedPlanVersionId: appliedPlanId,
+          newPlanVersionId: stableRollbackPlanVersionId(commandId),
+        },
+      },
+    });
   });
 
   it("replays the same command and gives a canonical conflict to another command", async () => {

@@ -60,6 +60,7 @@ async function expireProposal(
 ) {
   if (!job.proposal || job.proposal.status === "expired") return job;
   await store.expireProposal({
+    job,
     proposalId: job.proposal.id,
     trackerId: job.trackerId,
   });
@@ -327,15 +328,25 @@ export function createAiAnalysisRuntime({
       job.basePlanVersionId !== context.basePlanVersionId ||
       job.timelineHeadPlanVersionId !== context.timelineHeadPlanVersionId;
     const claimed = await store.claimJob({
+      job,
       id: job.id,
       trackerId: job.trackerId,
       startedAt: requestedAt,
       staleBefore: new Date(requestedAt.valueOf() - runningLeaseMs),
     });
     if (!claimed) return load(input.trackerKey, job.id);
+    const runningJob: AiAnalysisJobRecord = {
+      ...job,
+      status: "running",
+      attemptCount: job.attemptCount + 1,
+      startedAt: requestedAt,
+      completedAt: null,
+      lastErrorCode: null,
+    };
 
     if (contextChanged) {
       await store.failJob({
+        job: runningJob,
         id: job.id,
         trackerId: job.trackerId,
         errorCode: "context_changed",
@@ -346,6 +357,7 @@ export function createAiAnalysisRuntime({
 
     if (configuration.status !== "configured") {
       await store.failJob({
+        job: runningJob,
         id: job.id,
         trackerId: job.trackerId,
         errorCode: configuration.status,
@@ -370,7 +382,7 @@ export function createAiAnalysisRuntime({
         status: "proposed",
       });
       await store.completeJob({
-        job,
+        job: runningJob,
         proposal,
         model: result.model,
         responseHash: result.responseHash,
@@ -382,6 +394,7 @@ export function createAiAnalysisRuntime({
           ? error.code
           : ("provider_unavailable" as const);
       await store.failJob({
+        job: runningJob,
         id: job.id,
         trackerId: job.trackerId,
         errorCode,

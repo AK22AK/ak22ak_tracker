@@ -5,6 +5,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import type { PlanChangeDecisionCommand } from "@/domain/ai-analysis";
 import type { PlanVersionRollbackCommand } from "@/domain/ai-analysis";
+import { planChangeProposalAuditDocumentSchema } from "@/domain/ai-audit";
 import { schemaVersion } from "@/domain/schemas";
 import { createNeonPlanChangeDecisionStore } from "@/server/commands/plan-change-decision";
 import { executePlanChangeDecision } from "@/server/commands/plan-change-decision-core";
@@ -269,6 +270,25 @@ integration("P4b-2a plan change decision Neon transaction", () => {
       },
     ]);
     expect(historical?.status).toBe("completed");
+    const [acceptedAudit] = await database
+      .select({ payload: githubSyncOutbox.payload })
+      .from(githubSyncOutbox)
+      .where(
+        and(
+          eq(githubSyncOutbox.aggregateType, "plan_change_proposal"),
+          eq(githubSyncOutbox.aggregateId, fixture.proposalId),
+        ),
+      );
+    expect(
+      planChangeProposalAuditDocumentSchema.parse(acceptedAudit?.payload),
+    ).toMatchObject({
+      status: "accepted",
+      decision: {
+        type: "accepted",
+        appliedPlanVersionId: result.appliedPlanVersion!.id,
+      },
+      rollback: null,
+    });
   }, 45_000);
 
   it("rolls back an accepted head by creating one immutable future version", async () => {
@@ -320,6 +340,21 @@ integration("P4b-2a plan change decision Neon transaction", () => {
       { taskDefinitionId: "anonymous-future", scheduledOn: "2026-07-26" },
     ]);
     expect(historical?.status).toBe("completed");
+    const [rolledBackAudit] = await database
+      .select({ payload: githubSyncOutbox.payload })
+      .from(githubSyncOutbox)
+      .where(
+        and(
+          eq(githubSyncOutbox.aggregateType, "plan_change_proposal"),
+          eq(githubSyncOutbox.aggregateId, fixture.proposalId),
+        ),
+      );
+    expect(
+      planChangeProposalAuditDocumentSchema.parse(rolledBackAudit?.payload),
+    ).toMatchObject({
+      status: "accepted",
+      rollback: { newPlanVersionId: result.newPlanVersion!.id },
+    });
   }, 45_000);
 
   it("allows only one concurrent rollback command for the applied version", async () => {
@@ -394,6 +429,18 @@ integration("P4b-2a plan change decision Neon transaction", () => {
     expect(rollbackCount.value).toBe(0);
     expect(versionCount.value).toBe(2);
     expect(eventCount.value).toBe(0);
+    const [auditAfterFailure] = await database
+      .select({ payload: githubSyncOutbox.payload })
+      .from(githubSyncOutbox)
+      .where(
+        and(
+          eq(githubSyncOutbox.aggregateType, "plan_change_proposal"),
+          eq(githubSyncOutbox.aggregateId, fixture.proposalId),
+        ),
+      );
+    expect(
+      planChangeProposalAuditDocumentSchema.parse(auditAfterFailure?.payload),
+    ).toMatchObject({ status: "accepted", rollback: null });
   }, 45_000);
 
   it("replays the same command and lets only one concurrent decision win", async () => {
@@ -513,6 +560,18 @@ integration("P4b-2a plan change decision Neon transaction", () => {
     expect(versionCount?.value).toBe(1);
     expect(proposal?.status).toBe("proposed");
     expect(eventCount?.value).toBe(0);
+    const [auditAfterFailure] = await database
+      .select({ payload: githubSyncOutbox.payload })
+      .from(githubSyncOutbox)
+      .where(
+        and(
+          eq(githubSyncOutbox.aggregateType, "plan_change_proposal"),
+          eq(githubSyncOutbox.aggregateId, fixture.proposalId),
+        ),
+      );
+    expect(
+      planChangeProposalAuditDocumentSchema.parse(auditAfterFailure?.payload),
+    ).toMatchObject({ status: "proposed", decision: null });
   }, 45_000);
 
   it("rejects atomically without creating a plan version", async () => {

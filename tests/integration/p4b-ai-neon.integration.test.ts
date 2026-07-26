@@ -1,13 +1,20 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
-import { count, eq } from "drizzle-orm";
+import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { schemaVersion } from "@/domain/schemas";
+import {
+  aiAnalysisJobAuditDocumentSchema,
+  planChangeProposalAuditDocumentSchema,
+} from "@/domain/ai-audit";
 import { getDatabase } from "@/server/db/client";
 import {
   aiAnalysisJobs,
   events,
+  githubSyncOutbox,
   planChangeProposals,
   planVersions,
   taskInstances,
@@ -27,6 +34,7 @@ integration("P4b-1 AI analysis Neon persistence", () => {
   const taskInstanceId = randomUUID();
   const feedbackId = randomUUID();
   const commandId = randomUUID();
+  const failedCommandId = randomUUID();
 
   beforeAll(async () => {
     process.env.DATABASE_URL = testDatabaseUrl;
@@ -82,9 +90,9 @@ integration("P4b-1 AI analysis Neon persistence", () => {
         exercises: [],
         durationMinutes: 30,
         distanceKm: null,
-        summary: "private summary excluded",
+        summary: "excluded anonymous training summary",
       },
-      subjectiveNote: "private note excluded",
+      subjectiveNote: "excluded anonymous subjective note",
     });
     const feedbackDocument = {
       schemaVersion,
@@ -107,7 +115,7 @@ integration("P4b-1 AI analysis Neon persistence", () => {
         weightBearingIssue: false,
         localizedBonePain: false,
         nightOrRestPain: false,
-        note: "private note excluded",
+        note: "excluded anonymous feedback note",
         safetyLevel: "green",
       },
       provenance: { source: "user" as const },
@@ -126,6 +134,11 @@ integration("P4b-1 AI analysis Neon persistence", () => {
 
   afterAll(async () => {
     if (!testDatabaseUrl) return;
+    await getDatabase()
+      .delete(githubSyncOutbox)
+      .where(
+        inArray(githubSyncOutbox.aggregateId, [commandId, failedCommandId]),
+      );
     await getDatabase().delete(trackers).where(eq(trackers.id, trackerId));
   });
 
@@ -133,8 +146,15 @@ integration("P4b-1 AI analysis Neon persistence", () => {
     const database = getDatabase();
     const proposeAdjustment = vi.fn(async (context) => {
       expect(context.currentPlan).not.toHaveProperty("source");
-      expect(JSON.stringify(context)).not.toContain("private note excluded");
-      expect(JSON.stringify(context)).not.toContain("private summary excluded");
+      expect(JSON.stringify(context)).not.toContain(
+        "excluded anonymous feedback note",
+      );
+      expect(JSON.stringify(context)).not.toContain(
+        "excluded anonymous training summary",
+      );
+      expect(JSON.stringify(context)).not.toContain(
+        "excluded anonymous subjective note",
+      );
       expect(context.confirmedTraining).toEqual([
         expect.objectContaining({
           durationMinutes: 30,
@@ -181,6 +201,94 @@ integration("P4b-1 AI analysis Neon persistence", () => {
     expect(jobCount?.value).toBe(1);
     expect(proposalCount?.value).toBe(1);
     expect(proposeAdjustment).toHaveBeenCalledTimes(1);
+    const auditRows = await database
+      .select({
+        aggregateType: githubSyncOutbox.aggregateType,
+        targetPath: githubSyncOutbox.targetPath,
+        payload: githubSyncOutbox.payload,
+      })
+      .from(githubSyncOutbox)
+      .where(eq(githubSyncOutbox.aggregateId, commandId));
+    expect(auditRows).toHaveLength(2);
+    const jobAudit = auditRows.find(
+      (row) => row.aggregateType === "ai_analysis_job",
+    );
+    const proposalAudit = auditRows.find(
+      (row) => row.aggregateType === "plan_change_proposal",
+    );
+    expect(
+      aiAnalysisJobAuditDocumentSchema.parse(jobAudit?.payload),
+    ).toMatchObject({
+      status: "succeeded",
+      proposalId: commandId,
+      attemptCount: 1,
+      startedAt: "2026-07-24T08:00:00.000Z",
+    });
+    expect(
+      planChangeProposalAuditDocumentSchema.parse(proposalAudit?.payload),
+    ).toMatchObject({ status: "proposed", decision: null, rollback: null });
+    expect(jobAudit?.targetPath).toBe(
+      `trackers/${trackerKey}/ai/analysis-jobs/${commandId}.json`,
+    );
+    expect(proposalAudit?.targetPath).toBe(
+      `trackers/${trackerKey}/ai/proposals/${commandId}.json`,
+    );
+    expect(JSON.stringify(auditRows)).not.toContain(
+      "excluded anonymous feedback note",
+    );
+    expect(JSON.stringify(auditRows)).not.toContain(
+      "excluded anonymous training summary",
+    );
+    expect(JSON.stringify(auditRows)).not.toContain(
+      "excluded anonymous subjective note",
+    );
+
+    const failingRuntime = createAiAnalysisRuntime({
+      store,
+      prepareContext: (key, now) =>
+        prepareAiAnalysisContext({ trackerKey: key, now, database }),
+      readConfiguration: () => ({
+        status: "configured",
+        value: {
+          apiKey: "anonymous",
+          endpoint: "https://api.example.invalid/chat/completions",
+          model: "anonymous-model",
+          timeoutMs: 1_000,
+          maxTokens: 1_024,
+        },
+      }),
+      createAdvisor: () => ({
+        proposeAdjustment: async () => {
+          throw new Error("anonymous provider failure");
+        },
+      }),
+      now: () => new Date("2026-07-24T08:05:00.000Z"),
+    });
+    const failed = await failingRuntime.request({
+      trackerKey,
+      commandId: failedCommandId,
+    });
+    expect(failed.job).toMatchObject({
+      status: "failed",
+      errorCode: "provider_unavailable",
+    });
+    const [failedAudit] = await database
+      .select({ payload: githubSyncOutbox.payload })
+      .from(githubSyncOutbox)
+      .where(
+        and(
+          eq(githubSyncOutbox.aggregateType, "ai_analysis_job"),
+          eq(githubSyncOutbox.aggregateId, failedCommandId),
+        ),
+      );
+    expect(
+      aiAnalysisJobAuditDocumentSchema.parse(failedAudit?.payload),
+    ).toMatchObject({
+      status: "failed",
+      errorCode: "provider_unavailable",
+      attemptCount: 1,
+      proposalId: null,
+    });
 
     const redFeedbackId = randomUUID();
     await database.insert(events).values({
@@ -226,11 +334,80 @@ integration("P4b-1 AI analysis Neon persistence", () => {
       .where(eq(planChangeProposals.analysisJobId, commandId));
     expect(expired.job?.proposal?.status).toBe("expired");
     expect(savedProposal?.status).toBe("expired");
+    const [expiredAudit] = await database
+      .select({ payload: githubSyncOutbox.payload })
+      .from(githubSyncOutbox)
+      .where(
+        and(
+          eq(githubSyncOutbox.aggregateType, "plan_change_proposal"),
+          eq(githubSyncOutbox.aggregateId, commandId),
+        ),
+      );
+    expect(
+      planChangeProposalAuditDocumentSchema.parse(expiredAudit?.payload),
+    ).toMatchObject({ status: "expired", decision: null, rollback: null });
+    const currentJob = await store.findJob(trackerKey, commandId);
+    expect(currentJob).not.toBeNull();
     expect(
       await store.expireProposal({
+        job: currentJob!,
         proposalId: commandId,
         trackerId,
       }),
     ).toBe(false);
+
+    await database
+      .delete(githubSyncOutbox)
+      .where(
+        inArray(githubSyncOutbox.aggregateId, [commandId, failedCommandId]),
+      );
+    const backfillStatements = readFileSync(
+      resolve("drizzle/0015_ai_audit_mirror_backfill.sql"),
+      "utf8",
+    )
+      .split("--> statement-breakpoint")
+      .map((statement) => statement.trim())
+      .filter(Boolean);
+    expect(backfillStatements).toHaveLength(2);
+    for (const statement of backfillStatements) {
+      await database.execute(sql.raw(statement));
+    }
+    const backfilled = await database
+      .select({
+        aggregateType: githubSyncOutbox.aggregateType,
+        payload: githubSyncOutbox.payload,
+      })
+      .from(githubSyncOutbox)
+      .where(
+        inArray(githubSyncOutbox.aggregateId, [commandId, failedCommandId]),
+      );
+    expect(backfilled).toHaveLength(3);
+    expect(
+      aiAnalysisJobAuditDocumentSchema.parse(
+        backfilled.find(
+          (row) =>
+            row.aggregateType === "ai_analysis_job" &&
+            row.payload.id === commandId,
+        )?.payload,
+      ),
+    ).toMatchObject({ status: "succeeded", proposalId: commandId });
+    expect(
+      aiAnalysisJobAuditDocumentSchema.parse(
+        backfilled.find(
+          (row) =>
+            row.aggregateType === "ai_analysis_job" &&
+            row.payload.id === failedCommandId,
+        )?.payload,
+      ),
+    ).toMatchObject({
+      status: "failed",
+      errorCode: "provider_unavailable",
+    });
+    expect(
+      planChangeProposalAuditDocumentSchema.parse(
+        backfilled.find((row) => row.aggregateType === "plan_change_proposal")
+          ?.payload,
+      ),
+    ).toMatchObject({ status: "expired", decision: null, rollback: null });
   }, 45_000);
 });

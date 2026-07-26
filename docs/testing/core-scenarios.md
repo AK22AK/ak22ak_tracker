@@ -169,6 +169,12 @@ P4b-2b 覆盖对已接受 AI 更新的撤销：只有源 applied plan 仍为时�
 都必须通过。分析任务和 Proposal 的独立私仓审计镜像仍留 P4b-2c，因此本切片不代表
 P4 全部结束。
 
+P4b-2c 覆盖分析任务与结构化 Proposal 的独立私仓审计镜像：pending/running/failed/
+succeeded 任务状态和 proposed/accepted/rejected/expired/rollback 建议关系都更新稳定
+路径；状态变更与 outbox 全成或全败，同命令与并发更新最终只留下当前状态。镜像契约
+必须拒绝 prompt、模型原始响应、完整上下文、反馈或训练自由文本、外部 raw 和凭证；
+GitHub 相同内容不得产生无意义提交。镜像消费者失败不影响核心事实。
+
 ### S09：Garmin 同步与任务关联
 
 **Given** 计划开始日后存在活动和基础睡眠记录。

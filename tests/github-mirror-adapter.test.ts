@@ -55,6 +55,8 @@ describe("GitHub Contents mirror adapter", () => {
   });
 
   it("skips an identical file without creating a commit", async () => {
+    const auditPath =
+      "trackers/example-tracker/ai/proposals/019c0000-0000-7000-8000-000000000002.json";
     const content = Buffer.from(stableJsonDocument(payload)).toString("base64");
     const fetchImpl = vi
       .fn<typeof fetch>()
@@ -63,7 +65,7 @@ describe("GitHub Contents mirror adapter", () => {
       );
     const mirror = createGitHubContentsMirror(config, { fetchImpl });
 
-    await expect(mirror.putJson(targetPath, payload)).resolves.toEqual({
+    await expect(mirror.putJson(auditPath, payload)).resolves.toEqual({
       outcome: "unchanged",
       sha: "same",
     });

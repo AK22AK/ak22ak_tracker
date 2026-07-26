@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 
 import {
   aiAnalysisErrorCodeSchema,
@@ -15,11 +15,16 @@ import { getDatabase } from "@/server/db/client";
 import {
   planChangeDecisions,
   aiAnalysisJobs,
+  githubSyncOutbox,
   planChangeProposals,
   planVersionRollbacks,
   planVersions,
   trackers,
 } from "@/server/db/schema";
+import {
+  createAiAnalysisJobAuditOutbox,
+  createPlanChangeProposalAuditOutbox,
+} from "@/server/mirror/ai-audit";
 
 import type { PreparedAiAnalysisContext } from "./context";
 import type { PlanAdjustmentSafetyLevel } from "./contracts";
@@ -34,6 +39,7 @@ export type AiAnalysisJobRecord = {
   basePlanVersionId: string;
   timelineHeadPlanVersionId: string;
   status: "pending" | "running" | "succeeded" | "failed";
+  provider: string;
   model: string;
   attemptCount: number;
   contextVersion: "1";
@@ -80,12 +86,14 @@ export type AiAnalysisStore = {
   findJob(trackerKey: string, id: string): Promise<AiAnalysisJobRecord | null>;
   findLatestJob(trackerKey: string): Promise<AiAnalysisJobRecord | null>;
   claimJob(input: {
+    job: AiAnalysisJobRecord;
     id: string;
     trackerId: string;
     startedAt: Date;
     staleBefore: Date;
   }): Promise<boolean>;
   failJob(input: {
+    job: AiAnalysisJobRecord;
     id: string;
     trackerId: string;
     errorCode: ReturnType<typeof aiAnalysisErrorCodeSchema.parse>;
@@ -99,6 +107,7 @@ export type AiAnalysisStore = {
     completedAt: Date;
   }): Promise<void>;
   expireProposal(input: {
+    job: AiAnalysisJobRecord;
     proposalId: string;
     trackerId: string;
   }): Promise<boolean>;
@@ -136,6 +145,7 @@ function rowToJob(row: {
     basePlanVersionId: row.job.basePlanVersionId,
     timelineHeadPlanVersionId: row.job.timelineHeadPlanVersionId,
     status: aiAnalysisJobStatusSchema.parse(row.job.status),
+    provider: row.job.provider,
     model: row.job.model,
     attemptCount: row.job.attemptCount,
     contextVersion:
@@ -277,25 +287,68 @@ export function createNeonAiAnalysisStore(
 
   return {
     async createJob(input) {
-      await database
-        .insert(aiAnalysisJobs)
-        .values({
-          id: input.id,
-          trackerId: input.trackerId,
-          basePlanVersionId: input.basePlanVersionId,
-          timelineHeadPlanVersionId: input.timelineHeadPlanVersionId,
-          status: "pending",
-          provider: input.provider,
-          model: input.model,
-          contextVersion: input.contextVersion,
-          contextHash: input.contextHash,
-          contextRevision: input.contextRevision,
-          contextFrom: input.contextFrom,
-          contextThrough: input.contextThrough,
-          safetyLevel: input.safetyLevel,
-          requestedAt: input.requestedAt,
-        })
-        .onConflictDoNothing({ target: aiAnalysisJobs.id });
+      const pendingJob: AiAnalysisJobRecord = {
+        id: input.id,
+        trackerId: input.trackerId,
+        trackerKey: input.trackerKey,
+        planningTimeZone: input.modelContext.planningTimeZone,
+        basePlanVersionId: input.basePlanVersionId,
+        timelineHeadPlanVersionId: input.timelineHeadPlanVersionId,
+        status: "pending",
+        provider: input.provider,
+        model: input.model,
+        attemptCount: 0,
+        contextVersion: input.contextVersion,
+        contextHash: input.contextHash,
+        contextRevision: input.contextRevision,
+        contextFrom: input.contextFrom,
+        contextThrough: input.contextThrough,
+        safetyLevel: input.safetyLevel,
+        responseHash: null,
+        lastErrorCode: null,
+        requestedAt: input.requestedAt,
+        startedAt: null,
+        completedAt: null,
+        proposal: null,
+        proposalDecision: null,
+        proposalRollback: null,
+      };
+      const audit = createAiAnalysisJobAuditOutbox(pendingJob);
+      await database.batch([
+        database
+          .insert(aiAnalysisJobs)
+          .values({
+            id: input.id,
+            trackerId: input.trackerId,
+            basePlanVersionId: input.basePlanVersionId,
+            timelineHeadPlanVersionId: input.timelineHeadPlanVersionId,
+            status: "pending",
+            provider: input.provider,
+            model: input.model,
+            contextVersion: input.contextVersion,
+            contextHash: input.contextHash,
+            contextRevision: input.contextRevision,
+            contextFrom: input.contextFrom,
+            contextThrough: input.contextThrough,
+            safetyLevel: input.safetyLevel,
+            requestedAt: input.requestedAt,
+          })
+          .onConflictDoNothing({ target: aiAnalysisJobs.id }),
+        database
+          .insert(githubSyncOutbox)
+          .values({
+            ...audit,
+            nextAttemptAt: input.requestedAt,
+            createdAt: input.requestedAt,
+            updatedAt: input.requestedAt,
+          })
+          .onConflictDoNothing({
+            target: [
+              githubSyncOutbox.aggregateType,
+              githubSyncOutbox.aggregateId,
+            ],
+          }),
+      ]);
       const job = await findBy(input.trackerKey, input.id);
       if (!job || job.trackerId !== input.trackerId) {
         throw new Error("ai_analysis_job_conflict");
@@ -305,103 +358,245 @@ export function createNeonAiAnalysisStore(
     findJob: (trackerKey, id) => findBy(trackerKey, id),
     findLatestJob: (trackerKey) => findBy(trackerKey),
     async claimJob(input) {
-      const rows = await database
-        .update(aiAnalysisJobs)
-        .set({
-          status: "running",
-          startedAt: input.startedAt,
-          completedAt: null,
-          lastErrorCode: null,
-          attemptCount: sql`${aiAnalysisJobs.attemptCount} + 1`,
-          updatedAt: input.startedAt,
-        })
-        .where(
-          and(
-            eq(aiAnalysisJobs.id, input.id),
-            eq(aiAnalysisJobs.trackerId, input.trackerId),
-            or(
-              inArray(aiAnalysisJobs.status, ["pending", "failed"]),
-              and(
-                eq(aiAnalysisJobs.status, "running"),
-                lt(aiAnalysisJobs.startedAt, input.staleBefore),
-              ),
-            ),
-          ),
+      const audit = createAiAnalysisJobAuditOutbox(input.job, {
+        status: "running",
+        attemptCount: input.job.attemptCount + 1,
+        startedAt: input.startedAt,
+        completedAt: null,
+        lastErrorCode: null,
+      });
+      const result = await database.execute<{ id: string }>(sql`
+        with claimed as (
+          update ai_analysis_jobs
+          set status = 'running',
+              started_at = ${input.startedAt},
+              completed_at = null,
+              last_error_code = null,
+              attempt_count = attempt_count + 1,
+              updated_at = ${input.startedAt}
+          where id = ${input.id}::uuid
+            and tracker_id = ${input.trackerId}::uuid
+            and (
+              status in ('pending', 'failed')
+              or (status = 'running' and started_at < ${input.staleBefore})
+            )
+          returning id
+        ), mirrored as (
+          insert into github_sync_outbox (
+            aggregate_type, aggregate_id, target_path, payload, status,
+            attempts, next_attempt_at, lease_owner, lease_expires_at,
+            last_error_code, created_at, updated_at
+          )
+          select
+            ${audit.aggregateType}, ${audit.aggregateId}::uuid,
+            ${audit.targetPath}, ${JSON.stringify(audit.payload)}::jsonb,
+            'pending', 0, ${input.startedAt}, null, null, null,
+            ${input.startedAt}, ${input.startedAt}
+          from claimed
+          on conflict (aggregate_type, aggregate_id) do update set
+            target_path = excluded.target_path,
+            payload = excluded.payload,
+            status = 'pending', attempts = 0,
+            next_attempt_at = excluded.next_attempt_at,
+            lease_owner = null, lease_expires_at = null,
+            last_error_code = null, updated_at = excluded.updated_at
+          returning aggregate_id
         )
-        .returning({ id: aiAnalysisJobs.id });
-      return rows.length === 1;
+        select id from claimed
+      `);
+      return result.rows.length === 1;
     },
     async failJob(input) {
-      await database
-        .update(aiAnalysisJobs)
-        .set({
-          status: "failed",
-          lastErrorCode: input.errorCode,
-          completedAt: input.completedAt,
-          updatedAt: input.completedAt,
-        })
-        .where(
-          and(
-            eq(aiAnalysisJobs.id, input.id),
-            eq(aiAnalysisJobs.trackerId, input.trackerId),
-            eq(aiAnalysisJobs.status, "running"),
-          ),
-        );
+      const audit = createAiAnalysisJobAuditOutbox(input.job, {
+        status: "failed",
+        lastErrorCode: input.errorCode,
+        completedAt: input.completedAt,
+      });
+      await database.execute(sql`
+        with failed as (
+          update ai_analysis_jobs
+          set status = 'failed',
+              last_error_code = ${input.errorCode},
+              completed_at = ${input.completedAt},
+              updated_at = ${input.completedAt}
+          where id = ${input.id}::uuid
+            and tracker_id = ${input.trackerId}::uuid
+            and status = 'running'
+          returning id
+        )
+        insert into github_sync_outbox (
+          aggregate_type, aggregate_id, target_path, payload, status,
+          attempts, next_attempt_at, lease_owner, lease_expires_at,
+          last_error_code, created_at, updated_at
+        )
+        select
+          ${audit.aggregateType}, ${audit.aggregateId}::uuid,
+          ${audit.targetPath}, ${JSON.stringify(audit.payload)}::jsonb,
+          'pending', 0, ${input.completedAt}, null, null, null,
+          ${input.completedAt}, ${input.completedAt}
+        from failed
+        on conflict (aggregate_type, aggregate_id) do update set
+          target_path = excluded.target_path,
+          payload = excluded.payload,
+          status = 'pending', attempts = 0,
+          next_attempt_at = excluded.next_attempt_at,
+          lease_owner = null, lease_expires_at = null,
+          last_error_code = null, updated_at = excluded.updated_at
+      `);
     },
     async completeJob(input) {
-      await database.batch([
-        database
-          .insert(planChangeProposals)
-          .values({
-            id: input.proposal.id,
-            trackerId: input.job.trackerId,
-            basePlanVersionId: input.job.basePlanVersionId,
-            analysisJobId: input.job.id,
-            timelineHeadPlanVersionId: input.job.timelineHeadPlanVersionId,
-            status: input.proposal.status,
-            safetyLevel: input.proposal.safetyLevel,
-            model: input.model,
-            contextVersion: input.job.contextVersion,
-            contextHash: input.job.contextHash,
-            contextRevision: input.job.contextRevision,
-            contextFrom: input.job.contextFrom,
-            contextThrough: input.job.contextThrough,
-            document: input.proposal,
-            createdAt: new Date(input.proposal.createdAt),
-          })
-          .onConflictDoNothing({ target: planChangeProposals.analysisJobId }),
-        database
-          .update(aiAnalysisJobs)
-          .set({
-            status: "succeeded",
-            model: input.model,
-            responseHash: input.responseHash,
-            lastErrorCode: null,
-            completedAt: input.completedAt,
-            updatedAt: input.completedAt,
-          })
-          .where(
-            and(
-              eq(aiAnalysisJobs.id, input.job.id),
-              eq(aiAnalysisJobs.trackerId, input.job.trackerId),
-              eq(aiAnalysisJobs.status, "running"),
-            ),
-          ),
-      ]);
+      const succeededJobAudit = createAiAnalysisJobAuditOutbox(input.job, {
+        status: "succeeded",
+        model: input.model,
+        responseHash: input.responseHash,
+        lastErrorCode: null,
+        completedAt: input.completedAt,
+        proposal: input.proposal,
+      });
+      const proposalAudit = createPlanChangeProposalAuditOutbox({
+        source: {
+          trackerKey: input.job.trackerKey,
+          analysisJobId: input.job.id,
+          model: input.model,
+          contextVersion: input.job.contextVersion,
+          contextHash: input.job.contextHash,
+          contextRevision: input.job.contextRevision,
+          contextFrom: input.job.contextFrom,
+          contextThrough: input.job.contextThrough,
+          timelineHeadPlanVersionId: input.job.timelineHeadPlanVersionId,
+          proposal: input.proposal,
+        },
+      });
+      await database.execute(sql`
+        with completed as (
+          update ai_analysis_jobs
+          set status = 'succeeded',
+              model = ${input.model},
+              response_hash = ${input.responseHash},
+              last_error_code = null,
+              completed_at = ${input.completedAt},
+              updated_at = ${input.completedAt}
+          where id = ${input.job.id}::uuid
+            and tracker_id = ${input.job.trackerId}::uuid
+            and status = 'running'
+          returning id
+        ), proposal as (
+          insert into plan_change_proposals (
+            id, tracker_id, base_plan_version_id, analysis_job_id,
+            timeline_head_plan_version_id, status, safety_level, model,
+            context_version, context_hash, context_revision,
+            context_from, context_through, document, created_at
+          )
+          select
+            ${input.proposal.id}::uuid, ${input.job.trackerId}::uuid,
+            ${input.job.basePlanVersionId}::uuid, ${input.job.id}::uuid,
+            ${input.job.timelineHeadPlanVersionId}::uuid,
+            ${input.proposal.status}, ${input.proposal.safetyLevel},
+            ${input.model}, ${input.job.contextVersion},
+            ${input.job.contextHash}, ${input.job.contextRevision},
+            ${input.job.contextFrom}::date, ${input.job.contextThrough}::date,
+            ${JSON.stringify(input.proposal)}::jsonb,
+            ${new Date(input.proposal.createdAt)}
+          from completed
+          on conflict (analysis_job_id) do nothing
+          returning id
+        ), job_mirror as (
+          insert into github_sync_outbox (
+            aggregate_type, aggregate_id, target_path, payload, status,
+            attempts, next_attempt_at, lease_owner, lease_expires_at,
+            last_error_code, created_at, updated_at
+          )
+          select
+            ${succeededJobAudit.aggregateType},
+            ${succeededJobAudit.aggregateId}::uuid,
+            ${succeededJobAudit.targetPath},
+            ${JSON.stringify(succeededJobAudit.payload)}::jsonb,
+            'pending', 0, ${input.completedAt}, null, null, null,
+            ${input.completedAt}, ${input.completedAt}
+          from completed
+          on conflict (aggregate_type, aggregate_id) do update set
+            target_path = excluded.target_path,
+            payload = excluded.payload,
+            status = 'pending', attempts = 0,
+            next_attempt_at = excluded.next_attempt_at,
+            lease_owner = null, lease_expires_at = null,
+            last_error_code = null, updated_at = excluded.updated_at
+          returning aggregate_id
+        )
+        insert into github_sync_outbox (
+          aggregate_type, aggregate_id, target_path, payload, status,
+          attempts, next_attempt_at, lease_owner, lease_expires_at,
+          last_error_code, created_at, updated_at
+        )
+        select
+          ${proposalAudit.aggregateType}, ${proposalAudit.aggregateId}::uuid,
+          ${proposalAudit.targetPath},
+          ${JSON.stringify(proposalAudit.payload)}::jsonb,
+          'pending', 0, ${input.completedAt}, null, null, null,
+          ${input.completedAt}, ${input.completedAt}
+        from proposal
+        on conflict (aggregate_type, aggregate_id) do update set
+          target_path = excluded.target_path,
+          payload = excluded.payload,
+          status = 'pending', attempts = 0,
+          next_attempt_at = excluded.next_attempt_at,
+          lease_owner = null, lease_expires_at = null,
+          last_error_code = null, updated_at = excluded.updated_at
+      `);
     },
     async expireProposal(input) {
-      const rows = await database
-        .update(planChangeProposals)
-        .set({ status: "expired" })
-        .where(
-          and(
-            eq(planChangeProposals.id, input.proposalId),
-            eq(planChangeProposals.trackerId, input.trackerId),
-            eq(planChangeProposals.status, "proposed"),
-          ),
+      if (!input.job.proposal) return false;
+      const proposal = {
+        ...input.job.proposal,
+        status: "expired" as const,
+      };
+      const audit = createPlanChangeProposalAuditOutbox({
+        source: {
+          trackerKey: input.job.trackerKey,
+          analysisJobId: input.job.id,
+          model: input.job.model,
+          contextVersion: input.job.contextVersion,
+          contextHash: input.job.contextHash,
+          contextRevision: input.job.contextRevision,
+          contextFrom: input.job.contextFrom,
+          contextThrough: input.job.contextThrough,
+          timelineHeadPlanVersionId: input.job.timelineHeadPlanVersionId,
+          proposal,
+        },
+      });
+      const updatedAt = new Date();
+      const result = await database.execute<{ id: string }>(sql`
+        with expired as (
+          update plan_change_proposals
+          set status = 'expired'
+          where id = ${input.proposalId}::uuid
+            and tracker_id = ${input.trackerId}::uuid
+            and status = 'proposed'
+          returning id
+        ), mirrored as (
+          insert into github_sync_outbox (
+            aggregate_type, aggregate_id, target_path, payload, status,
+            attempts, next_attempt_at, lease_owner, lease_expires_at,
+            last_error_code, created_at, updated_at
+          )
+          select
+            ${audit.aggregateType}, ${audit.aggregateId}::uuid,
+            ${audit.targetPath}, ${JSON.stringify(audit.payload)}::jsonb,
+            'pending', 0, ${updatedAt}, null, null, null,
+            ${updatedAt}, ${updatedAt}
+          from expired
+          on conflict (aggregate_type, aggregate_id) do update set
+            target_path = excluded.target_path,
+            payload = excluded.payload,
+            status = 'pending', attempts = 0,
+            next_attempt_at = excluded.next_attempt_at,
+            lease_owner = null, lease_expires_at = null,
+            last_error_code = null, updated_at = excluded.updated_at
+          returning aggregate_id
         )
-        .returning({ id: planChangeProposals.id });
-      return rows.length === 1;
+        select id from expired
+      `);
+      return result.rows.length === 1;
     },
   };
 }

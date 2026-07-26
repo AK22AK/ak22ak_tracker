@@ -80,6 +80,11 @@ GitHub 镜像是最终一致的：数据库写入成功即代表用户操作成�
 - `push_subscriptions`：用户主动授权的 Web Push 端点和失效状态。
 - `github_sync_outbox`：待镜像文件、重试状态和错误代码。
 
+AI 审计使用两个稳定的可变快照路径：`ai/analysis-jobs/<job-id>.json` 保存最小任务
+审计，`ai/proposals/<proposal-id>.json` 保存已校验建议及其状态、决定和回滚关系。
+相同 ID 的状态演进更新同一路径；不可变决定事件和计划版本仍使用各自的追加式路径。
+审计快照不包含提示词、Provider 原始响应或完整私人上下文。
+
 每份交换数据包含 `schemaVersion`、稳定 UUID、发生时间、记录时间、本地日期和
 来源信息。手机提交携带 `idempotencyKey`；Garmin 和训记使用
 `provider + providerRecordId` 做 upsert，并保存规范化内容 hash，保证离线重放和

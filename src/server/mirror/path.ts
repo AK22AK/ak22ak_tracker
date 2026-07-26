@@ -4,6 +4,8 @@ import type {
   TrackerEvent,
 } from "@/domain/schemas";
 
+type AiAuditPathIdentity = { trackerKey: string; id: string };
+
 export function assertSafeMirrorSegment(value: string): string {
   if (!/^[a-z0-9][a-z0-9_-]*$/.test(value)) {
     throw new Error("unsafe_mirror_segment");
@@ -63,4 +65,16 @@ export function externalRecordMirrorPath(record: ExternalRecord): string {
 export function planVersionMirrorPath(plan: PlanVersion): string {
   const tracker = assertSafeMirrorSegment(plan.trackerKey);
   return `trackers/${tracker}/plan-versions/${String(plan.version).padStart(4, "0")}-${plan.id}.json`;
+}
+
+export function aiAnalysisJobMirrorPath(job: AiAuditPathIdentity): string {
+  const tracker = assertSafeMirrorSegment(job.trackerKey);
+  return `trackers/${tracker}/ai/analysis-jobs/${job.id}.json`;
+}
+
+export function planChangeProposalMirrorPath(
+  proposal: AiAuditPathIdentity,
+): string {
+  const tracker = assertSafeMirrorSegment(proposal.trackerKey);
+  return `trackers/${tracker}/ai/proposals/${proposal.id}.json`;
 }

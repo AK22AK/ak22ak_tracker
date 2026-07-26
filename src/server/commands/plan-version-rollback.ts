@@ -2,7 +2,11 @@ import "server-only";
 
 import { and, desc, eq, sql } from "drizzle-orm";
 
-import { planVersionSchema, trackerEventSchema } from "@/domain/schemas";
+import {
+  planChangeProposalSchema,
+  planVersionSchema,
+  trackerEventSchema,
+} from "@/domain/schemas";
 import { getDatabase } from "@/server/db/client";
 import {
   events,
@@ -14,6 +18,7 @@ import {
   taskInstances,
   trackers,
 } from "@/server/db/schema";
+import { upsertAiAuditOutbox } from "@/server/mirror/ai-audit";
 
 import type {
   PlanVersionRollbackRecord,
@@ -26,6 +31,11 @@ type Database = ReturnType<typeof getDatabase>;
 function decisionType(value: string): "accepted" | "rejected" {
   if (value === "accepted" || value === "rejected") return value;
   throw new Error("plan_change_decision_invalid");
+}
+
+function requiredAuditText(value: string | null, field: string) {
+  if (value) return value;
+  throw new Error(`plan_change_audit_${field}_missing`);
 }
 
 function eventValues(
@@ -90,8 +100,20 @@ export function createNeonPlanVersionRollbackStore(
           trackerKey: trackers.key,
           planningTimeZone: trackers.planningTimeZone,
           proposalId: planChangeProposals.id,
+          proposalDocument: planChangeProposals.document,
+          analysisJobId: planChangeProposals.analysisJobId,
+          model: planChangeProposals.model,
+          contextVersion: planChangeProposals.contextVersion,
+          contextHash: planChangeProposals.contextHash,
+          contextRevision: planChangeProposals.contextRevision,
+          contextFrom: planChangeProposals.contextFrom,
+          contextThrough: planChangeProposals.contextThrough,
+          proposalTimelineHeadPlanVersionId:
+            planChangeProposals.timelineHeadPlanVersionId,
           decisionId: planChangeDecisions.id,
           decision: planChangeDecisions.decision,
+          decisionDecidedAt: planChangeDecisions.decidedAt,
+          decisionEffectiveFrom: planChangeDecisions.effectiveFrom,
           basePlanVersionId: planChangeDecisions.basePlanVersionId,
           appliedPlanVersionId: planChangeDecisions.appliedPlanVersionId,
         })
@@ -137,8 +159,33 @@ export function createNeonPlanVersionRollbackStore(
         trackerKey: row.trackerKey,
         planningTimeZone: row.planningTimeZone,
         proposalId: row.proposalId,
+        proposal: {
+          ...planChangeProposalSchema.parse(row.proposalDocument),
+          status: "accepted",
+        },
+        analysisJobId: requiredAuditText(row.analysisJobId, "analysis_job_id"),
+        model: requiredAuditText(row.model, "model"),
+        contextVersion:
+          row.contextVersion === "1"
+            ? "1"
+            : (() => {
+                throw new Error("plan_change_context_version_invalid");
+              })(),
+        contextHash: requiredAuditText(row.contextHash, "context_hash"),
+        contextRevision: row.contextRevision,
+        contextFrom: requiredAuditText(row.contextFrom, "context_from"),
+        contextThrough: requiredAuditText(
+          row.contextThrough,
+          "context_through",
+        ),
+        timelineHeadPlanVersionId: requiredAuditText(
+          row.proposalTimelineHeadPlanVersionId,
+          "timeline_head_plan_version_id",
+        ),
         decisionId: row.decisionId,
         decision: decisionType(row.decision),
+        decisionDecidedAt: row.decisionDecidedAt,
+        decisionEffectiveFrom: row.decisionEffectiveFrom,
         targetBasePlan: planVersionSchema.parse(base[0].document),
         sourceAppliedPlan: applied[0]
           ? planVersionSchema.parse(applied[0].document)
@@ -190,12 +237,18 @@ export function createNeonPlanVersionRollbackStore(
       const outboxInsert = database
         .insert(githubSyncOutbox)
         .values(command.outboxes);
+      const proposalAuditUpsert = upsertAiAuditOutbox(
+        database,
+        command.proposalAuditOutbox,
+        command.rollback.decidedAt,
+      );
       const statements = [guard, planInsert] as const;
       if (command.taskInstances.length === 0) {
         await database.batch([
           statements[0],
           statements[1],
           rollbackInsert,
+          proposalAuditUpsert,
           eventInsert,
           outboxInsert,
         ]);
@@ -213,6 +266,7 @@ export function createNeonPlanVersionRollbackStore(
           })),
         ),
         rollbackInsert,
+        proposalAuditUpsert,
         eventInsert,
         outboxInsert,
       ]);

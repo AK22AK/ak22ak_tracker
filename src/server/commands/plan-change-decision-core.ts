@@ -14,6 +14,10 @@ import {
   type TrackerEvent,
 } from "@/domain/schemas";
 import type { PreparedAiAnalysisContext } from "@/server/integrations/ai/context";
+import {
+  createPlanChangeProposalAuditOutbox,
+  type AiAuditOutbox,
+} from "@/server/mirror/ai-audit";
 import { eventMirrorPath, planVersionMirrorPath } from "@/server/mirror/path";
 
 export type PlanChangeDecisionRecord = {
@@ -39,10 +43,14 @@ export type PlanChangeProposalRecord = {
   trackerKey: string;
   planningTimeZone: string;
   proposal: PlanChangeProposal;
+  analysisJobId: string;
+  model: string;
   status: PlanChangeProposal["status"];
   contextVersion: "1";
   contextHash: string;
   contextRevision: number;
+  contextFrom: string;
+  contextThrough: string;
   basePlanVersionId: string;
   timelineHeadPlanVersionId: string;
   safetyLevel: "green" | "yellow" | "red";
@@ -65,6 +73,7 @@ export type PreparedPlanChangeDecision = {
   };
   event: TrackerEvent;
   outboxes: PreparedOutbox[];
+  proposalAuditOutbox: AiAuditOutbox;
   plan: PlanVersion | null;
   taskInstances: Array<{
     taskDefinitionId: string;
@@ -86,6 +95,8 @@ export type PlanChangeDecisionStore = {
   expireProposal(input: {
     trackerId: string;
     proposalId: string;
+    auditOutbox: AiAuditOutbox;
+    updatedAt: Date;
   }): Promise<boolean>;
   commitAtomically(command: PreparedPlanChangeDecision): Promise<void>;
 };
@@ -247,12 +258,18 @@ async function expiredResult(
   store: PlanChangeDecisionStore,
   record: PlanChangeProposalRecord,
   commandId: string,
+  updatedAt: Date,
 ) {
   const concurrent = await store.findDecisionByProposalId(record.proposal.id);
   if (concurrent) return resultFromDecision(concurrent, true, true);
   const expired = await store.expireProposal({
     trackerId: record.trackerId,
     proposalId: record.proposal.id,
+    auditOutbox: createPlanChangeProposalAuditOutbox({
+      source: record,
+      proposal: { ...record.proposal, status: "expired" },
+    }),
+    updatedAt,
   });
   if (!expired) {
     const decided = await store.findDecisionByProposalId(record.proposal.id);
@@ -295,7 +312,7 @@ export async function executePlanChangeDecision(
     return resultFromDecision(existingProposalDecision, true, true);
   }
   if (record.status === "expired") {
-    return expiredResult(store, record, input.commandId);
+    return expiredResult(store, record, input.commandId, now);
   }
   if (record.status !== "proposed") {
     throw new PlanChangeDecisionConflictError();
@@ -305,10 +322,10 @@ export async function executePlanChangeDecision(
   try {
     context = await prepareContext(input.trackerKey, now);
   } catch {
-    return expiredResult(store, record, input.commandId);
+    return expiredResult(store, record, input.commandId, now);
   }
   if (!contextMatches(record, context)) {
-    return expiredResult(store, record, input.commandId);
+    return expiredResult(store, record, input.commandId, now);
   }
 
   const baseDecision = {
@@ -356,6 +373,17 @@ export async function executePlanChangeDecision(
           payload: event,
         },
       ],
+      proposalAuditOutbox: createPlanChangeProposalAuditOutbox({
+        source: record,
+        proposal: { ...record.proposal, status: "rejected" },
+        decision: {
+          id: input.commandId,
+          type: "rejected",
+          decidedAt: now.toISOString(),
+          appliedPlanVersionId: null,
+          effectiveFrom: null,
+        },
+      }),
       plan: null,
       taskInstances: [],
     };
@@ -384,7 +412,7 @@ export async function executePlanChangeDecision(
         },
       );
     } catch {
-      return expiredResult(store, record, input.commandId);
+      return expiredResult(store, record, input.commandId, now);
     }
     const event = decisionEvent(record, input, now, {
       proposalId: record.proposal.id,
@@ -420,6 +448,17 @@ export async function executePlanChangeDecision(
           payload: plan,
         },
       ],
+      proposalAuditOutbox: createPlanChangeProposalAuditOutbox({
+        source: record,
+        proposal: { ...record.proposal, status: "accepted" },
+        decision: {
+          id: input.commandId,
+          type: "accepted",
+          decidedAt: now.toISOString(),
+          appliedPlanVersionId: plan.id,
+          effectiveFrom,
+        },
+      }),
       plan,
       taskInstances: plan.tasks
         .filter((task) => task.scheduledDate >= effectiveFrom)
@@ -450,7 +489,7 @@ export async function executePlanChangeDecision(
         concurrent.id !== input.commandId,
       );
     }
-    return expiredResult(store, record, input.commandId);
+    return expiredResult(store, record, input.commandId, now);
   }
 
   const saved = await store.findDecisionByCommandId(input.commandId);

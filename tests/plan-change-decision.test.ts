@@ -75,10 +75,14 @@ function proposalRecord(): PlanChangeProposalRecord {
     trackerId,
     trackerKey: "knee-rehab",
     planningTimeZone: "Asia/Shanghai",
+    analysisJobId: proposalId,
+    model: "anonymous-model",
     status: "proposed",
     contextVersion: "1",
     contextHash: "a".repeat(64),
     contextRevision: 7,
+    contextFrom: "2026-07-11",
+    contextThrough: "2026-07-24",
     basePlanVersionId: planId,
     timelineHeadPlanVersionId: planId,
     safetyLevel: "green",
@@ -223,6 +227,20 @@ describe("P4b-2a plan change decisions", () => {
     expect(
       memory.prepared[0]?.outboxes.map((item) => item.aggregateType),
     ).toEqual(["event", "plan_version"]);
+    expect(memory.prepared[0]?.proposalAuditOutbox).toMatchObject({
+      aggregateType: "plan_change_proposal",
+      aggregateId: proposalId,
+      payload: {
+        kind: "plan_change_proposal",
+        status: "accepted",
+        decision: {
+          id: commandId,
+          type: "accepted",
+          appliedPlanVersionId: stablePlanVersionId(commandId),
+        },
+        rollback: null,
+      },
+    });
   });
 
   it("rejects atomically without creating a plan version", async () => {
@@ -242,6 +260,13 @@ describe("P4b-2a plan change decisions", () => {
       type: "reject",
       plan: null,
       taskInstances: [],
+      proposalAuditOutbox: {
+        aggregateType: "plan_change_proposal",
+        payload: {
+          status: "rejected",
+          decision: { type: "rejected", appliedPlanVersionId: null },
+        },
+      },
     });
   });
 
