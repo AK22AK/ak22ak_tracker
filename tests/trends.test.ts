@@ -151,8 +151,79 @@ describe("P4a-1 deterministic eight-week trends", () => {
         maxPain: null,
         safetyDays: { green: 0, yellow: 0, red: 0 },
       },
+      recovery: {
+        sleep: {
+          availableDays: 0,
+          expectedDays: 2,
+          averageTotalSleepSeconds: null,
+          averageSleepScore: null,
+          scoreCoverageDays: 0,
+        },
+        steps: {
+          availableDays: 0,
+          expectedDays: 1,
+          throughDate: "2026-07-21",
+          averageDailySteps: null,
+        },
+      },
     });
     expect(result.weeks).toHaveLength(8);
+  });
+
+  it("keeps wellness coverage, real zero steps, and the unfinished current day distinct", () => {
+    const result = aggregateEightWeekTrends({
+      trackerKey: "knee-rehab",
+      trackerStartedOn: "2026-07-01",
+      timeZone: "Asia/Shanghai",
+      currentDate: "2026-07-22",
+      generatedAt: "2026-07-22T04:00:00.000Z",
+      planVersions: [],
+      tasks: [],
+      feedbacks: [],
+      externalRecords: [],
+      wellnessRecords: [
+        {
+          localDate: "2026-07-20",
+          stepsStatus: "available",
+          totalSteps: 0,
+          sleepStatus: "available",
+          totalSleepSeconds: 25_200,
+          sleepScore: 80,
+        },
+        {
+          localDate: "2026-07-21",
+          stepsStatus: "available",
+          totalSteps: 4_000,
+          sleepStatus: "missing",
+          totalSleepSeconds: null,
+          sleepScore: null,
+        },
+        {
+          localDate: "2026-07-22",
+          stepsStatus: "available",
+          totalSteps: 2_000,
+          sleepStatus: "available",
+          totalSleepSeconds: 28_800,
+          sleepScore: null,
+        },
+      ],
+    });
+
+    expect(result.weeks.at(-1)?.recovery).toEqual({
+      sleep: {
+        availableDays: 2,
+        expectedDays: 3,
+        averageTotalSleepSeconds: 27_000,
+        averageSleepScore: 80,
+        scoreCoverageDays: 1,
+      },
+      steps: {
+        availableDays: 2,
+        expectedDays: 2,
+        throughDate: "2026-07-21",
+        averageDailySteps: 2_000,
+      },
+    });
   });
 
   it("deduplicates one completed task with manual, Garmin, and Xunji source priority", () => {

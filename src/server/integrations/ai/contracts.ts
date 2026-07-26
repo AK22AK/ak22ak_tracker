@@ -1,5 +1,6 @@
 import "server-only";
 
+import type { AiRecoveryEvidence } from "@/domain/ai-recovery";
 import type { PlanChangeOperation, PlanVersion } from "@/domain/schemas";
 
 export type PlanAdjustmentSafetyLevel = "green" | "yellow" | "red";
@@ -36,6 +37,7 @@ export interface PlanAdjustmentContext {
   range: { from: string; through: string };
   recentFeedback: PlanAdjustmentFeedback[];
   confirmedTraining: PlanAdjustmentTraining[];
+  recoveryEvidence: AiRecoveryEvidence[];
   safetyLevel: PlanAdjustmentSafetyLevel;
 }
 

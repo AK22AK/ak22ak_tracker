@@ -40,6 +40,17 @@ function context(safetyLevel: "green" | "yellow" | "red" = "green") {
     range: { from: "2026-07-11", through: "2026-07-24" },
     recentFeedback: [],
     confirmedTraining: [],
+    recoveryEvidence: [
+      {
+        localDate: "2026-07-24",
+        sleepStatus: "available" as const,
+        sleepTotalSeconds: 25_200,
+        sleepScore: 78,
+        stepsStatus: "available" as const,
+        totalSteps: 1_200,
+        stepsPartial: true,
+      },
+    ],
     safetyLevel,
   } satisfies PlanAdjustmentContext;
 }
@@ -189,6 +200,19 @@ describe("DeepSeek plan advisor", () => {
     expect(body.response_format).toEqual({ type: "json_object" });
     expect(body.max_tokens).toBe(1_024);
     expect(body.messages[0].content).toContain("json");
+    expect(body.messages[0].content).toContain("sleep or steps");
+    expect(body.messages[1].content).toContain('"stepsPartial":true');
+    for (const forbidden of [
+      "sleepStart",
+      "sleepEnd",
+      "deepSleepSeconds",
+      "stepGoal",
+      "providerRecordId",
+      "syncedAt",
+      "tokenBundle",
+    ]) {
+      expect(body.messages[1].content).not.toContain(forbidden);
+    }
     expect(result).toMatchObject({
       safetyLevel: "green",
       operations: [],

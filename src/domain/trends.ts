@@ -16,6 +16,13 @@ const safetyCountsSchema = z
   })
   .strict();
 
+const recoveryCoverageSchema = z
+  .object({
+    availableDays: z.number().int().nonnegative().max(7),
+    expectedDays: z.number().int().nonnegative().max(7),
+  })
+  .strict();
+
 export const trendWeekSchema = z
   .object({
     weekStart: localDateSchema,
@@ -52,6 +59,23 @@ export const trendWeekSchema = z
             garmin: z.number().int().nonnegative(),
             xunji: z.number().int().nonnegative(),
             fallbackUnmeasured: z.number().int().nonnegative(),
+          })
+          .strict(),
+      })
+      .strict(),
+    recovery: z
+      .object({
+        sleep: recoveryCoverageSchema
+          .extend({
+            averageTotalSleepSeconds: z.number().nonnegative().nullable(),
+            averageSleepScore: z.number().min(0).max(100).nullable(),
+            scoreCoverageDays: z.number().int().nonnegative().max(7),
+          })
+          .strict(),
+        steps: recoveryCoverageSchema
+          .extend({
+            throughDate: localDateSchema.nullable(),
+            averageDailySteps: z.number().nonnegative().nullable(),
           })
           .strict(),
       })
@@ -115,6 +139,15 @@ type TrendFeedbackRow = {
   safetyLevel: "green" | "yellow" | "red";
 };
 
+type TrendWellnessRow = {
+  localDate: string;
+  stepsStatus: "available" | "missing";
+  totalSteps: number | null;
+  sleepStatus: "available" | "missing";
+  totalSleepSeconds: number | null;
+  sleepScore: number | null;
+};
+
 function localDateValue(localDate: string) {
   if (!isLocalDate(localDate)) throw new Error("invalid_local_date");
   return new Date(`${localDate}T00:00:00.000Z`);
@@ -159,8 +192,10 @@ export function aggregateEightWeekTrends(input: {
   tasks: readonly TrendTaskRow[];
   feedbacks: readonly TrendFeedbackRow[];
   externalRecords: readonly TrendLinkedExternalRecord[];
+  wellnessRecords?: readonly TrendWellnessRow[];
 }): TrendsAggregate {
   const range = eightWeekNaturalRange(input.currentDate);
+  const stepsThroughDate = shiftLocalDate(input.currentDate, -1);
   const weeks = Array.from({ length: 8 }, (_, index) => {
     const weekStart = shiftLocalDate(range.start, index * 7);
     const weekEnd = shiftLocalDate(weekStart, 6);
@@ -168,6 +203,8 @@ export function aggregateEightWeekTrends(input: {
       input.trackerStartedOn > weekStart ? input.trackerStartedOn : weekStart;
     const expectedEnd =
       input.currentDate < weekEnd ? input.currentDate : weekEnd;
+    const stepsExpectedEnd =
+      stepsThroughDate < weekEnd ? stepsThroughDate : weekEnd;
     return {
       weekStart,
       weekEnd,
@@ -198,6 +235,22 @@ export function aggregateEightWeekTrends(input: {
           garmin: 0,
           xunji: 0,
           fallbackUnmeasured: 0,
+        },
+      },
+      recovery: {
+        sleep: {
+          availableDays: 0,
+          expectedDays: inclusiveDays(expectedStart, expectedEnd),
+          averageTotalSleepSeconds: null as number | null,
+          averageSleepScore: null as number | null,
+          scoreCoverageDays: 0,
+        },
+        steps: {
+          availableDays: 0,
+          expectedDays: inclusiveDays(expectedStart, stepsExpectedEnd),
+          throughDate:
+            expectedStart <= stepsExpectedEnd ? stepsExpectedEnd : null,
+          averageDailySteps: null as number | null,
         },
       },
     };
@@ -367,6 +420,76 @@ export function aggregateEightWeekTrends(input: {
       feedback.maxPain,
     );
     week.symptoms.safetyDays[feedback.safetyLevel] += 1;
+  }
+
+  const wellnessByDate = new Map(
+    (input.wellnessRecords ?? []).map((record) => [record.localDate, record]),
+  );
+  const sleepTotalsByWeek = new Map<string, number[]>();
+  const sleepScoresByWeek = new Map<string, number[]>();
+  const stepTotalsByWeek = new Map<string, number[]>();
+  for (const record of wellnessByDate.values()) {
+    if (
+      record.localDate < input.trackerStartedOn ||
+      record.localDate > input.currentDate
+    ) {
+      continue;
+    }
+    const week = weekFor(record.localDate);
+    if (!week) continue;
+    if (
+      record.sleepStatus === "available" &&
+      record.totalSleepSeconds !== null
+    ) {
+      const totals = sleepTotalsByWeek.get(week.weekStart) ?? [];
+      totals.push(record.totalSleepSeconds);
+      sleepTotalsByWeek.set(week.weekStart, totals);
+      if (record.sleepScore !== null) {
+        const scores = sleepScoresByWeek.get(week.weekStart) ?? [];
+        scores.push(record.sleepScore);
+        sleepScoresByWeek.set(week.weekStart, scores);
+      }
+    }
+    if (
+      record.localDate <= stepsThroughDate &&
+      record.stepsStatus === "available" &&
+      record.totalSteps !== null
+    ) {
+      const totals = stepTotalsByWeek.get(week.weekStart) ?? [];
+      totals.push(record.totalSteps);
+      stepTotalsByWeek.set(week.weekStart, totals);
+    }
+  }
+  for (const week of weeks) {
+    const sleepTotals = sleepTotalsByWeek.get(week.weekStart) ?? [];
+    const sleepScores = sleepScoresByWeek.get(week.weekStart) ?? [];
+    const stepTotals = stepTotalsByWeek.get(week.weekStart) ?? [];
+    week.recovery.sleep.availableDays = sleepTotals.length;
+    week.recovery.sleep.averageTotalSleepSeconds =
+      sleepTotals.length === 0
+        ? null
+        : Math.round(
+            sleepTotals.reduce((sum, value) => sum + value, 0) /
+              sleepTotals.length,
+          );
+    week.recovery.sleep.scoreCoverageDays = sleepScores.length;
+    week.recovery.sleep.averageSleepScore =
+      sleepScores.length === 0
+        ? null
+        : Number(
+            (
+              sleepScores.reduce((sum, value) => sum + value, 0) /
+              sleepScores.length
+            ).toFixed(1),
+          );
+    week.recovery.steps.availableDays = stepTotals.length;
+    week.recovery.steps.averageDailySteps =
+      stepTotals.length === 0
+        ? null
+        : Math.round(
+            stepTotals.reduce((sum, value) => sum + value, 0) /
+              stepTotals.length,
+          );
   }
 
   return trendsAggregateSchema.parse({

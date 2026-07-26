@@ -10,6 +10,7 @@ const localDate = new Intl.DateTimeFormat("en-CA", {
   month: "2-digit",
   day: "2-digit",
 }).format(new Date());
+
 const taskId = "019c0000-0000-7000-8000-000000000002";
 
 const day = {
@@ -204,6 +205,16 @@ const trendsAggregate = aggregateEightWeekTrends({
   ],
   feedbacks: [],
   externalRecords: [],
+  wellnessRecords: [
+    {
+      localDate,
+      stepsStatus: "available",
+      totalSteps: 1_500,
+      sleepStatus: "available",
+      totalSleepSeconds: 28_800,
+      sleepScore: null,
+    },
+  ],
 });
 
 const planAdvice = {
@@ -567,6 +578,17 @@ for (const width of [320, 375, 390, 430]) {
     await expect(page.getByText(/不表示两者存在因果关系/)).toBeVisible();
     await expect(
       page.getByRole("img", { name: /本周没有身体反馈/ }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "睡眠与步数" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("img", {
+        name: /本周睡眠平均 8 小时，覆盖 1 天.*步数平均 未测量，覆盖 0 天/,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/同期变化仅供参考，不代表存在因果关系/),
     ).toBeVisible();
 
     const layout = await page.evaluate(() => {

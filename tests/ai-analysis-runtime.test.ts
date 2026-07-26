@@ -45,6 +45,7 @@ function prepared(): PreparedAiAnalysisContext {
       range: { from: "2026-07-11", through: "2026-07-24" },
       recentFeedback: [],
       confirmedTraining: [],
+      recoveryEvidence: [],
       safetyLevel: "green",
     },
   };
@@ -580,6 +581,51 @@ describe("AI analysis runtime", () => {
             category: "training",
             durationMinutes: 20,
             distanceKm: null,
+          },
+        ],
+      },
+    };
+
+    const result = await runtime.load("knee-rehab", jobId);
+    expect(result.job?.proposal?.status).toBe("expired");
+  });
+
+  it("expires a suggestion when recovery coverage or content changes", async () => {
+    const memory = memoryStore([]);
+    const original = prepared();
+    let current = original;
+    const runtime = createAiAnalysisRuntime({
+      store: memory.store,
+      prepareContext: async () => current,
+      readConfiguration: configured,
+      createAdvisor: () => ({
+        proposeAdjustment: async () => ({
+          summary: "No change",
+          safetyLevel: "green",
+          operations: [],
+          model: "anonymous-model",
+          responseHash: "7".repeat(64),
+        }),
+      }),
+      now: () => new Date("2026-07-24T08:00:00.000Z"),
+    });
+
+    await runtime.request({ trackerKey: "knee-rehab", commandId: jobId });
+    current = {
+      ...original,
+      contextHash: "8".repeat(64),
+      contextRevision: original.contextRevision + 1,
+      modelContext: {
+        ...original.modelContext,
+        recoveryEvidence: [
+          {
+            localDate: "2026-07-24",
+            sleepStatus: "missing",
+            sleepTotalSeconds: null,
+            sleepScore: null,
+            stepsStatus: "available",
+            totalSteps: 0,
+            stepsPartial: true,
           },
         ],
       },

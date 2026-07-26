@@ -65,6 +65,7 @@ function context(): PreparedAiAnalysisContext {
       range: { from: "2026-07-11", through: "2026-07-24" },
       recentFeedback: [],
       confirmedTraining: [],
+      recoveryEvidence: [],
       safetyLevel: "green",
     },
   };

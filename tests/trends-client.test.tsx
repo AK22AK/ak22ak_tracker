@@ -58,6 +58,21 @@ const weeks = weekDates.map(([weekStart, weekEnd], index) => ({
       fallbackUnmeasured: index === 7 ? 1 : 1,
     },
   },
+  recovery: {
+    sleep: {
+      availableDays: index === 7 ? 2 : 0,
+      expectedDays: index === 7 ? 3 : 7,
+      averageTotalSleepSeconds: index === 7 ? 27_000 : null,
+      averageSleepScore: index === 7 ? 80 : null,
+      scoreCoverageDays: index === 7 ? 1 : 0,
+    },
+    steps: {
+      availableDays: index === 7 ? 2 : 0,
+      expectedDays: index === 7 ? 2 : 7,
+      throughDate: index === 7 ? "2026-07-21" : weekEnd,
+      averageDailySteps: index === 7 ? 2_000 : null,
+    },
+  },
 }));
 
 const aggregate = {
@@ -119,6 +134,12 @@ describe("P4a-1 TrendsClient", () => {
     ).toBeTruthy();
     expect(screen.getAllByText("未测量").length).toBeGreaterThan(0);
     expect(screen.getByText(/不表示两者存在因果关系/)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "睡眠与步数" })).toBeTruthy();
+    expect(
+      screen.getByRole("img", {
+        name: /本周睡眠平均 7 小时 30 分钟，覆盖 2 天，共 3 天；睡眠评分平均 80，覆盖 1 天；步数平均 2000，覆盖 2 天，共 2 天/,
+      }),
+    ).toBeTruthy();
     expect(
       screen.getByRole("img", { name: /本周任务完成率 50%/ }),
     ).toBeTruthy();
@@ -161,6 +182,21 @@ describe("P4a-1 TrendsClient", () => {
                 garmin: 0,
                 xunji: 0,
                 fallbackUnmeasured: 0,
+              },
+            },
+            recovery: {
+              sleep: {
+                availableDays: 0,
+                expectedDays: week.recovery.sleep.expectedDays,
+                averageTotalSleepSeconds: null,
+                averageSleepScore: null,
+                scoreCoverageDays: 0,
+              },
+              steps: {
+                availableDays: 0,
+                expectedDays: week.recovery.steps.expectedDays,
+                throughDate: week.recovery.steps.throughDate,
+                averageDailySteps: null,
               },
             },
           })),

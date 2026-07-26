@@ -14,6 +14,7 @@ import { getDatabase } from "@/server/db/client";
 import {
   aiAnalysisJobs,
   events,
+  externalRecords,
   githubSyncOutbox,
   planChangeProposals,
   planVersions,
@@ -35,6 +36,35 @@ integration("P4b-1 AI analysis Neon persistence", () => {
   const feedbackId = randomUUID();
   const commandId = randomUUID();
   const failedCommandId = randomUUID();
+  const wellnessRecordId = randomUUID();
+  const wellnessDocument = (totalSteps: number) => ({
+    schemaVersion,
+    id: wellnessRecordId,
+    trackerKey,
+    provider: "garmin" as const,
+    providerRecordId: "daily_wellness:2026-07-24",
+    kind: "daily_wellness" as const,
+    occurredAt: "2026-07-24T04:00:00.000Z",
+    localDate: "2026-07-24",
+    payload: {
+      localDate: "2026-07-24",
+      steps: { status: "available" as const, totalSteps, stepGoal: null },
+      sleep: {
+        status: "missing" as const,
+        sleepStart: null,
+        sleepEnd: null,
+        totalSleepSeconds: null,
+        deepSleepSeconds: null,
+        lightSleepSeconds: null,
+        remSleepSeconds: null,
+        awakeSleepSeconds: null,
+        sleepScore: null,
+      },
+    },
+    fetchedAt: "2026-07-24T04:00:00.000Z",
+    contentHash: "c".repeat(64),
+    sourceVersion: 1,
+  });
 
   beforeAll(async () => {
     process.env.DATABASE_URL = testDatabaseUrl;
@@ -130,6 +160,19 @@ integration("P4b-1 AI analysis Neon persistence", () => {
       idempotencyKey: feedbackDocument.idempotencyKey,
       document: feedbackDocument,
     });
+    await database.insert(externalRecords).values({
+      id: wellnessRecordId,
+      trackerId,
+      provider: "garmin",
+      providerRecordId: "daily_wellness:2026-07-24",
+      kind: "daily_wellness",
+      localDate: "2026-07-24",
+      occurredAt: new Date("2026-07-24T04:00:00.000Z"),
+      fetchedAt: new Date("2026-07-24T04:00:00.000Z"),
+      contentHash: "c".repeat(64),
+      sourceVersion: 1,
+      document: wellnessDocument(0),
+    });
   });
 
   afterAll(async () => {
@@ -144,6 +187,26 @@ integration("P4b-1 AI analysis Neon persistence", () => {
 
   it("persists one job and proposal while sending only minimal structured context", async () => {
     const database = getDatabase();
+    const initialContext = await prepareAiAnalysisContext({
+      trackerKey,
+      now: new Date("2026-07-24T08:00:00.000Z"),
+      database,
+    });
+    await database
+      .update(externalRecords)
+      .set({ document: wellnessDocument(1) })
+      .where(eq(externalRecords.id, wellnessRecordId));
+    const changedContext = await prepareAiAnalysisContext({
+      trackerKey,
+      now: new Date("2026-07-24T08:00:00.000Z"),
+      database,
+    });
+    expect(changedContext.contextHash).not.toBe(initialContext.contextHash);
+    await database
+      .update(externalRecords)
+      .set({ document: wellnessDocument(0) })
+      .where(eq(externalRecords.id, wellnessRecordId));
+
     const proposeAdjustment = vi.fn(async (context) => {
       expect(context.currentPlan).not.toHaveProperty("source");
       expect(JSON.stringify(context)).not.toContain(
@@ -161,6 +224,25 @@ integration("P4b-1 AI analysis Neon persistence", () => {
           localDate: "2026-07-23",
         }),
       ]);
+      expect(context.recoveryEvidence).toHaveLength(14);
+      expect(context.recoveryEvidence.at(-1)).toEqual({
+        localDate: "2026-07-24",
+        sleepStatus: "missing",
+        sleepTotalSeconds: null,
+        sleepScore: null,
+        stepsStatus: "available",
+        totalSteps: 0,
+        stepsPartial: true,
+      });
+      for (const forbidden of [
+        "sleepStart",
+        "sleepEnd",
+        "stepGoal",
+        "providerRecordId",
+        "tokenBundle",
+      ]) {
+        expect(JSON.stringify(context)).not.toContain(forbidden);
+      }
       return {
         summary: "Keep current plan",
         safetyLevel: "green" as const,

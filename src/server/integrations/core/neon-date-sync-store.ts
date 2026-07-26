@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { externalRecordSchema, schemaVersion } from "@/domain/schemas";
 import { getDatabase } from "@/server/db/client";
@@ -9,6 +9,7 @@ import {
   externalRecords,
   integrationDateSyncState,
   integrationSyncState,
+  trackers,
 } from "@/server/db/schema";
 
 import { contentHash } from "./content-hash";
@@ -220,6 +221,22 @@ export function createNeonProviderDateSyncStore(
             .update(externalRecords)
             .set({ fetchedAt: unchanged.incoming.fetchedAt })
             .where(eq(externalRecords.id, unchanged.existing.id)),
+        );
+      }
+
+      const recoveryEvidenceChanged = [
+        ...reconciled.created,
+        ...reconciled.changed.map((change) => change.incoming),
+      ].some((record) => record.kind === "daily_wellness");
+      if (recoveryEvidenceChanged) {
+        statements.push(
+          database
+            .update(trackers)
+            .set({
+              aiContextRevision: sql`${trackers.aiContextRevision} + 1`,
+              updatedAt: input.succeededAt,
+            })
+            .where(eq(trackers.id, input.trackerId)),
         );
       }
 

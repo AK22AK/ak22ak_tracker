@@ -2,17 +2,20 @@ import "server-only";
 
 import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 
+import { buildRecoveryEvidence } from "@/domain/ai-recovery";
 import { localDateInTimeZone } from "@/domain/planning-time";
 import { planVersionSchema, taskActualSchema } from "@/domain/schemas";
 import { kneeCheckInEventPayloadSchema } from "@/modules/knee-rehab/check-in";
 import { getDatabase } from "@/server/db/client";
 import {
   events,
+  externalRecords,
   planVersions,
   taskInstances,
   trackers,
 } from "@/server/db/schema";
 import { contentHash } from "@/server/integrations/core/content-hash";
+import { garminWellnessEvidenceSchema } from "@/server/integrations/garmin/contracts";
 
 import type {
   PlanAdjustmentContext,
@@ -94,60 +97,80 @@ export async function prepareAiAnalysisContext({
 
   const contextThrough = localDateInTimeZone(now, tracker.planningTimeZone);
   const contextFrom = shiftDate(contextThrough, -13);
-  const [baseRow, headRow, feedbackRows, trainingRows] = await Promise.all([
-    database
-      .select({ id: planVersions.id, document: planVersions.document })
-      .from(planVersions)
-      .where(
-        and(
-          eq(planVersions.trackerId, tracker.id),
-          lte(planVersions.effectiveFrom, contextThrough),
-        ),
-      )
-      .orderBy(desc(planVersions.effectiveFrom), desc(planVersions.version))
-      .limit(1),
-    database
-      .select({ id: planVersions.id, document: planVersions.document })
-      .from(planVersions)
-      .where(eq(planVersions.trackerId, tracker.id))
-      .orderBy(desc(planVersions.version))
-      .limit(1),
-    database
-      .select({
-        localDate: events.localDate,
-        occurredAt: events.occurredAt,
-        document: events.document,
-      })
-      .from(events)
-      .where(
-        and(
-          eq(events.trackerId, tracker.id),
-          eq(events.kind, "symptom_check_in"),
-          gte(events.localDate, contextFrom),
-          lte(events.localDate, contextThrough),
-        ),
-      )
-      .orderBy(asc(events.occurredAt)),
-    database
-      .select({
-        taskDefinitionId: taskInstances.taskDefinitionId,
-        localDate: taskInstances.scheduledOn,
-        actual: taskInstances.actualData,
-        planDocument: planVersions.document,
-      })
-      .from(taskInstances)
-      .innerJoin(planVersions, eq(taskInstances.planVersionId, planVersions.id))
-      .where(
-        and(
-          eq(taskInstances.trackerId, tracker.id),
-          eq(taskInstances.status, "completed"),
-          eq(taskInstances.confirmedByUser, true),
-          gte(taskInstances.scheduledOn, contextFrom),
-          lte(taskInstances.scheduledOn, contextThrough),
-        ),
-      )
-      .orderBy(asc(taskInstances.scheduledOn)),
-  ]);
+  const [baseRow, headRow, feedbackRows, trainingRows, wellnessRows] =
+    await Promise.all([
+      database
+        .select({ id: planVersions.id, document: planVersions.document })
+        .from(planVersions)
+        .where(
+          and(
+            eq(planVersions.trackerId, tracker.id),
+            lte(planVersions.effectiveFrom, contextThrough),
+          ),
+        )
+        .orderBy(desc(planVersions.effectiveFrom), desc(planVersions.version))
+        .limit(1),
+      database
+        .select({ id: planVersions.id, document: planVersions.document })
+        .from(planVersions)
+        .where(eq(planVersions.trackerId, tracker.id))
+        .orderBy(desc(planVersions.version))
+        .limit(1),
+      database
+        .select({
+          localDate: events.localDate,
+          occurredAt: events.occurredAt,
+          document: events.document,
+        })
+        .from(events)
+        .where(
+          and(
+            eq(events.trackerId, tracker.id),
+            eq(events.kind, "symptom_check_in"),
+            gte(events.localDate, contextFrom),
+            lte(events.localDate, contextThrough),
+          ),
+        )
+        .orderBy(asc(events.occurredAt)),
+      database
+        .select({
+          taskDefinitionId: taskInstances.taskDefinitionId,
+          localDate: taskInstances.scheduledOn,
+          actual: taskInstances.actualData,
+          planDocument: planVersions.document,
+        })
+        .from(taskInstances)
+        .innerJoin(
+          planVersions,
+          eq(taskInstances.planVersionId, planVersions.id),
+        )
+        .where(
+          and(
+            eq(taskInstances.trackerId, tracker.id),
+            eq(taskInstances.status, "completed"),
+            eq(taskInstances.confirmedByUser, true),
+            gte(taskInstances.scheduledOn, contextFrom),
+            lte(taskInstances.scheduledOn, contextThrough),
+          ),
+        )
+        .orderBy(asc(taskInstances.scheduledOn)),
+      database
+        .select({
+          localDate: externalRecords.localDate,
+          document: externalRecords.document,
+        })
+        .from(externalRecords)
+        .where(
+          and(
+            eq(externalRecords.trackerId, tracker.id),
+            eq(externalRecords.provider, "garmin"),
+            eq(externalRecords.kind, "daily_wellness"),
+            gte(externalRecords.localDate, contextFrom),
+            lte(externalRecords.localDate, contextThrough),
+          ),
+        )
+        .orderBy(asc(externalRecords.localDate)),
+    ]);
   const base = baseRow[0];
   const head = headRow[0];
   if (!base || !head) throw new AiAnalysisPlanNotFoundError();
@@ -200,6 +223,26 @@ export async function prepareAiAnalysisContext({
       } satisfies PlanAdjustmentTraining,
     ];
   });
+  const recoveryEvidence = buildRecoveryEvidence({
+    from: contextFrom,
+    through: contextThrough,
+    records: wellnessRows.flatMap((row) => {
+      const parsed = garminWellnessEvidenceSchema.safeParse(
+        row.document.payload,
+      );
+      if (!parsed.success || parsed.data.localDate !== row.localDate) return [];
+      return [
+        {
+          localDate: row.localDate,
+          sleepStatus: parsed.data.sleep.status,
+          sleepTotalSeconds: parsed.data.sleep.totalSleepSeconds,
+          sleepScore: parsed.data.sleep.sleepScore,
+          stepsStatus: parsed.data.steps.status,
+          totalSteps: parsed.data.steps.totalSteps,
+        },
+      ];
+    }),
+  });
   const safetyLevel = mostSevere(recentFeedback);
   const modelContext: PlanAdjustmentContext = {
     currentPlan,
@@ -208,6 +251,7 @@ export async function prepareAiAnalysisContext({
     range: { from: contextFrom, through: contextThrough },
     recentFeedback,
     confirmedTraining,
+    recoveryEvidence,
     safetyLevel,
   };
   return {

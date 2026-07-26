@@ -220,6 +220,10 @@ integration("P3b-2b Garmin provider-neutral persistence", () => {
         planningTimeZone: "Asia/Shanghai",
         fetchedAt: new Date("2026-07-24T03:00:00.000Z"),
       });
+    const [beforeSync] = await database
+      .select({ revision: trackers.aiContextRevision })
+      .from(trackers)
+      .where(eq(trackers.id, trackerId));
     const first = await syncProviderDate({
       trackerId,
       provider: "garmin",
@@ -228,6 +232,10 @@ integration("P3b-2b Garmin provider-neutral persistence", () => {
       store,
       readSource: async () => wellness(0),
     });
+    const [afterCreate] = await database
+      .select({ revision: trackers.aiContextRevision })
+      .from(trackers)
+      .where(eq(trackers.id, trackerId));
     const second = await syncProviderDate({
       trackerId,
       provider: "garmin",
@@ -236,6 +244,10 @@ integration("P3b-2b Garmin provider-neutral persistence", () => {
       store,
       readSource: async () => wellness(0),
     });
+    const [afterUnchanged] = await database
+      .select({ revision: trackers.aiContextRevision })
+      .from(trackers)
+      .where(eq(trackers.id, trackerId));
     const changed = await syncProviderDate({
       trackerId,
       provider: "garmin",
@@ -244,10 +256,17 @@ integration("P3b-2b Garmin provider-neutral persistence", () => {
       store,
       readSource: async () => wellness(1),
     });
+    const [afterChange] = await database
+      .select({ revision: trackers.aiContextRevision })
+      .from(trackers)
+      .where(eq(trackers.id, trackerId));
 
     expect(first).toMatchObject({ created: 1, changed: 0 });
     expect(second).toMatchObject({ unchanged: 1 });
     expect(changed).toMatchObject({ created: 0, changed: 1 });
+    expect(afterCreate?.revision).toBe((beforeSync?.revision ?? 0) + 1);
+    expect(afterUnchanged?.revision).toBe(afterCreate?.revision);
+    expect(afterChange?.revision).toBe((afterCreate?.revision ?? 0) + 1);
     const aggregate = await getDayAggregate(trackerKey, localDate);
     expect(aggregate.day.recoveryReference).toMatchObject({
       provider: "garmin",

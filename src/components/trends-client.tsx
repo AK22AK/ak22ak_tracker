@@ -198,6 +198,89 @@ function TrainingLoadTrend({ data }: { data: TrendsAggregate }) {
   );
 }
 
+function formatSleepDuration(value: number | null) {
+  if (value === null) return "未测量";
+  const minutes = Math.round(value / 60);
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  if (hours === 0) return `${remainder} 分钟`;
+  return remainder === 0 ? `${hours} 小时` : `${hours} 小时 ${remainder} 分钟`;
+}
+
+function RecoveryTrend({ data }: { data: TrendsAggregate }) {
+  return (
+    <section
+      className="surface-card trend-card"
+      aria-labelledby="recovery-trend-title"
+    >
+      <header className="trend-section-heading">
+        <div>
+          <p className="eyebrow">恢复参考</p>
+          <h2 id="recovery-trend-title">睡眠与步数</h2>
+        </div>
+      </header>
+      <p className="trend-guidance">
+        仅展示已有记录；同期变化仅供参考，不代表存在因果关系。
+      </p>
+      <div className="trend-list">
+        {data.weeks.map((week) => {
+          const recovery = week.recovery;
+          const sleepDuration = formatSleepDuration(
+            recovery.sleep.averageTotalSleepSeconds,
+          );
+          const sleepScore =
+            recovery.sleep.averageSleepScore === null
+              ? "未测量"
+              : String(recovery.sleep.averageSleepScore);
+          const steps =
+            recovery.steps.averageDailySteps === null
+              ? "未测量"
+              : String(recovery.steps.averageDailySteps);
+          const ariaLabel = `${weekLabel(week)}睡眠平均 ${sleepDuration}，覆盖 ${recovery.sleep.availableDays} 天，共 ${recovery.sleep.expectedDays} 天；睡眠评分平均 ${sleepScore}，覆盖 ${recovery.sleep.scoreCoverageDays} 天；步数平均 ${steps}，覆盖 ${recovery.steps.availableDays} 天，共 ${recovery.steps.expectedDays} 天`;
+          return (
+            <div
+              className="trend-row trend-load-row"
+              key={week.weekStart}
+              role="img"
+              aria-label={ariaLabel}
+            >
+              <div className="trend-row-heading">
+                <strong>{weekLabel(week)}</strong>
+                <span>
+                  {recovery.sleep.availableDays === 0 &&
+                  recovery.steps.availableDays === 0
+                    ? "记录不足"
+                    : "恢复参考"}
+                </span>
+              </div>
+              <div className="trend-load-metrics" aria-hidden="true">
+                <p>
+                  <strong>{sleepDuration}</strong>
+                  <span>
+                    睡眠 {recovery.sleep.availableDays} /{" "}
+                    {recovery.sleep.expectedDays} 天
+                  </span>
+                </p>
+                <p>
+                  <strong>{steps === "未测量" ? steps : `${steps} 步`}</strong>
+                  <span>
+                    步数 {recovery.steps.availableDays} /{" "}
+                    {recovery.steps.expectedDays} 天
+                  </span>
+                </p>
+              </div>
+              <p>
+                睡眠评分 {sleepScore} · 覆盖 {recovery.sleep.scoreCoverageDays}{" "}
+                天
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export function TrendsClient() {
   const query = useQuery({
     queryKey: trackerQueryKeys.trends(trackerKey),
@@ -253,7 +336,11 @@ export function TrendsClient() {
     query.data.weeks.find((week) => week.isCurrentWeek) ??
     query.data.weeks.at(-1)!;
   const allEmpty = query.data.weeks.every(
-    (week) => week.tasks.total === 0 && week.symptoms.feedbackDays === 0,
+    (week) =>
+      week.tasks.total === 0 &&
+      week.symptoms.feedbackDays === 0 &&
+      week.recovery.sleep.availableDays === 0 &&
+      week.recovery.steps.availableDays === 0,
   );
 
   return (
@@ -339,6 +426,7 @@ export function TrendsClient() {
 
       <CompletionTrend data={query.data} />
       <TrainingLoadTrend data={query.data} />
+      <RecoveryTrend data={query.data} />
       <p className="trend-context-note">
         训练与身体反馈按同期展示，仅供回顾记录，不表示两者存在因果关系。
       </p>

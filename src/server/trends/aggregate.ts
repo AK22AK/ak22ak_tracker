@@ -21,6 +21,7 @@ import {
   taskInstances,
   trackers,
 } from "@/server/db/schema";
+import { garminWellnessEvidenceSchema } from "@/server/integrations/garmin/contracts";
 import { xunjiTrainSchema } from "@/server/integrations/xunji/contracts";
 
 type Database = ReturnType<typeof getDatabase>;
@@ -70,6 +71,15 @@ type TrendFeedback = {
   safetyLevel: "green" | "yellow" | "red";
 };
 
+type TrendWellness = {
+  localDate: string;
+  stepsStatus: "available" | "missing";
+  totalSteps: number | null;
+  sleepStatus: "available" | "missing";
+  totalSleepSeconds: number | null;
+  sleepScore: number | null;
+};
+
 export type TrendDataStore = {
   getTracker(trackerKey: string): Promise<TrendTracker | null>;
   getPlanVersions(
@@ -91,6 +101,11 @@ export type TrendDataStore = {
     fromDate: string,
     throughDate: string,
   ): Promise<TrendLinkedExternalRecord[]>;
+  getRecoveryRecords(
+    trackerId: string,
+    fromDate: string,
+    throughDate: string,
+  ): Promise<TrendWellness[]>;
 };
 
 export class AggregateTrackerNotFoundError extends Error {
@@ -274,6 +289,41 @@ export function createNeonTrendDataStore(
         return [];
       });
     },
+    async getRecoveryRecords(trackerId, fromDate, throughDate) {
+      const rows = await database
+        .select({
+          localDate: externalRecords.localDate,
+          document: externalRecords.document,
+        })
+        .from(externalRecords)
+        .where(
+          and(
+            eq(externalRecords.trackerId, trackerId),
+            eq(externalRecords.provider, "garmin"),
+            eq(externalRecords.kind, "daily_wellness"),
+            gte(externalRecords.localDate, fromDate),
+            lte(externalRecords.localDate, throughDate),
+          ),
+        );
+      return rows.flatMap((row): TrendWellness[] => {
+        const parsed = garminWellnessEvidenceSchema.safeParse(
+          row.document.payload,
+        );
+        if (!parsed.success || parsed.data.localDate !== row.localDate) {
+          return [];
+        }
+        return [
+          {
+            localDate: row.localDate,
+            stepsStatus: parsed.data.steps.status,
+            totalSteps: parsed.data.steps.totalSteps,
+            sleepStatus: parsed.data.sleep.status,
+            totalSleepSeconds: parsed.data.sleep.totalSleepSeconds,
+            sleepScore: parsed.data.sleep.sleepScore,
+          },
+        ];
+      });
+    },
   };
 }
 
@@ -292,12 +342,14 @@ export async function getTrendsAggregate({
   const range = eightWeekNaturalRange(currentDate);
   const dataStart =
     tracker.startedOn > range.start ? tracker.startedOn : range.start;
-  const [versions, tasks, feedbacks, externalRecords] = await Promise.all([
-    store.getPlanVersions(tracker.id, range.end),
-    store.getTasks(tracker.id, dataStart, range.end),
-    store.getFeedbacks(tracker.id, dataStart, currentDate),
-    store.getLinkedTrainingRecords(tracker.id, dataStart, currentDate),
-  ]);
+  const [versions, tasks, feedbacks, externalRecords, wellnessRecords] =
+    await Promise.all([
+      store.getPlanVersions(tracker.id, range.end),
+      store.getTasks(tracker.id, dataStart, range.end),
+      store.getFeedbacks(tracker.id, dataStart, currentDate),
+      store.getLinkedTrainingRecords(tracker.id, dataStart, currentDate),
+      store.getRecoveryRecords(tracker.id, dataStart, currentDate),
+    ]);
   return trendsAggregateSchema.parse(
     aggregateEightWeekTrends({
       trackerKey: tracker.key,
@@ -309,6 +361,7 @@ export async function getTrendsAggregate({
       tasks,
       feedbacks,
       externalRecords,
+      wellnessRecords,
     }),
   );
 }

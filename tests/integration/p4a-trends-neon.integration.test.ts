@@ -27,6 +27,7 @@ integration("P4a weekly trends Neon aggregate", () => {
   const historicalTaskId = randomUUID();
   const currentTaskId = randomUUID();
   const externalRecordId = randomUUID();
+  const wellnessRecordId = randomUUID();
 
   beforeAll(async () => {
     process.env.DATABASE_URL = testDatabaseUrl;
@@ -130,6 +131,46 @@ integration("P4a weekly trends Neon aggregate", () => {
         },
         fetchedAt: "2026-07-20T11:00:00.000Z",
         contentHash: "a".repeat(64),
+        sourceVersion: 1,
+      },
+    });
+    await database.insert(externalRecords).values({
+      id: wellnessRecordId,
+      trackerId,
+      provider: "garmin",
+      providerRecordId: "daily_wellness:2026-07-20",
+      kind: "daily_wellness",
+      localDate: "2026-07-20",
+      occurredAt: new Date("2026-07-20T04:00:00.000Z"),
+      fetchedAt: new Date("2026-07-20T04:00:00.000Z"),
+      contentHash: "b".repeat(64),
+      sourceVersion: 1,
+      document: {
+        schemaVersion,
+        id: wellnessRecordId,
+        trackerKey,
+        provider: "garmin",
+        providerRecordId: "daily_wellness:2026-07-20",
+        kind: "daily_wellness",
+        occurredAt: "2026-07-20T04:00:00.000Z",
+        localDate: "2026-07-20",
+        payload: {
+          localDate: "2026-07-20",
+          steps: { status: "available", totalSteps: 0, stepGoal: null },
+          sleep: {
+            status: "available",
+            sleepStart: null,
+            sleepEnd: null,
+            totalSleepSeconds: 25_200,
+            deepSleepSeconds: null,
+            lightSleepSeconds: null,
+            remSleepSeconds: null,
+            awakeSleepSeconds: null,
+            sleepScore: 80,
+          },
+        },
+        fetchedAt: "2026-07-20T04:00:00.000Z",
+        contentHash: "b".repeat(64),
         sourceVersion: 1,
       },
     });
@@ -239,6 +280,21 @@ integration("P4a weekly trends Neon aggregate", () => {
       expectedDays: 3,
       maxPain: 7,
       safetyDays: { green: 0, yellow: 0, red: 1 },
+    });
+    expect(currentWeek?.recovery).toEqual({
+      sleep: {
+        availableDays: 1,
+        expectedDays: 3,
+        averageTotalSleepSeconds: 25_200,
+        averageSleepScore: 80,
+        scoreCoverageDays: 1,
+      },
+      steps: {
+        availableDays: 1,
+        expectedDays: 2,
+        throughDate: "2026-07-21",
+        averageDailySteps: 0,
+      },
     });
   });
 });
