@@ -33,6 +33,7 @@ import {
   POST,
 } from "@/app/api/trackers/[trackerKey]/integrations/garmin/wellness/route";
 import { GarminProviderError } from "@/server/integrations/garmin/errors";
+import { IntegrationOperationInProgressError } from "@/server/integrations/credentials/operation-errors";
 import { GarminPreviewDateOutOfRangeError } from "@/server/integrations/garmin/runtime";
 
 const params = Promise.resolve({ trackerKey: "anonymous-tracker" });
@@ -155,5 +156,21 @@ describe("P5a-2a Garmin wellness route", () => {
     const failed = await POST(request("2026-07-24"), { params });
     expect(failed.status).toBe(504);
     expect(await failed.json()).toEqual({ error: "timeout" });
+  });
+
+  it("does not record a busy shared credential operation as a failed day", async () => {
+    syncWellnessHistory.mockRejectedValueOnce(
+      new IntegrationOperationInProgressError(),
+    );
+
+    const response = await POST(
+      new Request("https://anonymous.invalid/api/wellness", {
+        method: "POST",
+      }),
+      { params },
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "sync_in_progress" });
   });
 });

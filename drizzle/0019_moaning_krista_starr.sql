@@ -1,0 +1,2 @@
+ALTER TABLE "integration_credentials" ADD COLUMN "operation_lease_owner" text;--> statement-breakpoint
+ALTER TABLE "integration_credentials" ADD COLUMN "operation_lease_expires_at" timestamp with time zone;

@@ -24,6 +24,7 @@ vi.mock("@/server/integrations/garmin/runtime", async (importOriginal) => {
 
 import { POST } from "@/app/api/trackers/[trackerKey]/integrations/[provider]/sync/route";
 import { GarminProviderError } from "@/server/integrations/garmin/errors";
+import { IntegrationOperationInProgressError } from "@/server/integrations/credentials/operation-errors";
 
 function request(body: unknown) {
   return new Request("https://anonymous.invalid/api/sync", {
@@ -145,5 +146,16 @@ describe("P3b-2b Garmin single-date sync route", () => {
     const body = await failed.json();
     expect(body).toEqual({ error: "provider_unavailable" });
     expect(JSON.stringify(body)).not.toContain("upstream detail");
+  });
+
+  it("reports a shared credential operation as safely retryable", async () => {
+    syncActivityHistory.mockRejectedValueOnce(
+      new IntegrationOperationInProgressError(),
+    );
+
+    const response = await POST(emptyRequest(), { params });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "sync_in_progress" });
   });
 });

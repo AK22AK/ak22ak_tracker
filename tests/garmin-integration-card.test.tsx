@@ -357,6 +357,22 @@ describe("Garmin token-only settings flow", () => {
     expect(screen.queryByText(/本次验证没有完成/)).toBeNull();
   });
 
+  it("explains that another Garmin sync is already running", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({ error: "sync_in_progress" }, { status: 409 }),
+      ),
+    );
+    renderCard({ ...disconnected, state: "connected" });
+
+    fireEvent.click(screen.getByRole("button", { name: "同步这一天" }));
+
+    await screen.findByText("另一项 Garmin 同步正在进行，请稍后重试。");
+    expect(screen.queryByText(/Token 已失效/)).toBeNull();
+    expect(screen.queryByText(/Garmin 暂时无法连接/)).toBeNull();
+  });
+
   it("syncs wellness with an independent date draft and invalidates only day views", async () => {
     const response = {
       provider: "garmin",

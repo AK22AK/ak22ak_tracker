@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lte, or, sql } from "drizzle-orm";
 
 import { localDateSchema } from "@/domain/schemas";
 import { getDatabase } from "@/server/db/client";
@@ -49,6 +49,9 @@ export class IntegrationCredentialNotFoundError extends Error {
     this.name = "IntegrationCredentialNotFoundError";
   }
 }
+
+export type IntegrationCredentialOperationClaim =
+  { status: "claimed"; plaintext: string } | { status: "busy" };
 
 export async function requireIntegrationTracker(
   trackerKey: string,
@@ -166,7 +169,13 @@ export async function saveIntegrationCredential(input: {
         integrationCredentials.trackerId,
         integrationCredentials.provider,
       ],
-      set: { verifiedAt: input.verifiedAt, updatedAt: now, ...encrypted },
+      set: {
+        verifiedAt: input.verifiedAt,
+        updatedAt: now,
+        operationLeaseOwner: null,
+        operationLeaseExpiresAt: null,
+        ...encrypted,
+      },
     });
 }
 
@@ -210,6 +219,8 @@ export async function saveIntegrationCredentialAndResetState(input: {
         set: {
           verifiedAt: input.verifiedAt,
           updatedAt: input.now,
+          operationLeaseOwner: null,
+          operationLeaseExpiresAt: null,
           ...encrypted,
         },
       }),
@@ -225,6 +236,160 @@ export async function saveIntegrationCredentialAndResetState(input: {
         set: reset,
       }),
   ]);
+}
+
+export async function claimIntegrationCredentialOperation(input: {
+  trackerId: string;
+  provider: string;
+  owner: string;
+  claimedAt: Date;
+  expiresAt: Date;
+  database?: Database;
+}): Promise<IntegrationCredentialOperationClaim> {
+  if (input.expiresAt <= input.claimedAt) {
+    throw new Error("integration_operation_lease_expiry_invalid");
+  }
+  const database = input.database ?? getDatabase();
+  const [claimed] = await database
+    .update(integrationCredentials)
+    .set({
+      operationLeaseOwner: input.owner,
+      operationLeaseExpiresAt: input.expiresAt,
+    })
+    .where(
+      and(
+        eq(integrationCredentials.trackerId, input.trackerId),
+        eq(integrationCredentials.provider, input.provider),
+        or(
+          isNull(integrationCredentials.operationLeaseOwner),
+          isNull(integrationCredentials.operationLeaseExpiresAt),
+          lte(integrationCredentials.operationLeaseExpiresAt, input.claimedAt),
+        ),
+      ),
+    )
+    .returning({
+      algorithm: integrationCredentials.algorithm,
+      keyVersion: integrationCredentials.keyVersion,
+      nonce: integrationCredentials.nonce,
+      ciphertext: integrationCredentials.ciphertext,
+      authTag: integrationCredentials.authTag,
+    });
+  if (claimed) {
+    if (claimed.algorithm !== "aes-256-gcm") {
+      throw new Error("integration_credential_algorithm_unsupported");
+    }
+    return {
+      status: "claimed",
+      plaintext: decryptIntegrationCredential({
+        encrypted: claimed as EncryptedIntegrationCredential,
+        provider: input.provider,
+        keyBase64: getIntegrationEncryptionConfig().keyBase64,
+      }),
+    };
+  }
+  const [credential] = await database
+    .select({ id: integrationCredentials.id })
+    .from(integrationCredentials)
+    .where(
+      and(
+        eq(integrationCredentials.trackerId, input.trackerId),
+        eq(integrationCredentials.provider, input.provider),
+      ),
+    )
+    .limit(1);
+  if (!credential) throw new IntegrationCredentialNotFoundError();
+  return { status: "busy" };
+}
+
+export async function saveIntegrationCredentialUnderOperationLease(input: {
+  trackerId: string;
+  provider: string;
+  owner: string;
+  plaintext: string;
+  verifiedAt: Date;
+  savedAt: Date;
+  expiresAt: Date;
+  database?: Database;
+}) {
+  if (input.expiresAt <= input.savedAt) {
+    throw new Error("integration_operation_lease_expiry_invalid");
+  }
+  const database = input.database ?? getDatabase();
+  const encrypted = encryptIntegrationCredential({
+    plaintext: input.plaintext,
+    provider: input.provider,
+    ...getIntegrationEncryptionConfig(),
+  });
+  const rows = await database
+    .update(integrationCredentials)
+    .set({
+      verifiedAt: input.verifiedAt,
+      updatedAt: input.savedAt,
+      operationLeaseExpiresAt: input.expiresAt,
+      ...encrypted,
+    })
+    .where(
+      and(
+        eq(integrationCredentials.trackerId, input.trackerId),
+        eq(integrationCredentials.provider, input.provider),
+        eq(integrationCredentials.operationLeaseOwner, input.owner),
+        gt(integrationCredentials.operationLeaseExpiresAt, input.savedAt),
+      ),
+    )
+    .returning({ id: integrationCredentials.id });
+  return rows.length === 1;
+}
+
+export async function releaseIntegrationCredentialOperation(input: {
+  trackerId: string;
+  provider: string;
+  owner: string;
+  database?: Database;
+}) {
+  const database = input.database ?? getDatabase();
+  const rows = await database
+    .update(integrationCredentials)
+    .set({ operationLeaseOwner: null, operationLeaseExpiresAt: null })
+    .where(
+      and(
+        eq(integrationCredentials.trackerId, input.trackerId),
+        eq(integrationCredentials.provider, input.provider),
+        eq(integrationCredentials.operationLeaseOwner, input.owner),
+      ),
+    )
+    .returning({ id: integrationCredentials.id });
+  return rows.length === 1;
+}
+
+export async function markIntegrationConnectionFailureUnderOperationLease(input: {
+  trackerId: string;
+  provider: string;
+  owner: string;
+  failedAt: Date;
+  errorCode: string;
+  database?: Database;
+}) {
+  const database = input.database ?? getDatabase();
+  const result = await database.execute(sql`
+    insert into integration_sync_state (
+      id, tracker_id, provider, status, last_attempt_at, last_error_code, updated_at
+    )
+    select
+      gen_random_uuid(), ${input.trackerId}::uuid, ${input.provider}, 'failed',
+      ${input.failedAt}, ${input.errorCode}, ${input.failedAt}
+    from integration_credentials
+    where tracker_id = ${input.trackerId}::uuid
+      and provider = ${input.provider}
+      and operation_lease_owner = ${input.owner}
+      and operation_lease_expires_at > ${input.failedAt}
+    on conflict (tracker_id, provider) do update set
+      status = 'failed',
+      last_attempt_at = excluded.last_attempt_at,
+      last_error_code = excluded.last_error_code,
+      updated_at = excluded.updated_at
+    returning id
+  `);
+  return result.rows.length === 1;
 }
 
 export async function markIntegrationConnectionFailure(input: {

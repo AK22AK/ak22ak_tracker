@@ -42,6 +42,9 @@ function statusCopy(state: GarminConnectionStatus["state"]) {
 
 function safeFailureMessage(code: string | null) {
   if (code === "future_date_not_allowed") return "同步日期不能晚于今天。";
+  if (code === "sync_in_progress") {
+    return "另一项 Garmin 同步正在进行，请稍后重试。";
+  }
   if (code === "authentication") {
     return "Garmin Token 已失效，请在本机重新授权后导入。";
   }
@@ -58,7 +61,12 @@ function safeFailureMessage(code: string | null) {
 async function safeErrorCode(response: Response) {
   try {
     const value = (await response.json()) as { error?: unknown };
-    if (value.error === "future_date_not_allowed") return value.error;
+    if (
+      value.error === "future_date_not_allowed" ||
+      value.error === "sync_in_progress"
+    ) {
+      return value.error;
+    }
     const parsed = garminProviderErrorCodeSchema.safeParse(value.error);
     return parsed.success ? parsed.data : null;
   } catch {
@@ -228,7 +236,14 @@ export function GarminIntegrationCard({
       );
       const body: unknown = await response.json();
       if (!response.ok) {
-        throw new Error("sync_failed");
+        const code =
+          typeof body === "object" &&
+          body !== null &&
+          "error" in body &&
+          body.error === "sync_in_progress"
+            ? body.error
+            : "sync_failed";
+        throw new Error(code);
       }
       const result = integrationCatchUpResultSchema.parse(body);
       setCatchUpResult(result);
@@ -365,7 +380,16 @@ export function GarminIntegrationCard({
     try {
       const response = await fetch(`${baseUrl}/wellness`, { method: "POST" });
       const body: unknown = await response.json();
-      if (!response.ok) throw new Error("sync_failed");
+      if (!response.ok) {
+        const code =
+          typeof body === "object" &&
+          body !== null &&
+          "error" in body &&
+          body.error === "sync_in_progress"
+            ? body.error
+            : "sync_failed";
+        throw new Error(code);
+      }
       const result = integrationCatchUpResultSchema.parse(body);
       setWellnessCatchUpResult(result);
       const failedDay = result.days.find((day) => day.status === "failed");
@@ -422,8 +446,10 @@ export function GarminIntegrationCard({
           `恢复数据本批成功 ${result.summary.succeeded} 天，可以继续同步。`,
         );
       }
-    } catch {
-      setMessage("恢复数据同步没有完成，请稍后重试。");
+    } catch (error) {
+      setMessage(
+        safeFailureMessage(error instanceof Error ? error.message : null),
+      );
     } finally {
       wellnessInFlightRef.current = false;
       setBusy(null);

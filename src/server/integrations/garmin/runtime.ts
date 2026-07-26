@@ -1,5 +1,7 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+
 import {
   garminActivitySyncResponseSchema,
   garminActivityRecoveryResponseSchema,
@@ -35,13 +37,19 @@ import {
 } from "@/server/integrations/core/sync-provider-date";
 import { getIntegrationEncryptionConfig } from "@/server/integrations/credentials/config";
 import {
+  claimIntegrationCredentialOperation,
   getIntegrationStatus,
-  markIntegrationConnectionFailure,
-  readIntegrationCredential,
+  markIntegrationConnectionFailureUnderOperationLease,
+  releaseIntegrationCredentialOperation,
   requireIntegrationTracker,
-  saveIntegrationCredential,
   saveIntegrationCredentialAndResetState,
+  saveIntegrationCredentialUnderOperationLease,
 } from "@/server/integrations/credentials/repository";
+import {
+  IntegrationOperationInProgressError,
+  IntegrationOperationInterruptedError,
+  IntegrationOperationLeaseLostError,
+} from "@/server/integrations/credentials/operation-errors";
 
 import {
   garminCredentialSchema,
@@ -77,18 +85,30 @@ export type GarminCredentialStore = {
     attemptedAt: Date | null;
     now: Date;
   }): Promise<void>;
+  claimOperation(input: {
+    trackerId: string;
+    owner: string;
+    claimedAt: Date;
+    expiresAt: Date;
+  }): Promise<{ status: "claimed"; plaintext: string } | { status: "busy" }>;
   saveRefreshed(input: {
     trackerId: string;
+    owner: string;
     plaintext: string;
     verifiedAt: Date;
-    attemptedAt: Date;
-  }): Promise<void>;
-  read(trackerId: string): Promise<string>;
+    savedAt: Date;
+    expiresAt: Date;
+  }): Promise<boolean>;
+  releaseOperation(input: {
+    trackerId: string;
+    owner: string;
+  }): Promise<boolean>;
   markFailure(
     trackerId: string,
+    owner: string,
     failedAt: Date,
     errorCode: string,
-  ): Promise<void>;
+  ): Promise<boolean>;
 };
 
 function createNeonGarminCredentialStore(
@@ -111,24 +131,45 @@ function createNeonGarminCredentialStore(
         now,
         database,
       }),
-    saveRefreshed: ({ trackerId, plaintext, verifiedAt }) =>
-      saveIntegrationCredential({
+    claimOperation: ({ trackerId, owner, claimedAt, expiresAt }) =>
+      claimIntegrationCredentialOperation({
         trackerId,
         provider: "garmin",
+        owner,
+        claimedAt,
+        expiresAt,
+        database,
+      }),
+    saveRefreshed: ({
+      trackerId,
+      owner,
+      plaintext,
+      verifiedAt,
+      savedAt,
+      expiresAt,
+    }) =>
+      saveIntegrationCredentialUnderOperationLease({
+        trackerId,
+        provider: "garmin",
+        owner,
         plaintext,
         verifiedAt,
+        savedAt,
+        expiresAt,
         database,
       }),
-    read: (trackerId) =>
-      readIntegrationCredential({
+    releaseOperation: ({ trackerId, owner }) =>
+      releaseIntegrationCredentialOperation({
         trackerId,
         provider: "garmin",
+        owner,
         database,
       }),
-    markFailure: (trackerId, failedAt, errorCode) =>
-      markIntegrationConnectionFailure({
+    markFailure: (trackerId, owner, failedAt, errorCode) =>
+      markIntegrationConnectionFailureUnderOperationLease({
         trackerId,
         provider: "garmin",
+        owner,
         failedAt,
         errorCode,
         database,
@@ -189,31 +230,91 @@ export function createGarminRuntime({
 }) {
   const automaticRecoveryMinimumIntervalMs = 30 * 60_000;
   const automaticRecoveryLeaseMs = 2 * 60_000;
+  const providerOperationLeaseMs = 2 * 60_000;
+
+  type GarminOperation = {
+    owner: string;
+    credential: GarminCredential;
+    persistRefreshed(
+      refreshedCredential: GarminCredential,
+      verifiedAt: Date,
+    ): Promise<void>;
+    markFailure(failedAt: Date, errorCode: string): Promise<void>;
+  };
+
+  async function withGarminOperation<Result>(
+    tracker: Tracker,
+    operation: (lease: GarminOperation) => Promise<Result>,
+  ) {
+    const owner = randomUUID();
+    const claimedAt = now();
+    const claimed = await store.claimOperation({
+      trackerId: tracker.id,
+      owner,
+      claimedAt,
+      expiresAt: new Date(claimedAt.valueOf() + providerOperationLeaseMs),
+    });
+    if (claimed.status === "busy") {
+      throw new IntegrationOperationInProgressError();
+    }
+    try {
+      let credential: GarminCredential;
+      try {
+        credential = garminCredentialSchema.parse(
+          JSON.parse(claimed.plaintext) as unknown,
+        );
+      } catch (error) {
+        const marked = await store.markFailure(
+          tracker.id,
+          owner,
+          claimedAt,
+          "invalid_token_bundle",
+        );
+        if (!marked) throw new IntegrationOperationLeaseLostError();
+        throw new GarminProviderError("invalid_token_bundle", { cause: error });
+      }
+      const lease: GarminOperation = {
+        owner,
+        credential,
+        async persistRefreshed(refreshedCredential, verifiedAt) {
+          const savedAt = now();
+          const saved = await store.saveRefreshed({
+            trackerId: tracker.id,
+            owner,
+            plaintext: JSON.stringify(refreshedCredential),
+            verifiedAt,
+            savedAt,
+            expiresAt: new Date(savedAt.valueOf() + providerOperationLeaseMs),
+          });
+          if (!saved) throw new IntegrationOperationLeaseLostError();
+          lease.credential = refreshedCredential;
+        },
+        async markFailure(failedAt, errorCode) {
+          const marked = await store.markFailure(
+            tracker.id,
+            owner,
+            failedAt,
+            errorCode,
+          );
+          if (!marked) throw new IntegrationOperationLeaseLostError();
+        },
+      };
+      return await operation(lease);
+    } finally {
+      await store.releaseOperation({ trackerId: tracker.id, owner });
+    }
+  }
+
   async function readActivities(input: {
     tracker: Tracker;
     date: string;
     requestedAt: Date;
     markCredentialFailure: boolean;
+    operation: GarminOperation;
   }) {
-    let credential: GarminCredential;
-    try {
-      credential = garminCredentialSchema.parse(
-        JSON.parse(await store.read(input.tracker.id)) as unknown,
-      );
-    } catch (error) {
-      if (input.markCredentialFailure) {
-        await store.markFailure(
-          input.tracker.id,
-          input.requestedAt,
-          "invalid_token_bundle",
-        );
-      }
-      throw new GarminProviderError("invalid_token_bundle", { cause: error });
-    }
-
     try {
       const result = await client.fetchActivitiesForDate({
-        credential,
+        credential: input.operation.credential,
         date: input.date,
       });
       if (
@@ -227,21 +328,19 @@ export function createGarminRuntime({
       ) {
         throw new GarminProviderError("invalid_response");
       }
-      await store.saveRefreshed({
-        trackerId: input.tracker.id,
-        plaintext: JSON.stringify(result.refreshedCredential),
-        verifiedAt: input.requestedAt,
-        attemptedAt: input.requestedAt,
-      });
+      await input.operation.persistRefreshed(
+        result.refreshedCredential,
+        input.requestedAt,
+      );
       return result.activities;
     } catch (error) {
+      if (error instanceof IntegrationOperationInterruptedError) throw error;
       const providerError =
         error instanceof GarminProviderError
           ? error
           : new GarminProviderError("provider_unavailable", { cause: error });
       if (input.markCredentialFailure) {
-        await store.markFailure(
-          input.tracker.id,
+        await input.operation.markFailure(
           input.requestedAt,
           providerError.code,
         );
@@ -254,39 +353,23 @@ export function createGarminRuntime({
     tracker: Tracker;
     date: string;
     requestedAt: Date;
+    operation: GarminOperation;
   }) {
-    let credential: GarminCredential;
-    try {
-      credential = garminCredentialSchema.parse(
-        JSON.parse(await store.read(input.tracker.id)) as unknown,
-      );
-    } catch (error) {
-      const providerError = new GarminProviderError("invalid_token_bundle", {
-        cause: error,
-      });
-      await store.markFailure(
-        input.tracker.id,
-        input.requestedAt,
-        providerError.code,
-      );
-      throw providerError;
-    }
     try {
       const result = await client.fetchWellnessForDate({
-        credential,
+        credential: input.operation.credential,
         date: input.date,
       });
       if (result.wellness.localDate !== input.date) {
         throw new GarminProviderError("invalid_response");
       }
-      await store.saveRefreshed({
-        trackerId: input.tracker.id,
-        plaintext: JSON.stringify(result.refreshedCredential),
-        verifiedAt: input.requestedAt,
-        attemptedAt: input.requestedAt,
-      });
+      await input.operation.persistRefreshed(
+        result.refreshedCredential,
+        input.requestedAt,
+      );
       return result.wellness;
     } catch (error) {
+      if (error instanceof IntegrationOperationInterruptedError) throw error;
       const providerError =
         error instanceof GarminProviderError
           ? error
@@ -296,8 +379,7 @@ export function createGarminRuntime({
         providerError.code === "invalid_token_bundle" ||
         providerError.code === "unsupported_client_version"
       ) {
-        await store.markFailure(
-          input.tracker.id,
+        await input.operation.markFailure(
           input.requestedAt,
           providerError.code,
         );
@@ -319,6 +401,7 @@ export function createGarminRuntime({
     tracker: Tracker;
     date: string;
     requestedAt: Date;
+    operation: GarminOperation;
   }) {
     return syncProviderDate({
       trackerId: input.tracker.id,
@@ -333,6 +416,7 @@ export function createGarminRuntime({
             date: input.date,
             requestedAt: input.requestedAt,
             markCredentialFailure: false,
+            operation: input.operation,
           }),
           localDate: input.date,
           planningTimeZone: input.tracker.planningTimeZone,
@@ -345,6 +429,7 @@ export function createGarminRuntime({
     tracker: Tracker;
     date: string;
     requestedAt: Date;
+    operation: GarminOperation;
   }) {
     return syncProviderDate({
       trackerId: input.tracker.id,
@@ -365,6 +450,7 @@ export function createGarminRuntime({
   async function syncActivityHistoryForTracker(
     tracker: Tracker,
     batchSize: 3 | 5,
+    operation: GarminOperation,
   ) {
     const requestedAt = now();
     const today = localDateInTimeZone(requestedAt, tracker.planningTimeZone);
@@ -378,11 +464,14 @@ export function createGarminRuntime({
       overlapDays: 2,
       store: createCatchUpStore(),
       syncDate: (date) =>
-        syncTrackerDate({ tracker, date, requestedAt: now() }),
+        syncTrackerDate({ tracker, date, requestedAt: now(), operation }),
     });
   }
 
-  async function syncWellnessHistoryForTracker(tracker: Tracker) {
+  async function syncWellnessHistoryForTracker(
+    tracker: Tracker,
+    operation: GarminOperation,
+  ) {
     const requestedAt = now();
     const today = localDateInTimeZone(requestedAt, tracker.planningTimeZone);
     return syncProviderCatchUpBatch({
@@ -396,7 +485,7 @@ export function createGarminRuntime({
       overlapDays: 2,
       store: createCatchUpStore(),
       syncDate: (date) =>
-        syncWellnessDate({ tracker, date, requestedAt: now() }),
+        syncWellnessDate({ tracker, date, requestedAt: now(), operation }),
     });
   }
 
@@ -455,12 +544,15 @@ export function createGarminRuntime({
         input.trackerKey,
         input.date,
       );
-      const activities = await readActivities({
-        tracker,
-        date,
-        requestedAt,
-        markCredentialFailure: true,
-      });
+      const activities = await withGarminOperation(tracker, (operation) =>
+        readActivities({
+          tracker,
+          date,
+          requestedAt,
+          markCredentialFailure: true,
+          operation,
+        }),
+      );
       return garminActivityPreviewResponseSchema.parse({
         provider: "garmin",
         date,
@@ -482,7 +574,9 @@ export function createGarminRuntime({
         input.trackerKey,
         input.date,
       );
-      const sync = await syncTrackerDate({ tracker, date, requestedAt });
+      const sync = await withGarminOperation(tracker, (operation) =>
+        syncTrackerDate({ tracker, date, requestedAt, operation }),
+      );
       return garminActivitySyncResponseSchema.parse({
         provider: "garmin",
         date,
@@ -496,7 +590,9 @@ export function createGarminRuntime({
         input.trackerKey,
         input.date,
       );
-      const sync = await syncWellnessDate({ tracker, date, requestedAt });
+      const sync = await withGarminOperation(tracker, (operation) =>
+        syncWellnessDate({ tracker, date, requestedAt, operation }),
+      );
       return garminWellnessSyncResponseSchema.parse({
         provider: "garmin",
         kind: "daily_wellness",
@@ -507,7 +603,9 @@ export function createGarminRuntime({
 
     async syncWellnessHistory(input: { trackerKey: string }) {
       const tracker = await store.requireTracker(input.trackerKey);
-      return syncWellnessHistoryForTracker(tracker);
+      return withGarminOperation(tracker, (operation) =>
+        syncWellnessHistoryForTracker(tracker, operation),
+      );
     },
 
     async wellnessProgress(input: { trackerKey: string }) {
@@ -528,15 +626,29 @@ export function createGarminRuntime({
           progress: await wellnessProgressForTracker(tracker),
         });
       }
-      const recovery = await runAutomaticProviderRecovery({
-        trackerId: tracker.id,
-        provider: "garmin_wellness",
-        now: now(),
-        minimumIntervalMs: automaticRecoveryMinimumIntervalMs,
-        leaseMs: automaticRecoveryLeaseMs,
-        store: automaticRecoveryStore,
-        recover: () => syncWellnessHistoryForTracker(tracker),
-      });
+      let recovery;
+      try {
+        recovery = await withGarminOperation(tracker, (operation) =>
+          runAutomaticProviderRecovery({
+            trackerId: tracker.id,
+            provider: "garmin_wellness",
+            now: now(),
+            minimumIntervalMs: automaticRecoveryMinimumIntervalMs,
+            leaseMs: automaticRecoveryLeaseMs,
+            store: automaticRecoveryStore,
+            recover: () => syncWellnessHistoryForTracker(tracker, operation),
+          }),
+        );
+      } catch (error) {
+        if (!(error instanceof IntegrationOperationInterruptedError)) {
+          throw error;
+        }
+        return garminWellnessRecoveryResponseSchema.parse({
+          status: "skipped",
+          reason: "in_progress",
+          progress: await wellnessProgressForTracker(tracker),
+        });
+      }
       return garminWellnessRecoveryResponseSchema.parse(
         recovery.status === "completed"
           ? {
@@ -554,7 +666,9 @@ export function createGarminRuntime({
 
     async syncActivityHistory(input: { trackerKey: string }) {
       const tracker = await store.requireTracker(input.trackerKey);
-      return syncActivityHistoryForTracker(tracker, 5);
+      return withGarminOperation(tracker, (operation) =>
+        syncActivityHistoryForTracker(tracker, 5, operation),
+      );
     },
 
     async recoverActivityHistory(input: {
@@ -572,19 +686,34 @@ export function createGarminRuntime({
         });
       }
       const tracker = await store.requireTracker(input.trackerKey);
-      const recovery = await runAutomaticProviderRecovery({
-        trackerId: tracker.id,
-        provider: "garmin",
-        now: now(),
-        minimumIntervalMs: automaticRecoveryMinimumIntervalMs,
-        leaseMs: automaticRecoveryLeaseMs,
-        store: automaticRecoveryStore,
-        recover: () =>
-          syncActivityHistoryForTracker(
-            tracker,
-            input.profile === "daily_cron" ? 3 : 5,
-          ),
-      });
+      let recovery;
+      try {
+        recovery = await withGarminOperation(tracker, (operation) =>
+          runAutomaticProviderRecovery({
+            trackerId: tracker.id,
+            provider: "garmin",
+            now: now(),
+            minimumIntervalMs: automaticRecoveryMinimumIntervalMs,
+            leaseMs: automaticRecoveryLeaseMs,
+            store: automaticRecoveryStore,
+            recover: () =>
+              syncActivityHistoryForTracker(
+                tracker,
+                input.profile === "daily_cron" ? 3 : 5,
+                operation,
+              ),
+          }),
+        );
+      } catch (error) {
+        if (!(error instanceof IntegrationOperationInterruptedError)) {
+          throw error;
+        }
+        return garminActivityRecoveryResponseSchema.parse({
+          status: "skipped",
+          reason: "in_progress",
+          connection: connectionStatus(await store.getStatus(input.trackerKey)),
+        });
+      }
       const latestConnection = connectionStatus(
         await store.getStatus(input.trackerKey),
       );

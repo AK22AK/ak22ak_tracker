@@ -4,6 +4,7 @@ import type {
   IntegrationProvider,
   NormalizedExternalRecord,
 } from "./external-records";
+import { IntegrationOperationInterruptedError } from "../credentials/operation-errors";
 
 export type ProviderDateSyncResult = {
   cached: boolean;
@@ -85,6 +86,7 @@ export async function syncProviderDate(input: {
       cachedUntil: new Date(input.now.valueOf() + 30_000),
     });
   } catch (error) {
+    if (error instanceof IntegrationOperationInterruptedError) throw error;
     await input.store.markFailure({
       trackerId: input.trackerId,
       provider: input.provider,

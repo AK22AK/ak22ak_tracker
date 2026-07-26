@@ -31,6 +31,8 @@ function fixture() {
   let plaintext: string | null = null;
   let verifiedAt: Date | null = null;
   let lastErrorCode: string | null = null;
+  let operationOwner: string | null = null;
+  let operationExpiresAt: Date | null = null;
   const tracker = {
     id: "019c0000-0000-7000-8000-000000000001",
     key: "knee-rehab",
@@ -58,18 +60,52 @@ function fixture() {
       plaintext = input.plaintext;
       verifiedAt = input.verifiedAt;
       lastErrorCode = null;
+      operationOwner = null;
+      operationExpiresAt = null;
+    }),
+    claimOperation: vi.fn(async (input) => {
+      if (plaintext === null) throw new Error("missing");
+      if (
+        operationOwner !== null &&
+        operationExpiresAt !== null &&
+        operationExpiresAt > input.claimedAt
+      ) {
+        return { status: "busy" as const };
+      }
+      operationOwner = input.owner;
+      operationExpiresAt = input.expiresAt;
+      return { status: "claimed" as const, plaintext };
     }),
     saveRefreshed: vi.fn(async (input) => {
+      if (
+        operationOwner !== input.owner ||
+        operationExpiresAt === null ||
+        operationExpiresAt <= input.savedAt
+      ) {
+        return false;
+      }
       plaintext = input.plaintext;
       verifiedAt = input.verifiedAt;
       lastErrorCode = null;
+      operationExpiresAt = input.expiresAt;
+      return true;
     }),
-    read: vi.fn(async () => {
-      if (plaintext === null) throw new Error("missing");
-      return plaintext;
+    releaseOperation: vi.fn(async (input) => {
+      if (operationOwner !== input.owner) return false;
+      operationOwner = null;
+      operationExpiresAt = null;
+      return true;
     }),
-    markFailure: vi.fn(async (_trackerId, _failedAt, code) => {
+    markFailure: vi.fn(async (_trackerId, owner, failedAt, code) => {
+      if (
+        operationOwner !== owner ||
+        operationExpiresAt === null ||
+        operationExpiresAt <= failedAt
+      ) {
+        return false;
+      }
       lastErrorCode = code;
+      return true;
     }),
   };
   const client: GarminClient<GarminCredential> = {
@@ -217,7 +253,7 @@ describe("P3b-2a Garmin token-only runtime", () => {
     expect(store.saveRefreshed).toHaveBeenLastCalledWith(
       expect.objectContaining({
         verifiedAt: new Date("2026-07-24T02:00:00.000Z"),
-        attemptedAt: new Date("2026-07-24T02:00:00.000Z"),
+        savedAt: new Date("2026-07-24T02:00:00.000Z"),
       }),
     );
     expect(JSON.stringify(result)).not.toContain("anonymous-activity-1");
@@ -501,6 +537,7 @@ describe("P3b-2a Garmin token-only runtime", () => {
     ).rejects.toMatchObject({ code: "authentication" });
     expect(store.markFailure).toHaveBeenCalledWith(
       expect.any(String),
+      expect.any(String),
       expect.any(Date),
       "authentication",
     );
@@ -536,6 +573,7 @@ describe("P3b-2a Garmin token-only runtime", () => {
       }),
     ).rejects.toMatchObject({ code: "invalid_response" });
     expect(store.markFailure).toHaveBeenCalledWith(
+      expect.any(String),
       expect.any(String),
       expect.any(Date),
       "invalid_response",
@@ -879,6 +917,7 @@ describe("P5a-2b Garmin wellness catch-up", () => {
     });
     expect(store.markFailure).toHaveBeenCalledWith(
       "019c0000-0000-7000-8000-000000000001",
+      expect.any(String),
       new Date("2026-07-24T02:00:00.000Z"),
       "authentication",
     );
@@ -933,5 +972,125 @@ describe("P5a-2b Garmin wellness catch-up", () => {
     expect(automaticRecoveryStore.claim).not.toHaveBeenCalledWith(
       expect.objectContaining({ provider: "garmin" }),
     );
+  });
+});
+
+describe("P5a-2b shared Garmin credential operation", () => {
+  it("allows only one activity or wellness Provider call at a time", async () => {
+    const { runtime, client } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+    let releaseActivity: (() => void) | undefined;
+    vi.mocked(client.fetchActivitiesForDate).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseActivity = () =>
+            resolve({ activities: [], refreshedCredential: credential });
+        }),
+    );
+
+    const activity = runtime.syncActivities({
+      trackerKey: "knee-rehab",
+      date: "2026-07-24",
+    });
+    await vi.waitFor(() =>
+      expect(client.fetchActivitiesForDate).toHaveBeenCalledOnce(),
+    );
+
+    try {
+      await expect(
+        runtime.syncWellness({
+          trackerKey: "knee-rehab",
+          date: "2026-07-24",
+        }),
+      ).rejects.toMatchObject({ code: "sync_in_progress" });
+      expect(client.fetchWellnessForDate).not.toHaveBeenCalled();
+    } finally {
+      releaseActivity?.();
+      await activity;
+    }
+  });
+
+  it("skips automatic recovery before touching its business claim when the shared operation is busy", async () => {
+    const { runtime, client, automaticRecoveryStore } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+    await runtime.syncActivities({
+      trackerKey: "knee-rehab",
+      date: "2026-07-24",
+    });
+    vi.mocked(automaticRecoveryStore.claim).mockClear();
+    vi.mocked(client.fetchActivitiesForDate).mockClear();
+    let releaseActivity: (() => void) | undefined;
+    vi.mocked(client.fetchActivitiesForDate).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseActivity = () =>
+            resolve({ activities: [], refreshedCredential: credential });
+        }),
+    );
+    const activity = runtime.syncActivities({
+      trackerKey: "knee-rehab",
+      date: "2026-07-23",
+    });
+    await vi.waitFor(() =>
+      expect(client.fetchActivitiesForDate).toHaveBeenCalledOnce(),
+    );
+
+    try {
+      await expect(
+        runtime.recoverWellnessHistory({ trackerKey: "knee-rehab" }),
+      ).resolves.toMatchObject({ status: "skipped", reason: "in_progress" });
+      expect(automaticRecoveryStore.claim).not.toHaveBeenCalled();
+    } finally {
+      releaseActivity?.();
+      await activity;
+    }
+  });
+
+  it("does not let an older Provider response overwrite a replacement credential", async () => {
+    const { runtime, client, getPlaintext } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+    let releaseActivity: (() => void) | undefined;
+    const staleRefreshedCredential = {
+      ...credential,
+      tokenBundle: JSON.stringify({
+        di_token: "anonymous-stale-access-token",
+        di_refresh_token: "anonymous-stale-refresh-token",
+        di_client_id: "anonymous-client-id",
+      }),
+    };
+    vi.mocked(client.fetchActivitiesForDate).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseActivity = () =>
+            resolve({
+              activities: [],
+              refreshedCredential: staleRefreshedCredential,
+            });
+        }),
+    );
+    const activity = runtime.syncActivities({
+      trackerKey: "knee-rehab",
+      date: "2026-07-24",
+    });
+    await vi.waitFor(() =>
+      expect(client.fetchActivitiesForDate).toHaveBeenCalledOnce(),
+    );
+
+    const replacement = {
+      ...credential,
+      tokenBundle: JSON.stringify({
+        di_token: "anonymous-replacement-access-token",
+        di_refresh_token: "anonymous-replacement-refresh-token",
+        di_client_id: "anonymous-client-id",
+      }),
+    };
+    await runtime.importCredential({
+      trackerKey: "knee-rehab",
+      credential: replacement,
+    });
+    releaseActivity?.();
+
+    await expect(activity).rejects.toMatchObject({ code: "sync_in_progress" });
+    expect(getPlaintext()).toBe(JSON.stringify(replacement));
   });
 });

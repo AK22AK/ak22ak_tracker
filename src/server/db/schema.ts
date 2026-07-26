@@ -634,6 +634,10 @@ export const integrationCredentials = pgTable(
     ciphertext: text("ciphertext").notNull(),
     authTag: text("auth_tag").notNull(),
     verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    operationLeaseOwner: text("operation_lease_owner"),
+    operationLeaseExpiresAt: timestamp("operation_lease_expires_at", {
+      withTimezone: true,
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

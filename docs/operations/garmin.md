@@ -195,6 +195,12 @@ P5a-2a 提供用户明确选择一天后的只读同步。固定客户端的 `ge
 与 Garmin activity 完全隔离。普通聚焦、页面可见、路由切换和 Query 刷新不触发；
 前台路径不自动循环，也没有为 wellness 增加 Cron。
 
+activity 与 wellness 虽然保持独立业务游标，但会刷新同一份 Garmin Token。所有预览、
+单日、追赶和恢复操作因此还要先领取 `tracker + Garmin credential` 共享 I/O 租约；租约
+使用随机 owner、两分钟到期和 owner 条件写回/释放。只有当前 owner 可以保存刷新后的
+密文；用户导入或替换 Token 会清除租约，使此前已经发出的请求无法覆盖新凭证。租约忙
+只表示另一项同步正在进行，不写成认证失败、Provider 故障或失败日期。
+
 ## 增量同步与自动恢复
 
 Garmin activity 与 daily wellness 均使用通用的日期同步、追赶游标和外部记录幂等

@@ -6,6 +6,7 @@ import {
   IntegrationCredentialNotFoundError,
   IntegrationTrackerNotFoundError,
 } from "@/server/integrations/credentials/repository";
+import { IntegrationOperationInterruptedError } from "@/server/integrations/credentials/operation-errors";
 import { GarminProviderError } from "@/server/integrations/garmin/errors";
 import {
   createDefaultGarminRuntime,
@@ -64,6 +65,12 @@ export async function POST(
     }
     if (error instanceof IntegrationCredentialNotFoundError) {
       return Response.json({ error: "credential_not_found" }, { status: 409 });
+    }
+    if (error instanceof IntegrationOperationInterruptedError) {
+      return Response.json(
+        { error: "sync_in_progress" },
+        { status: 409, headers: { "Cache-Control": "no-store" } },
+      );
     }
     if (error instanceof IntegrationTrackerNotFoundError) {
       return Response.json({ error: "tracker_not_found" }, { status: 404 });

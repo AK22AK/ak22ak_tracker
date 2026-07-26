@@ -1,6 +1,7 @@
 import "server-only";
 
 import { isLocalDate } from "@/domain/calendar";
+import { IntegrationOperationInterruptedError } from "@/server/integrations/credentials/operation-errors";
 
 import type { IntegrationProvider } from "./external-records";
 import {
@@ -190,6 +191,7 @@ export async function syncProviderCatchUpBatch(input: {
       days.push({ date, status: "succeeded", ...result });
       states.set(date, { date, status: "succeeded" });
     } catch (error) {
+      if (error instanceof IntegrationOperationInterruptedError) throw error;
       const errorCode = providerPublicErrorCode(error);
       days.push({ date, status: "failed", errorCode });
       states.set(date, { date, status: "failed" });
