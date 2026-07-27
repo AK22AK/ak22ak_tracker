@@ -8,6 +8,7 @@ import {
 import type { PlanAdjustmentContext } from "@/server/integrations/ai/contracts";
 import {
   createDeepSeekPlanAdvisor,
+  testDeepSeekConnection,
   verifyDeepSeekCredential,
 } from "@/server/integrations/ai/deepseek";
 import { PlanAdvisorError } from "@/server/integrations/ai/errors";
@@ -58,7 +59,7 @@ function context(safetyLevel: "green" | "yellow" | "red" = "green") {
 const configuration = {
   apiKey: "anonymous-fake-key",
   endpoint: "https://api.example.invalid/chat/completions",
-  model: "anonymous-model",
+  model: "deepseek-v4-flash" as const,
   timeoutMs: 1_000,
   maxTokens: 1_024,
 };
@@ -70,7 +71,7 @@ function providerResponse(
 ) {
   return new Response(
     JSON.stringify({
-      model: "anonymous-model-actual",
+      model: configuration.model,
       choices: [
         {
           finish_reason,
@@ -89,7 +90,6 @@ describe("DeepSeek plan advisor", () => {
       status: "configured",
       value: {
         endpoint: "https://api.deepseek.com/chat/completions",
-        model: "deepseek-v4-pro",
         timeoutMs: 15_000,
         maxTokens: 1_800,
       },
@@ -102,7 +102,7 @@ describe("DeepSeek plan advisor", () => {
     expect(
       readDeepSeekRuntimeConfiguration({
         DEEPSEEK_BASE_URL: "https://api.example.invalid",
-        DEEPSEEK_MODEL: "model-from-env",
+        DEEPSEEK_MODEL: "must-not-control-the-tracker-model",
         DEEPSEEK_TIMEOUT_MS: "12000",
         DEEPSEEK_MAX_TOKENS: "1600",
       }),
@@ -110,7 +110,6 @@ describe("DeepSeek plan advisor", () => {
       status: "configured",
       value: {
         endpoint: "https://api.example.invalid/chat/completions",
-        model: "model-from-env",
         timeoutMs: 12_000,
         maxTokens: 1_600,
       },
@@ -119,13 +118,16 @@ describe("DeepSeek plan advisor", () => {
       createDeepSeekConfiguration(
         {
           endpoint: "https://api.example.invalid/chat/completions",
-          model: "model-from-env",
           timeoutMs: 12_000,
           maxTokens: 1_600,
         },
         "anonymous-private-key",
+        "deepseek-v4-pro",
       ),
-    ).toMatchObject({ apiKey: "anonymous-private-key" });
+    ).toMatchObject({
+      apiKey: "anonymous-private-key",
+      model: "deepseek-v4-pro",
+    });
   });
 
   it("validates a candidate key with a small anonymous JSON request", async () => {
@@ -149,8 +151,68 @@ describe("DeepSeek plan advisor", () => {
     );
     expect(body.max_tokens).toBeLessThanOrEqual(64);
     expect(body.thinking).toEqual({ type: "disabled" });
+    expect(body.model).toBe("deepseek-v4-flash");
     expect(JSON.stringify(body)).not.toContain("knee-rehab");
     expect(JSON.stringify(body)).not.toContain("pain");
+  });
+
+  it.each(["deepseek-v4-flash", "deepseek-v4-pro"] as const)(
+    "tests the saved %s model with a fixed anonymous request",
+    async (model) => {
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            model,
+            choices: [
+              {
+                finish_reason: "stop",
+                message: { content: JSON.stringify({ reply: "连接正常" }) },
+              },
+            ],
+          }),
+        ),
+      );
+
+      await expect(
+        testDeepSeekConnection({ ...configuration, model }, fetchMock),
+      ).resolves.toEqual({
+        schemaVersion,
+        model,
+        reply: "连接正常",
+      });
+      const body = JSON.parse(
+        String((fetchMock.mock.calls[0]?.[1] as RequestInit).body),
+      );
+      expect(body).toMatchObject({
+        model,
+        stream: false,
+        thinking: { type: "disabled" },
+        response_format: { type: "json_object" },
+      });
+      expect(body.max_tokens).toBeLessThanOrEqual(32);
+      expect(JSON.stringify(body)).not.toMatch(
+        /tracker|plan|pain|training|recovery|identity/i,
+      );
+    },
+  );
+
+  it("rejects a provider model mismatch instead of letting the client infer success", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          model: "deepseek-v4-pro",
+          choices: [
+            {
+              finish_reason: "stop",
+              message: { content: JSON.stringify({ reply: "连接正常" }) },
+            },
+          ],
+        }),
+      ),
+    );
+    await expect(
+      testDeepSeekConnection(configuration, fetchMock),
+    ).rejects.toMatchObject({ code: "invalid_response" });
   });
 
   it.each([
@@ -198,6 +260,7 @@ describe("DeepSeek plan advisor", () => {
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     const body = JSON.parse(String(init.body));
     expect(body.response_format).toEqual({ type: "json_object" });
+    expect(body.thinking).toEqual({ type: "disabled" });
     expect(body.max_tokens).toBe(1_024);
     expect(body.messages[0].content).toContain("json");
     expect(body.messages[0].content).toContain("sleep or steps");
@@ -216,7 +279,7 @@ describe("DeepSeek plan advisor", () => {
     expect(result).toMatchObject({
       safetyLevel: "green",
       operations: [],
-      model: "anonymous-model-actual",
+      model: "deepseek-v4-flash",
     });
   });
 
@@ -265,7 +328,7 @@ describe("DeepSeek plan advisor", () => {
         fetchMock.mockResolvedValueOnce(
           new Response(
             JSON.stringify({
-              model: "anonymous-model",
+              model: configuration.model,
               choices: [{ finish_reason: "stop", message: { content: "" } }],
             }),
           ),

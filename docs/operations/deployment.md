@@ -35,7 +35,7 @@ GitHub、构建日志、浏览器或数据镜像。
 | GitHub OAuth | OAuth Client ID 与 Client Secret                                                             |
 | Tracker 策略 | PostgreSQL 不可变私人策略版本，不进入公共代码                                                |
 | 数据镜像     | 只允许目标私仓 Contents 权限的 fine-grained token                                            |
-| DeepSeek     | 服务端 Base URL、模型、超时和最大输出长度；API Key 由设置页验证后加密存入数据库              |
+| DeepSeek     | 服务端 Base URL、超时和最大输出长度；模型按 Tracker 在设置页选择，API Key 加密存入数据库     |
 | Garmin       | 独立 `GARMIN_RUNTIME_SECRET`；Provider Token 仅以认证密文存入数据库                          |
 | 通用集成加密 | `INTEGRATION_CREDENTIALS_ENCRYPTION_KEY` 与 `INTEGRATION_CREDENTIALS_ENCRYPTION_KEY_VERSION` |
 | 训记         | 数据库中认证加密的 API Key，不使用公开环境变量明文                                           |
@@ -63,7 +63,9 @@ migration（如需要），再通过 `pnpm safety-policy:import -- <private-poli
    验证。训记由已登录使用者在设置页录入轮换后的 Key，服务端完成只读验证后加密保存。
    Garmin 的账号、密码和 MFA 只在本机授权助手中使用；Vercel 只配置独立的内部 Runtime
    Secret，Token 由设置页导入后加密存入数据库。DeepSeek 的 API Key 同样只由已登录
-   使用者在设置页录入；匿名验证成功后才替换原有密文，验证失败不会覆盖旧凭证。
+   使用者在设置页录入；匿名验证成功后才替换原有密文，验证失败不会覆盖旧凭证。DeepSeek
+   模型由使用者在 Flash（默认）和 Pro 之间选择，保存在 Tracker 的非凭证偏好中；
+   `DEEPSEEK_MODEL` 不再是部署变量。
 
 外部集成不作为首次登录、查看今日计划、记录训练和提交反馈的前置条件。
 

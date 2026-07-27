@@ -5,9 +5,13 @@ import {
   type AiAnalysisErrorCode,
 } from "@/domain/ai-analysis";
 import {
+  defaultDeepSeekModel,
   deepSeekConnectionStatusSchema,
+  deepSeekModelSchema,
   type DeepSeekConnectionStatus,
+  type DeepSeekModel,
 } from "@/domain/deepseek";
+import type { IntegrationPreferenceDocument } from "@/domain/integration-preferences";
 import { schemaVersion } from "@/domain/schemas";
 import {
   getIntegrationStatus,
@@ -18,12 +22,16 @@ import {
   requireIntegrationTracker,
   saveIntegrationCredentialAndResetState,
 } from "@/server/integrations/credentials/repository";
+import {
+  readIntegrationPreference,
+  saveIntegrationPreference,
+} from "@/server/integrations/preferences/repository";
 
 import {
   createDeepSeekConfiguration,
   readDeepSeekRuntimeConfiguration,
 } from "./config";
-import { verifyDeepSeekCredential } from "./deepseek";
+import { testDeepSeekConnection, verifyDeepSeekCredential } from "./deepseek";
 import { PlanAdvisorError } from "./errors";
 
 type RuntimeConfigurationResult = ReturnType<
@@ -49,6 +57,16 @@ type CredentialRuntimeDependencies = {
     provider: string;
   }) => Promise<string>;
   verifyCredential?: typeof verifyDeepSeekCredential;
+  testConnection?: typeof testDeepSeekConnection;
+  readPreference?: (input: {
+    trackerId: string;
+    provider: string;
+  }) => Promise<IntegrationPreferenceDocument | null>;
+  savePreference?: (input: {
+    trackerId: string;
+    document: IntegrationPreferenceDocument;
+    now: Date;
+  }) => Promise<void>;
   saveCredential?: (input: {
     trackerId: string;
     provider: string;
@@ -79,6 +97,7 @@ function safeErrorCode(value: string | null): AiAnalysisErrorCode | null {
 function publicStatus(
   configuration: RuntimeConfigurationResult,
   stored: StoredCredentialStatus,
+  model: DeepSeekModel,
 ): DeepSeekConnectionStatus {
   const storedError = safeErrorCode(stored.sync.lastErrorCode);
   const lastErrorCode =
@@ -96,6 +115,7 @@ function publicStatus(
   return deepSeekConnectionStatusSchema.parse({
     schemaVersion,
     provider: "deepseek",
+    model,
     hasCredential: stored.configured,
     state,
     verifiedAt: stored.verifiedAt,
@@ -110,17 +130,31 @@ export function createDeepSeekCredentialRuntime({
   getStoredStatus = getIntegrationStatus,
   readCredential = readIntegrationCredential,
   verifyCredential = verifyDeepSeekCredential,
+  testConnection = testDeepSeekConnection,
+  readPreference = readIntegrationPreference,
+  savePreference = saveIntegrationPreference,
   saveCredential = saveIntegrationCredentialAndResetState,
   markFailure = markIntegrationConnectionFailure,
   markSuccess = markIntegrationConnectionSuccess,
   now = () => new Date(),
 }: CredentialRuntimeDependencies = {}) {
+  async function selectedModel(trackerId: string) {
+    const preference = await readPreference({
+      trackerId,
+      provider: "deepseek",
+    });
+    return preference?.provider === "deepseek"
+      ? preference.settings.model
+      : defaultDeepSeekModel;
+  }
+
   async function status(trackerKey: string) {
-    const [configuration, stored] = await Promise.all([
+    const [configuration, stored, tracker] = await Promise.all([
       readRuntimeConfiguration(),
       getStoredStatus(trackerKey, "deepseek"),
+      requireTracker(trackerKey),
     ]);
-    return publicStatus(configuration, stored);
+    return publicStatus(configuration, stored, await selectedModel(tracker.id));
   }
 
   async function save(input: { trackerKey: string; apiKey: string }) {
@@ -130,8 +164,9 @@ export function createDeepSeekCredentialRuntime({
     }
     const tracker = await requireTracker(input.trackerKey);
     const attemptedAt = now();
+    const model = await selectedModel(tracker.id);
     await verifyCredential(
-      createDeepSeekConfiguration(configuration.value, input.apiKey),
+      createDeepSeekConfiguration(configuration.value, input.apiKey, model),
     );
     await saveCredential({
       trackerId: tracker.id,
@@ -144,10 +179,29 @@ export function createDeepSeekCredentialRuntime({
     return status(input.trackerKey);
   }
 
+  async function saveModel(input: {
+    trackerKey: string;
+    model: DeepSeekModel;
+  }) {
+    const model = deepSeekModelSchema.parse(input.model);
+    const tracker = await requireTracker(input.trackerKey);
+    await savePreference({
+      trackerId: tracker.id,
+      document: {
+        schemaVersion,
+        provider: "deepseek",
+        settings: { model },
+      },
+      now: now(),
+    });
+    return status(input.trackerKey);
+  }
+
   async function resolveConfiguration(trackerKey: string) {
     const runtime = readRuntimeConfiguration();
-    if (runtime.status !== "configured") return runtime;
     const tracker = await requireTracker(trackerKey);
+    const model = await selectedModel(tracker.id);
+    if (runtime.status !== "configured") return { ...runtime, model };
     try {
       const apiKey = await readCredential({
         trackerId: tracker.id,
@@ -155,13 +209,36 @@ export function createDeepSeekCredentialRuntime({
       });
       return {
         status: "configured" as const,
-        value: createDeepSeekConfiguration(runtime.value, apiKey),
+        value: createDeepSeekConfiguration(runtime.value, apiKey, model),
       };
     } catch (error) {
       if (error instanceof IntegrationCredentialNotFoundError) {
-        return { status: "not_configured" as const };
+        return { status: "not_configured" as const, model };
       }
       throw error;
+    }
+  }
+
+  async function test(trackerKey: string) {
+    const configuration = await resolveConfiguration(trackerKey);
+    if (configuration.status !== "configured") {
+      throw new PlanAdvisorError(configuration.status);
+    }
+    const testedAt = now();
+    try {
+      const result = await testConnection(configuration.value);
+      await recordSuccess({ trackerKey, succeededAt: testedAt });
+      return result;
+    } catch (error) {
+      const errorCode =
+        error instanceof PlanAdvisorError
+          ? error.code
+          : ("provider_unavailable" as const);
+      await recordFailure({ trackerKey, errorCode, failedAt: testedAt }).catch(
+        () => undefined,
+      );
+      if (error instanceof PlanAdvisorError) throw error;
+      throw new PlanAdvisorError(errorCode, { cause: error });
     }
   }
 
@@ -191,7 +268,15 @@ export function createDeepSeekCredentialRuntime({
     });
   }
 
-  return { status, save, resolveConfiguration, recordFailure, recordSuccess };
+  return {
+    status,
+    save,
+    saveModel,
+    test,
+    resolveConfiguration,
+    recordFailure,
+    recordSuccess,
+  };
 }
 
 export const deepSeekCredentialRuntime = createDeepSeekCredentialRuntime();

@@ -34,6 +34,7 @@ import type {
   EvaluationSessionSnapshot,
 } from "@/domain/evaluation";
 import type { TrackerSafetyPolicyDocument } from "@/domain/safety-policy";
+import type { IntegrationPreferenceDocument } from "@/domain/integration-preferences";
 
 export const taskStatus = pgEnum("task_status", [
   "planned",
@@ -647,6 +648,32 @@ export const integrationCredentials = pgTable(
   },
   (table) => [
     uniqueIndex("integration_credentials_tracker_provider_unique").on(
+      table.trackerId,
+      table.provider,
+    ),
+  ],
+);
+
+export const integrationPreferences = pgTable(
+  "integration_preferences",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    trackerId: uuid("tracker_id")
+      .notNull()
+      .references(() => trackers.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    document: jsonb("document")
+      .$type<IntegrationPreferenceDocument>()
+      .notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("integration_preferences_tracker_provider_unique").on(
       table.trackerId,
       table.provider,
     ),

@@ -86,6 +86,8 @@ GitHub 镜像是最终一致的：数据库写入成功即代表用户操作成�
   内容集合 hash 与错误状态。
 - `integration_credentials`：认证加密后的外部 Session/Token/API Key，不保存账号密码，
   也不向客户端回传原值。
+- `integration_preferences`：按 Tracker 和 Provider 保存严格白名单的非凭证选择；当前
+  DeepSeek 只允许 Flash 或 Pro，缺少记录时使用 Flash，选择不与 API Key 密文混存。
 - `push_subscriptions`：用户主动授权的 Web Push 端点和失效状态。
 - `github_sync_outbox`：待镜像文件、重试状态和错误代码。
 

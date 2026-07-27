@@ -18,6 +18,8 @@ const integration = describe.skipIf(!testDatabaseUrl);
 integration("P5a DeepSeek private credential database boundary", () => {
   const trackerId = randomUUID();
   const trackerKey = `anonymous-${randomUUID()}`;
+  const otherTrackerId = randomUUID();
+  const otherTrackerKey = `anonymous-${randomUUID()}`;
   const runtimeConfiguration = {
     endpoint: "https://api.example.invalid/chat/completions",
     model: "anonymous-model",
@@ -38,6 +40,14 @@ integration("P5a DeepSeek private credential database boundary", () => {
       startedOn: "2026-07-01",
       planningTimeZone: "Asia/Shanghai",
     });
+    await getDatabase().insert(trackers).values({
+      id: otherTrackerId,
+      key: otherTrackerKey,
+      name: "Other Anonymous Tracker",
+      module: "anonymous",
+      startedOn: "2026-07-01",
+      planningTimeZone: "Asia/Shanghai",
+    });
     await saveIntegrationCredential({
       trackerId,
       provider: "deepseek",
@@ -49,6 +59,9 @@ integration("P5a DeepSeek private credential database boundary", () => {
   afterAll(async () => {
     if (testDatabaseUrl) {
       await getDatabase().delete(trackers).where(eq(trackers.id, trackerId));
+      await getDatabase()
+        .delete(trackers)
+        .where(eq(trackers.id, otherTrackerId));
     }
     delete process.env.INTEGRATION_CREDENTIALS_ENCRYPTION_KEY;
     delete process.env.INTEGRATION_CREDENTIALS_ENCRYPTION_KEY_VERSION;
@@ -89,5 +102,34 @@ integration("P5a DeepSeek private credential database boundary", () => {
     await expect(
       readIntegrationCredential({ trackerId, provider: "deepseek" }),
     ).resolves.toBe("anonymous-replacement-key");
+  });
+
+  it("persists the strict model per tracker while absent preferences default to Flash", async () => {
+    const runtime = createDeepSeekCredentialRuntime({
+      readRuntimeConfiguration: () => ({
+        status: "configured",
+        value: runtimeConfiguration,
+      }),
+    });
+
+    await expect(runtime.status(trackerKey)).resolves.toMatchObject({
+      model: "deepseek-v4-flash",
+    });
+    await runtime.saveModel({
+      trackerKey,
+      model: "deepseek-v4-pro",
+    });
+    await expect(
+      createDeepSeekCredentialRuntime({
+        readRuntimeConfiguration: () => ({
+          status: "configured",
+          value: runtimeConfiguration,
+        }),
+      }).status(trackerKey),
+    ).resolves.toMatchObject({ model: "deepseek-v4-pro" });
+    await expect(runtime.status(otherTrackerKey)).resolves.toMatchObject({
+      model: "deepseek-v4-flash",
+      hasCredential: false,
+    });
   });
 });

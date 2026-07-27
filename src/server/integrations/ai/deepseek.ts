@@ -4,7 +4,15 @@ import { createHash } from "node:crypto";
 
 import { z } from "zod";
 
-import { planTaskSchema, type PlanChangeOperation } from "@/domain/schemas";
+import {
+  deepSeekConnectionTestResultSchema,
+  type DeepSeekConnectionTestResult,
+} from "@/domain/deepseek";
+import {
+  planTaskSchema,
+  schemaVersion,
+  type PlanChangeOperation,
+} from "@/domain/schemas";
 
 import type {
   PlanAdjustmentContext,
@@ -156,6 +164,7 @@ function requestBody(
   return {
     model: configuration.model,
     stream: false,
+    thinking: { type: "disabled" },
     response_format: { type: "json_object" },
     max_tokens: configuration.maxTokens,
     messages: [
@@ -180,6 +189,9 @@ const credentialVerificationOutputSchema = z
   .object({ ok: z.literal(true) })
   .strict();
 const MAX_VERIFICATION_RESPONSE_BYTES = 32 * 1024;
+const connectionTestOutputSchema = z
+  .object({ reply: z.literal("连接正常") })
+  .strict();
 
 export async function verifyDeepSeekCredential(
   configuration: DeepSeekConfiguration,
@@ -241,6 +253,9 @@ export async function verifyDeepSeekCredential(
   const raw = await readBoundedBody(response, MAX_VERIFICATION_RESPONSE_BYTES);
   try {
     const parsedResponse = chatResponseSchema.parse(JSON.parse(raw));
+    if (parsedResponse.model !== configuration.model) {
+      throw new PlanAdvisorError("invalid_response");
+    }
     const choice = parsedResponse.choices[0]!;
     if (choice.finish_reason !== "stop" || !choice.message.content?.trim()) {
       throw new PlanAdvisorError(
@@ -252,6 +267,93 @@ export async function verifyDeepSeekCredential(
     credentialVerificationOutputSchema.parse(
       JSON.parse(choice.message.content),
     );
+  } catch (error) {
+    if (error instanceof PlanAdvisorError) throw error;
+    throw new PlanAdvisorError("invalid_response", { cause: error });
+  }
+}
+
+export async function testDeepSeekConnection(
+  configuration: DeepSeekConfiguration,
+  fetchImpl: typeof fetch = fetch,
+): Promise<DeepSeekConnectionTestResult> {
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(),
+    Math.min(configuration.timeoutMs, 10_000),
+  );
+  let response: Response;
+  try {
+    response = await fetchImpl(configuration.endpoint, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${configuration.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: configuration.model,
+        stream: false,
+        thinking: { type: "disabled" },
+        response_format: { type: "json_object" },
+        max_tokens: Math.min(configuration.maxTokens, 32),
+        messages: [
+          {
+            role: "system",
+            content:
+              'Return strict json matching exactly {"reply":"连接正常"}.',
+          },
+          {
+            role: "user",
+            content: "Return the anonymous connection-test json now.",
+          },
+        ],
+      }),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    throw new PlanAdvisorError(
+      error instanceof DOMException && error.name === "AbortError"
+        ? "timeout"
+        : "provider_unavailable",
+      { cause: error },
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (!response.ok) {
+    throw new PlanAdvisorError(classifyHttpStatus(response.status));
+  }
+  const contentLength = Number(response.headers.get("content-length"));
+  if (
+    Number.isFinite(contentLength) &&
+    contentLength > MAX_VERIFICATION_RESPONSE_BYTES
+  ) {
+    throw new PlanAdvisorError("invalid_response");
+  }
+  const raw = await readBoundedBody(response, MAX_VERIFICATION_RESPONSE_BYTES);
+  try {
+    const parsedResponse = chatResponseSchema.parse(JSON.parse(raw));
+    const choice = parsedResponse.choices[0]!;
+    if (
+      parsedResponse.model !== configuration.model ||
+      choice.finish_reason !== "stop" ||
+      !choice.message.content?.trim()
+    ) {
+      throw new PlanAdvisorError(
+        choice.finish_reason === "length"
+          ? "truncated_response"
+          : "invalid_response",
+      );
+    }
+    const output = connectionTestOutputSchema.parse(
+      JSON.parse(choice.message.content),
+    );
+    return deepSeekConnectionTestResultSchema.parse({
+      schemaVersion,
+      model: configuration.model,
+      reply: output.reply,
+    });
   } catch (error) {
     if (error instanceof PlanAdvisorError) throw error;
     throw new PlanAdvisorError("invalid_response", { cause: error });
@@ -307,6 +409,9 @@ export function createDeepSeekPlanAdvisor(
         parsedResponse = chatResponseSchema.parse(JSON.parse(raw));
       } catch (error) {
         throw new PlanAdvisorError("invalid_response", { cause: error });
+      }
+      if (parsedResponse.model !== configuration.model) {
+        throw new PlanAdvisorError("invalid_response");
       }
       const choice = parsedResponse.choices[0]!;
       if (choice.finish_reason === "length") {

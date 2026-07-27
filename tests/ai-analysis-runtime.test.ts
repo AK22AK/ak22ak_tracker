@@ -153,7 +153,7 @@ function configured() {
     value: {
       apiKey: "anonymous",
       endpoint: "https://api.example.invalid/chat/completions",
-      model: "anonymous-model",
+      model: "deepseek-v4-flash" as const,
       timeoutMs: 1_000,
       maxTokens: 1_024,
     },
@@ -298,7 +298,7 @@ describe("AI analysis runtime", () => {
             summary: "Keep the current level",
             safetyLevel: "green",
             operations: [],
-            model: "anonymous-model",
+            model: "deepseek-v4-flash",
             responseHash: "b".repeat(64),
           };
         },
@@ -308,7 +308,10 @@ describe("AI analysis runtime", () => {
       store: memory.store,
       prepareContext: async () => prepared(),
       readConfiguration: configured,
-      createAdvisor: () => advisor,
+      createAdvisor: (configuration) => {
+        expect(configuration.model).toBe("deepseek-v4-flash");
+        return advisor;
+      },
       now: () => new Date("2026-07-24T08:00:00.000Z"),
     });
 
@@ -324,6 +327,7 @@ describe("AI analysis runtime", () => {
     ]);
     expect(result.job?.status).toBe("succeeded");
     expect(result.job?.proposal?.id).toBe(jobId);
+    expect(memory.getJob()?.model).toBe("deepseek-v4-flash");
 
     await runtime.request({ trackerKey: "knee-rehab", commandId: jobId });
     expect(advisor.proposeAdjustment).toHaveBeenCalledTimes(1);

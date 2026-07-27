@@ -50,6 +50,7 @@ const garminWellnessProgress = {
 const deepSeekStatus = {
   schemaVersion: "1.0.0",
   provider: "deepseek",
+  model: "deepseek-v4-flash",
   hasCredential: false,
   state: "not_connected",
   verifiedAt: null,

@@ -261,7 +261,7 @@ integration("P4b-1 AI analysis Neon persistence", () => {
         value: {
           apiKey: "anonymous",
           endpoint: "https://api.example.invalid/chat/completions",
-          model: "anonymous-model",
+          model: "deepseek-v4-flash" as const,
           timeoutMs: 1_000,
           maxTokens: 1_024,
         },
@@ -334,7 +334,7 @@ integration("P4b-1 AI analysis Neon persistence", () => {
         value: {
           apiKey: "anonymous",
           endpoint: "https://api.example.invalid/chat/completions",
-          model: "anonymous-model",
+          model: "deepseek-v4-flash" as const,
           timeoutMs: 1_000,
           maxTokens: 1_024,
         },

@@ -7,6 +7,10 @@ import {
   type AiAnalysisErrorCode,
   type AiAnalysisPageDto,
 } from "@/domain/ai-analysis";
+import {
+  defaultDeepSeekModel,
+  type DeepSeekModel,
+} from "@/domain/deepseek-model";
 import { applyAcceptedPlanChange } from "@/domain/plan-change";
 import { localDateInTimeZone } from "@/domain/planning-time";
 import { planChangeProposalSchema, schemaVersion } from "@/domain/schemas";
@@ -216,6 +220,7 @@ function proposalRollback(job: AiAnalysisJobRecord, currentTime: Date) {
 
 function pageDto(
   configuration: AiConfigurationStatus,
+  selectedModel: DeepSeekModel,
   job: AiAnalysisJobRecord | null,
   currentTime: Date,
   context: PreparedAiAnalysisContext | null = null,
@@ -223,6 +228,7 @@ function pageDto(
   return aiAnalysisPageDtoSchema.parse({
     schemaVersion,
     configuration,
+    selectedModel,
     job: job
       ? aiAnalysisJobDtoSchema.parse({
           id: job.id,
@@ -289,13 +295,19 @@ export function createAiAnalysisRuntime({
   readConfiguration?: (trackerKey: string) =>
     | Promise<
         | { status: "configured"; value: DeepSeekConfiguration }
-        | { status: Exclude<AiConfigurationStatus, "configured"> }
+        | {
+            status: Exclude<AiConfigurationStatus, "configured">;
+            model?: DeepSeekModel;
+          }
       >
     | {
         status: "configured";
         value: DeepSeekConfiguration;
       }
-    | { status: Exclude<AiConfigurationStatus, "configured"> };
+    | {
+        status: Exclude<AiConfigurationStatus, "configured">;
+        model?: DeepSeekModel;
+      };
   createAdvisor?: (configuration: DeepSeekConfiguration) => PlanAdvisor;
   recordCredentialFailure?: (input: {
     trackerKey: string;
@@ -321,6 +333,9 @@ export function createAiAnalysisRuntime({
       : { job: null, context: null };
     return pageDto(
       configuration.status,
+      configuration.status === "configured"
+        ? configuration.value.model
+        : (configuration.model ?? defaultDeepSeekModel),
       current.job,
       currentTime,
       current.context,
@@ -345,6 +360,9 @@ export function createAiAnalysisRuntime({
       const current = contextMatchesJob(job, context);
       return pageDto(
         configuration.status,
+        configuration.status === "configured"
+          ? configuration.value.model
+          : (configuration.model ?? defaultDeepSeekModel),
         current ? job : await expireProposal(job, store),
         now(),
         current ? context : null,

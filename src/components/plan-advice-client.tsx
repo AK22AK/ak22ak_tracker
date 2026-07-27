@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { integrationQueryKeys, trackerQueryKeys } from "@/client/query-keys";
+import { deepSeekModelLabel } from "@/client/deepseek-model";
 import {
   decidePlanChange,
   fetchPlanAdvice,
@@ -246,7 +247,12 @@ export function PlanAdviceClient() {
       <section className="surface-card plan-advice-intro">
         <h2>先生成建议，再由你决定</h2>
         <p>
-          会参考当前计划、最近的身体反馈和已确认训练。这里不会直接修改计划。
+          使用
+          {query.data
+            ? ` ${deepSeekModelLabel(query.data.selectedModel)} `
+            : "当前模型"}
+          ，参考当前计划和最近 14
+          天的训练、身体反馈与恢复参考。建议不会自动修改计划。
         </p>
         {!job || job.status === "running" ? (
           <button

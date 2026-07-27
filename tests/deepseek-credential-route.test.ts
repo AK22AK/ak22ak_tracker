@@ -20,6 +20,7 @@ import { PlanAdvisorError } from "@/server/integrations/ai/errors";
 const connected = {
   schemaVersion: "1.0.0",
   provider: "deepseek",
+  model: "deepseek-v4-flash",
   hasCredential: true,
   state: "connected",
   verifiedAt: "2026-07-26T08:00:00.000Z",

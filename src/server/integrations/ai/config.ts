@@ -1,29 +1,21 @@
 import "server-only";
 
-import { z } from "zod";
-
 import type { AiConfigurationStatus } from "@/domain/ai-analysis";
-
-const modelSchema = z
-  .string()
-  .min(1)
-  .max(120)
-  .regex(/^[a-zA-Z0-9._-]+$/);
+import type { DeepSeekModel } from "@/domain/deepseek-model";
 
 export type DeepSeekRuntimeConfiguration = {
   endpoint: string;
-  model: string;
   timeoutMs: number;
   maxTokens: number;
 };
 
 export type DeepSeekConfiguration = DeepSeekRuntimeConfiguration & {
   apiKey: string;
+  model: DeepSeekModel;
 };
 
 const defaults = {
   baseUrl: "https://api.deepseek.com",
-  model: "deepseek-v4-pro",
   timeoutMs: "15000",
   maxTokens: "1800",
 } as const;
@@ -58,9 +50,6 @@ export function readDeepSeekRuntimeConfiguration(
     environment.DEEPSEEK_BASE_URL === undefined
       ? defaults.baseUrl
       : environment.DEEPSEEK_BASE_URL.trim(),
-    environment.DEEPSEEK_MODEL === undefined
-      ? defaults.model
-      : environment.DEEPSEEK_MODEL.trim(),
     environment.DEEPSEEK_TIMEOUT_MS === undefined
       ? defaults.timeoutMs
       : environment.DEEPSEEK_TIMEOUT_MS.trim(),
@@ -72,14 +61,12 @@ export function readDeepSeekRuntimeConfiguration(
     return { status: "invalid_configuration" };
   }
 
-  const [baseUrl, modelInput, timeoutInput, maxTokensInput] = values;
+  const [baseUrl, timeoutInput, maxTokensInput] = values;
   const endpoint = endpointFromBaseUrl(baseUrl);
-  const model = modelSchema.safeParse(modelInput);
   const timeoutMs = Number(timeoutInput);
   const maxTokens = Number(maxTokensInput);
   if (
     !endpoint ||
-    !model.success ||
     !Number.isInteger(timeoutMs) ||
     timeoutMs < 1_000 ||
     timeoutMs > 60_000 ||
@@ -91,13 +78,14 @@ export function readDeepSeekRuntimeConfiguration(
   }
   return {
     status: "configured",
-    value: { endpoint, model: model.data, timeoutMs, maxTokens },
+    value: { endpoint, timeoutMs, maxTokens },
   };
 }
 
 export function createDeepSeekConfiguration(
   runtime: DeepSeekRuntimeConfiguration,
   apiKey: string,
+  model: DeepSeekModel,
 ): DeepSeekConfiguration {
-  return { ...runtime, apiKey };
+  return { ...runtime, apiKey, model };
 }

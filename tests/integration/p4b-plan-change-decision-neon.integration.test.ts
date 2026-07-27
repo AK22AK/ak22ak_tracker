@@ -129,7 +129,7 @@ async function createFixture(): Promise<Fixture> {
       value: {
         apiKey: "anonymous",
         endpoint: "https://api.example.invalid/chat/completions",
-        model: "anonymous-model",
+        model: "deepseek-v4-flash" as const,
         timeoutMs: 1_000,
         maxTokens: 1_024,
       },

@@ -154,6 +154,7 @@ const garminWellnessProgress = {
 const deepSeekStatus = {
   schemaVersion: "1.0.0",
   provider: "deepseek",
+  model: "deepseek-v4-flash",
   hasCredential: false,
   state: "not_connected",
   verifiedAt: null,
@@ -830,7 +831,7 @@ for (const width of [320, 375, 390, 430]) {
     const layout = await page.evaluate(() => {
       const controls = [
         ...document.querySelectorAll<HTMLElement>(
-          ".integration-card input, .integration-card button",
+          ".integration-card input, .integration-card select, .integration-card button, .integration-card a",
         ),
       ];
       const cards = [

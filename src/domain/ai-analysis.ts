@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { deepSeekModelSchema, defaultDeepSeekModel } from "./deepseek-model";
 import {
   clientCommandMetadataSchema,
   instantSchema,
@@ -140,6 +141,7 @@ export const aiAnalysisPageDtoSchema = z
   .object({
     schemaVersion: z.literal(schemaVersion),
     configuration: aiConfigurationStatusSchema,
+    selectedModel: deepSeekModelSchema.default(defaultDeepSeekModel),
     job: aiAnalysisJobDtoSchema.nullable(),
   })
   .strict();

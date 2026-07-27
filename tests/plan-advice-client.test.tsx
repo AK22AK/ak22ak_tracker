@@ -38,6 +38,7 @@ function page(job: JobFixture | null = null) {
   return {
     schemaVersion,
     configuration: "configured",
+    selectedModel: "deepseek-v4-flash",
     job: proposal
       ? {
           ...job,
@@ -130,6 +131,17 @@ describe("plan advice UI", () => {
     await waitFor(() =>
       expect((startButton as HTMLButtonElement).disabled).toBe(false),
     );
+    expect(
+      screen.getByText(
+        (_, node) =>
+          Boolean(
+            node?.textContent?.includes("Flash（日常建议）") &&
+            node.textContent.includes("最近 14 天") &&
+            node.textContent.includes("恢复参考"),
+          ),
+        { selector: ".plan-advice-intro > p" },
+      ),
+    ).toBeTruthy();
     expect(globalThis.crypto.randomUUID()).toBe(
       "019c1000-0000-7000-8000-000000000201",
     );

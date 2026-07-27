@@ -1,12 +1,16 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
 import { useState } from "react";
 
+import { deepSeekModelLabel } from "@/client/deepseek-model";
 import { integrationQueryKeys, trackerQueryKeys } from "@/client/query-keys";
 import {
+  deepSeekConnectionTestResultSchema,
   deepSeekConnectionStatusSchema,
   type DeepSeekConnectionStatus,
+  type DeepSeekModel,
 } from "@/domain/deepseek";
 
 function statusCopy(state: DeepSeekConnectionStatus["state"]) {
@@ -39,6 +43,18 @@ function failureMessage(code: string | null, hadConnection: boolean) {
   return `验证没有完成，${prefix}请稍后重试。`;
 }
 
+function testFailureMessage(code: string | null) {
+  if (code === "authentication") {
+    return "API Key 需要更新，请重新保存后再试。";
+  }
+  if (code === "rate_limited") return "请求较多，请稍后再试。";
+  if (code === "timeout") return "测试超时，请稍后再试。";
+  if (code === "provider_unavailable") {
+    return "DeepSeek 暂时不可用，请稍后再试。";
+  }
+  return "DeepSeek 返回异常，请稍后再试。";
+}
+
 export function DeepSeekIntegrationCard({
   trackerKey,
   initialStatus,
@@ -58,14 +74,21 @@ export function DeepSeekIntegrationCard({
     enabled: false,
   });
   const [apiKey, setApiKey] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [model, setModel] = useState<DeepSeekModel>(initialStatus.model);
+  const [credentialBusy, setCredentialBusy] = useState(false);
+  const [modelBusy, setModelBusy] = useState(false);
+  const [testBusy, setTestBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [testMessage, setTestMessage] = useState<string | null>(null);
+  const [testReply, setTestReply] = useState<string | null>(null);
   const connected = status.hasCredential;
+  const available = status.state === "connected";
+  const busy = credentialBusy || modelBusy || testBusy;
 
   async function saveCredential(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!apiKey || busy) return;
-    setBusy(true);
+    setCredentialBusy(true);
     setMessage(null);
     try {
       const response = await fetch(
@@ -83,12 +106,13 @@ export function DeepSeekIntegrationCard({
         await response.json(),
       );
       queryClient.setQueryData(statusQueryKey, nextStatus);
+      setModel(nextStatus.model);
       void queryClient.invalidateQueries({
         queryKey: trackerQueryKeys.planAdvice(trackerKey),
         exact: true,
       });
       setApiKey("");
-      setMessage("DeepSeek 已连接，可以在训练调整建议中开始分析。");
+      setMessage("DeepSeek 已连接。");
     } catch (error) {
       setMessage(
         failureMessage(
@@ -97,7 +121,71 @@ export function DeepSeekIntegrationCard({
         ),
       );
     } finally {
-      setBusy(false);
+      setCredentialBusy(false);
+    }
+  }
+
+  async function saveModel() {
+    if (busy || model === status.model) return;
+    setModelBusy(true);
+    setMessage(null);
+    setTestMessage(null);
+    setTestReply(null);
+    try {
+      const response = await fetch(
+        `/api/trackers/${encodeURIComponent(trackerKey)}/integrations/deepseek/preferences`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model }),
+        },
+      );
+      if (!response.ok) throw new Error("invalid_response");
+      const nextStatus = deepSeekConnectionStatusSchema.parse(
+        await response.json(),
+      );
+      queryClient.setQueryData(statusQueryKey, nextStatus);
+      setModel(nextStatus.model);
+      void queryClient.invalidateQueries({
+        queryKey: trackerQueryKeys.planAdvice(trackerKey),
+        exact: true,
+      });
+      setMessage(`已选择 ${deepSeekModelLabel(nextStatus.model)}。`);
+    } catch {
+      setMessage("模型选择尚未保存，请稍后重试。");
+    } finally {
+      setModelBusy(false);
+    }
+  }
+
+  async function testModel() {
+    if (!available || busy) return;
+    setTestBusy(true);
+    setTestMessage(null);
+    setTestReply(null);
+    try {
+      const response = await fetch(
+        `/api/trackers/${encodeURIComponent(trackerKey)}/integrations/deepseek/test`,
+        { method: "POST", headers: { Accept: "application/json" } },
+      );
+      if (!response.ok) {
+        throw new Error((await safeErrorCode(response)) ?? "invalid_response");
+      }
+      const result = deepSeekConnectionTestResultSchema.parse(
+        await response.json(),
+      );
+      setTestMessage(`测试成功 · ${deepSeekModelLabel(result.model)}`);
+      setTestReply(`DeepSeek 回复：${result.reply}`);
+      void queryClient.invalidateQueries({
+        queryKey: statusQueryKey,
+        exact: true,
+      });
+    } catch (error) {
+      setTestMessage(
+        testFailureMessage(error instanceof Error ? error.message : null),
+      );
+    } finally {
+      setTestBusy(false);
     }
   }
 
@@ -121,6 +209,32 @@ export function DeepSeekIntegrationCard({
       <p className="integration-description">
         API Key 验证成功后会加密保存，网页不会再次显示已保存的值。
       </p>
+      <div className="integration-form deepseek-model-form">
+        <label htmlFor="deepseek-model">建议模型</label>
+        <select
+          id="deepseek-model"
+          value={model}
+          disabled={busy}
+          onChange={(event) => {
+            setModel(event.target.value as DeepSeekModel);
+            setTestMessage(null);
+            setTestReply(null);
+          }}
+        >
+          <option value="deepseek-v4-flash">Flash（日常建议）</option>
+          <option value="deepseek-v4-pro">Pro（更深入）</option>
+        </select>
+        <button
+          type="button"
+          disabled={busy || model === status.model}
+          onClick={() => void saveModel()}
+        >
+          {modelBusy ? "正在保存…" : "保存模型"}
+        </button>
+        <p className="integration-description">
+          切换模型不会替换 API Key，也不会立即发出请求。
+        </p>
+      </div>
       <form className="integration-form" onSubmit={saveCredential}>
         <label htmlFor="deepseek-api-key">
           {connected ? "更新 DeepSeek API Key" : "DeepSeek API Key"}
@@ -135,14 +249,39 @@ export function DeepSeekIntegrationCard({
           onChange={(event) => setApiKey(event.target.value)}
         />
         <button type="submit" disabled={!apiKey || busy}>
-          {busy ? "正在验证…" : "验证并保存"}
+          {credentialBusy ? "正在验证…" : "验证并保存"}
         </button>
       </form>
+      {available ? (
+        <div className="integration-actions deepseek-actions">
+          <button
+            type="button"
+            disabled={busy || model !== status.model}
+            onClick={() => void testModel()}
+          >
+            {testBusy ? "正在测试…" : "测试当前模型"}
+          </button>
+          <Link className="secondary-button" href="/trends/advice">
+            生成训练调整建议
+          </Link>
+        </div>
+      ) : null}
+      {available ? (
+        <p className="integration-description">
+          测试会发出一次很小的测试请求，不会生成训练建议。
+        </p>
+      ) : null}
       {message ? (
         <p className="integration-message" role="status">
           {message}
         </p>
       ) : null}
+      {testMessage ? (
+        <p className="integration-message" role="status">
+          {testMessage}
+        </p>
+      ) : null}
+      {testReply ? <p className="integration-message">{testReply}</p> : null}
     </section>
   );
 }

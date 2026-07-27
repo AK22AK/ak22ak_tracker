@@ -180,7 +180,8 @@ a {
   font-weight: 700;
 }
 
-.integration-form input {
+.integration-form input,
+.integration-form select {
   display: block;
   width: 100%;
   min-width: 0;
@@ -192,6 +193,14 @@ a {
   background: white;
   color: var(--ink);
   font: inherit;
+}
+
+.deepseek-model-form p {
+  margin: 0;
+}
+
+.deepseek-actions > * {
+  min-height: 2.75rem;
 }
 
 .integration-form button,
