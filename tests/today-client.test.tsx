@@ -203,7 +203,7 @@ describe("today background refresh", () => {
     commandHarness.replayNow.mockReset();
   });
 
-  it("shows the top online status without repeating it in a technical footer", async () => {
+  it("keeps normal technical state implicit and preserves the two daily actions", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(jsonResponse(aggregate("planned", 0))),
@@ -221,7 +221,13 @@ describe("today background refresh", () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText("当前在线")).toBeTruthy();
+    expect(await screen.findByText("今天还剩 1 项")).toBeTruthy();
+    expect(screen.queryByText("当前在线")).toBeNull();
+    expect(screen.queryByText("正常模式")).toBeNull();
+    expect(screen.queryByText("康复计划 v1")).toBeNull();
+    expect(screen.queryByRole("button", { name: "退出" })).toBeNull();
+    expect(screen.getByRole("link", { name: "添加反馈" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "调整今天" })).toBeTruthy();
     expect(screen.queryByText("网络可用")).toBeNull();
     expect(screen.queryByLabelText("应用状态")).toBeNull();
     expect(screen.queryByText("已同步到云端")).toBeNull();
@@ -255,7 +261,7 @@ describe("today background refresh", () => {
       </QueryClientProvider>,
     );
 
-    await screen.findByText("当前在线");
+    await screen.findByText("今天还剩 1 项");
     expect(idleCallback).not.toBeNull();
     act(() => idleCallback?.());
 
@@ -322,7 +328,7 @@ describe("today background refresh", () => {
     expect(
       await within(task).findByText("本机保存失败，请重试；本次修改尚未保存"),
     ).toBeTruthy();
-    expect(screen.getByText("当前在线")).toBeTruthy();
+    expect(screen.queryByText("当前在线")).toBeNull();
     expect(screen.queryByText("已同步到云端")).toBeNull();
   });
 
@@ -516,6 +522,7 @@ describe("today background refresh", () => {
     fireEvent.change(screen.getByLabelText("实际训练与主观感受"), {
       target: { value: "Draft survives context refresh" },
     });
+    fireEvent.click(screen.getByRole("button", { name: "调整今天" }));
     fireEvent.click(screen.getByRole("button", { name: "保存今天的安排" }));
 
     await waitFor(() =>
@@ -532,9 +539,9 @@ describe("today background refresh", () => {
   it.each([
     ["travel", "active", "出差维持模式"],
     ["equipment_limited", "active", "器械受限模式"],
-    ["travel", "upcoming", "正常模式 · 已安排出差"],
+    ["travel", "upcoming", "已安排出差"],
   ] as const)(
-    "shows the %s %s execution mode honestly",
+    "reveals the %s %s execution exception through 调整今天",
     async (kind, status, expectedMode) => {
       const data = aggregate("planned", 0);
       data.execution = {
@@ -561,10 +568,12 @@ describe("today background refresh", () => {
         </QueryClientProvider>,
       );
 
+      const adjustToday = await screen.findByRole("button", {
+        name: "调整今天",
+      });
+      fireEvent.click(adjustToday);
       expect(await screen.findByText(expectedMode)).toBeTruthy();
-      if (status === "active") {
-        expect(screen.queryByText("正常模式")).toBeNull();
-      }
+      expect(screen.queryByText("正常模式")).toBeNull();
     },
   );
 
@@ -597,6 +606,12 @@ describe("today background refresh", () => {
       </QueryClientProvider>,
     );
 
+    const adjustToday = await screen.findByRole("button", {
+      name: "调整今天",
+    });
+    if (adjustToday.getAttribute("aria-expanded") !== "true") {
+      fireEvent.click(adjustToday);
+    }
     expect(await screen.findByText("暂停模式")).toBeTruthy();
     expect(screen.getByText("今天暂停训练")).toBeTruthy();
     expect(screen.queryByRole("radio")).toBeNull();
@@ -631,13 +646,9 @@ describe("today background refresh", () => {
 
     const plan = screen.getByRole("region", { name: "今日计划" });
     const feedback = screen.getByRole("region", { name: "身体反馈" });
-    const pending = screen.getByRole("region", { name: "待处理来源" });
+    expect(screen.queryByRole("region", { name: "待处理来源" })).toBeNull();
     expect(
       plan.compareDocumentPosition(feedback) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      feedback.compareDocumentPosition(pending) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
 
     const checkbox = screen.getByRole("checkbox", {
@@ -751,7 +762,11 @@ describe("today background refresh", () => {
         </QueryClientProvider>,
       );
 
-      expect((await screen.findAllByText(label)).length).toBeGreaterThan(0);
+      if (interrupted) {
+        expect((await screen.findAllByText(label)).length).toBeGreaterThan(0);
+      } else {
+        expect(screen.queryByText(label)).toBeNull();
+      }
       expect(
         screen.queryByRole("alert", { name: `${label}安全提示` }) !== null,
       ).toBe(interrupted);

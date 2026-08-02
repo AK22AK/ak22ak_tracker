@@ -812,49 +812,43 @@ for (const width of [320, 375, 390, 430]) {
 }
 
 for (const width of [320, 375, 390, 430]) {
-  test(`settings integration cards fit a ${width}px mobile viewport`, async ({
+  test(`settings list and detail entry fit a ${width}px mobile viewport`, async ({
     page,
   }) => {
     await page.setViewportSize({ width, height: 844 });
     await mockPrivateReads(page, 0);
     await page.goto("/settings");
-    await expect(page.getByRole("heading", { name: "Garmin" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "训记" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "DeepSeek" })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Garmin/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: /训记/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: /DeepSeek/ })).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "同步活动记录" }),
+      page.getByRole("link", { name: /GitHub 数据备份/ }),
     ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "同步睡眠与步数" }),
-    ).toBeVisible();
+    await expect(page.locator("[data-settings-shell] input")).toHaveCount(0);
 
     const layout = await page.evaluate(() => {
       const controls = [
-        ...document.querySelectorAll<HTMLElement>(
-          ".integration-card input, .integration-card select, .integration-card button, .integration-card a",
-        ),
+        ...document.querySelectorAll<HTMLElement>(".settings-row"),
       ];
-      const cards = [
-        ...document.querySelectorAll<HTMLElement>(".integration-card"),
-      ];
+      const rows = [...document.querySelectorAll<HTMLElement>(".settings-row")];
       return {
         clientWidth: document.documentElement.clientWidth,
         scrollWidth: document.documentElement.scrollWidth,
         controls: controls.map((control) => {
           const rect = control.getBoundingClientRect();
-          const cardRect = control
-            .closest<HTMLElement>(".integration-card")
+          const groupRect = control
+            .closest<HTMLElement>(".settings-list-group")
             ?.getBoundingClientRect();
           return {
             height: rect.height,
             left: rect.left,
             right: rect.right,
-            cardLeft: cardRect?.left ?? 0,
-            cardRight: cardRect?.right ?? 0,
+            groupLeft: groupRect?.left ?? 0,
+            groupRight: groupRect?.right ?? 0,
           };
         }),
-        cards: cards.map((card) => {
-          const rect = card.getBoundingClientRect();
+        rows: rows.map((row) => {
+          const rect = row.getBoundingClientRect();
           return { left: rect.left, right: rect.right };
         }),
       };
@@ -862,18 +856,22 @@ for (const width of [320, 375, 390, 430]) {
 
     expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
     expect(
-      layout.cards.every(
+      layout.rows.every(
         ({ left, right }) => left >= 0 && right <= layout.clientWidth,
       ),
     ).toBe(true);
     expect(
       layout.controls.every(
-        ({ height, left, right, cardLeft, cardRight }) =>
-          height >= 44 && left >= cardLeft && right <= cardRight,
+        ({ height, left, right, groupLeft, groupRight }) =>
+          height >= 44 && left >= groupLeft && right <= groupRight,
       ),
     ).toBe(true);
 
-    await page.getByRole("link", { name: "今日" }).click();
+    await page.getByRole("link", { name: /Garmin/ }).click();
+    await expect(page.getByRole("heading", { name: "Garmin" })).toBeVisible();
+    await expect(page.getByLabel("Token 文件")).toBeVisible();
+
+    await page.goto("/");
     await expect(page.getByText("3.00 km")).toBeVisible();
     const activityLayout = await page.evaluate(() => {
       const card = document.querySelector<HTMLElement>(
@@ -915,7 +913,7 @@ test("cold uncached Calendar exposes a stable target shell within 100 ms", async
   await expect(page.getByText(/正在切换/)).toHaveCount(0);
 });
 
-test("warm Calendar and Settings content remains visible without aggregate refetch", async ({
+test("warm Calendar and Settings list remains visible without aggregate refetch", async ({
   page,
 }) => {
   const counters = await mockPrivateReads(page, 80);
@@ -948,9 +946,8 @@ test("warm Calendar and Settings content remains visible without aggregate refet
   );
   expect(settingsFirst).toBeLessThan(100);
   await expect(
-    page.locator('[data-tab-panel="settings"] .integration-card').first(),
-  ).toBeVisible();
-  await page.getByLabel("API Key", { exact: true }).fill("anonymous-ui-draft");
+    page.locator('[data-tab-panel="settings"] .settings-row'),
+  ).toHaveCount(6);
   await page.evaluate(() => window.scrollTo(0, 640));
 
   const calendarReturn = await measureTabClick(
@@ -966,12 +963,12 @@ test("warm Calendar and Settings content remains visible without aggregate refet
   const settingsReturn = await measureTabClick(
     page,
     "/settings",
-    '[data-tab-panel="settings"] .integration-card',
+    '[data-tab-panel="settings"] .settings-row',
   );
   expect(settingsReturn).toBeLessThan(100);
-  await expect(page.getByLabel("API Key", { exact: true })).toHaveValue(
-    "anonymous-ui-draft",
-  );
+  await expect(
+    page.locator('[data-tab-panel="settings"] .settings-row'),
+  ).toHaveCount(6);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(640);
 });
 

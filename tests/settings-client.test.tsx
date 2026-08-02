@@ -1,13 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SettingsClient } from "@/components/settings-client";
@@ -104,14 +98,12 @@ describe("settings client data boundary", () => {
     renderSettings();
 
     expect(screen.getByRole("main", { name: "设置页面" })).toBeTruthy();
-    expect(screen.getByText("正在加载：Garmin 活动…")).toBeTruthy();
-    expect(screen.getByText("正在加载：训练数据源…")).toBeTruthy();
-    expect(screen.getByText("正在加载：训练建议…")).toBeTruthy();
-    expect(screen.getByText("正在加载：GitHub 数据备份…")).toBeTruthy();
+    expect(screen.getByText("正在加载设置…")).toBeTruthy();
+    expect(screen.getAllByTestId("settings-row-skeleton")).toHaveLength(5);
     expect(screen.queryByText(/正在切换/)).toBeNull();
   });
 
-  it("loads both status cards in parallel and preserves an API key draft across background refetch", async () => {
+  it("loads status summaries in parallel without exposing detail inputs on the first level", async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
       return Promise.resolve(
@@ -131,22 +123,44 @@ describe("settings client data boundary", () => {
     vi.stubGlobal("fetch", fetchMock);
     renderSettings();
 
-    const keyInput = (await screen.findByLabelText(
-      "API Key",
-    )) as HTMLInputElement;
-    fireEvent.change(keyInput, { target: { value: "anonymous-draft" } });
-    window.dispatchEvent(new Event("focus"));
-
-    await waitFor(() => expect(keyInput.value).toBe("anonymous-draft"));
-    expect(screen.getByText("GitHub 私人仓库")).toBeTruthy();
+    expect(await screen.findByRole("link", { name: /Garmin/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /训记/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /DeepSeek/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /GitHub 数据备份/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /本机数据/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /账号/ })).toBeTruthy();
+    expect(screen.queryByLabelText("API Key")).toBeNull();
+    expect(screen.queryByLabelText("DeepSeek API Key")).toBeNull();
     expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual(
       expect.arrayContaining([
         "/api/trackers/knee-rehab/integrations/xunji/credential",
         "/api/trackers/knee-rehab/integrations/garmin/credential",
-        "/api/trackers/knee-rehab/integrations/garmin/wellness",
         "/api/trackers/knee-rehab/integrations/deepseek/credential",
         "/api/mirror/status",
       ]),
     );
+  });
+
+  it("surfaces a failed integration as an actionable first-level exception", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      return Promise.resolve(
+        jsonResponse(
+          url.includes("/garmin/")
+            ? { ...garminStatus, state: "needs_refresh" }
+            : url === "/api/mirror/status"
+              ? mirrorStatus
+              : url.includes("/deepseek/")
+                ? deepSeekStatus
+                : integrationStatus,
+        ),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderSettings();
+
+    expect(await screen.findByText("1 项需要处理")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /Garmin需要处理/ })).toBeTruthy();
+    expect(screen.queryByText("全部正常")).toBeNull();
   });
 });

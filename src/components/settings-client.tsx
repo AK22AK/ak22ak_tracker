@@ -1,49 +1,116 @@
 "use client";
 
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 
 import {
   fetchDeepSeekConnectionStatus,
   fetchGarminConnectionStatus,
-  fetchGarminWellnessProgress,
   fetchGitHubMirrorStatus,
   fetchIntegrationStatus,
 } from "@/client/integration-api";
 import { integrationQueryKeys } from "@/client/query-keys";
-
-import { GitHubMirrorCard } from "./github-mirror-card";
-import { DeepSeekIntegrationCard } from "./deepseek-integration-card";
-import { GarminIntegrationCard } from "./garmin-integration-card";
-import { IntegrationCard } from "./integration-card";
-import { LocalDataCard } from "./local-data-card";
+import type { DeepSeekConnectionStatus } from "@/domain/deepseek";
+import type { GarminConnectionStatus } from "@/domain/garmin";
+import type { GitHubMirrorStatus } from "@/domain/github-mirror";
+import type { IntegrationStatus } from "@/domain/integrations";
 
 const trackerKey = "knee-rehab";
-const xunjiDefinition = {
-  provider: "xunji",
-  displayName: "训记",
-  description: "同步力量训练的动作、重量、组次和备注。",
-} as const;
 
-function SettingsSectionState({
-  label,
-  error,
-  onRetry,
+type RowStatus = { detail: string; needsAttention: boolean };
+
+function garminRowStatus(status: GarminConnectionStatus): RowStatus {
+  if (
+    status.state === "needs_validation" ||
+    status.state === "needs_refresh" ||
+    status.state === "invalid" ||
+    status.sync?.status === "failed"
+  ) {
+    return { detail: "需要处理", needsAttention: true };
+  }
+  if (status.state === "connected")
+    return { detail: "已连接", needsAttention: false };
+  return { detail: "未连接", needsAttention: false };
+}
+
+function integrationRowStatus(status: IntegrationStatus): RowStatus {
+  if (status.sync.status === "failed") {
+    return { detail: "需要处理", needsAttention: true };
+  }
+  if (status.sync.status === "running")
+    return { detail: "同步中", needsAttention: false };
+  if (status.configured) return { detail: "已连接", needsAttention: false };
+  return { detail: "未连接", needsAttention: false };
+}
+
+function deepSeekRowStatus(status: DeepSeekConnectionStatus): RowStatus {
+  if (status.state === "needs_update" || status.state === "unavailable") {
+    return { detail: "需要处理", needsAttention: true };
+  }
+  if (status.state === "connected")
+    return { detail: "已连接", needsAttention: false };
+  return { detail: "未连接", needsAttention: false };
+}
+
+function mirrorRowStatus(status: GitHubMirrorStatus): RowStatus {
+  if (
+    status.configuration === "invalid_configuration" ||
+    status.permissionError ||
+    status.failedCount > 0
+  ) {
+    return { detail: "需要处理", needsAttention: true };
+  }
+  if (status.processingCount > 0 || status.pendingCount > 0) {
+    return { detail: "备份中", needsAttention: false };
+  }
+  if (status.configuration === "configured")
+    return { detail: "已就绪", needsAttention: false };
+  return { detail: "未设置", needsAttention: false };
+}
+
+function SettingsRow({
+  href,
+  name,
+  detail,
+  needsAttention = false,
 }: {
-  label: string;
-  error: boolean;
-  onRetry: () => void;
+  href: string;
+  name: string;
+  detail: string;
+  needsAttention?: boolean;
 }) {
   return (
-    <section
-      className="feedback-card page-section-loading"
-      role={error ? "alert" : "status"}
+    <Link
+      className="settings-row"
+      data-needs-attention={needsAttention || undefined}
+      href={href}
     >
-      <p>{error ? `${label}暂时无法加载。` : `正在加载：${label}…`}</p>
-      {error ? (
-        <button className="secondary-button" type="button" onClick={onRetry}>
-          重试
-        </button>
-      ) : null}
+      <span className="settings-row-copy">
+        <strong>{name}</strong>
+        <small>{detail}</small>
+      </span>
+      <span aria-hidden="true" className="settings-row-disclosure">
+        ›
+      </span>
+    </Link>
+  );
+}
+
+function SettingsSkeleton() {
+  return (
+    <section
+      aria-label="正在加载设置…"
+      className="settings-list-group"
+      role="status"
+    >
+      <span className="sr-only">正在加载设置…</span>
+      {Array.from({ length: 5 }, (_, index) => (
+        <div
+          className="settings-row-skeleton"
+          data-testid="settings-row-skeleton"
+          key={index}
+        />
+      ))}
     </section>
   );
 }
@@ -60,14 +127,6 @@ export function SettingsClient() {
     queryFn: ({ signal }) => fetchGarminConnectionStatus(trackerKey, signal),
     staleTime: 5 * 60_000,
   });
-  const garminWellnessQuery = useQuery({
-    queryKey: integrationQueryKeys.providerStatus(
-      trackerKey,
-      "garmin_wellness",
-    ),
-    queryFn: ({ signal }) => fetchGarminWellnessProgress(trackerKey, signal),
-    staleTime: 60_000,
-  });
   const deepSeekQuery = useQuery({
     queryKey: integrationQueryKeys.providerStatus(trackerKey, "deepseek"),
     queryFn: ({ signal }) => fetchDeepSeekConnectionStatus(trackerKey, signal),
@@ -79,9 +138,38 @@ export function SettingsClient() {
     staleTime: 60_000,
   });
 
+  const loading = [
+    garminQuery,
+    integrationQuery,
+    deepSeekQuery,
+    mirrorQuery,
+  ].some((query) => query.isPending);
+  const unavailableStatus = (failed: boolean): RowStatus => ({
+    detail: failed ? "暂时无法加载" : "正在加载",
+    needsAttention: failed,
+  });
+  const garminStatus = garminQuery.data
+    ? garminRowStatus(garminQuery.data)
+    : unavailableStatus(garminQuery.isError);
+  const xunjiStatus = integrationQuery.data
+    ? integrationRowStatus(integrationQuery.data)
+    : unavailableStatus(integrationQuery.isError);
+  const deepSeekStatus = deepSeekQuery.data
+    ? deepSeekRowStatus(deepSeekQuery.data)
+    : unavailableStatus(deepSeekQuery.isError);
+  const mirrorStatus = mirrorQuery.data
+    ? mirrorRowStatus(mirrorQuery.data)
+    : unavailableStatus(mirrorQuery.isError);
+  const attentionCount = [
+    garminStatus,
+    xunjiStatus,
+    deepSeekStatus,
+    mirrorStatus,
+  ].filter((status) => status.needsAttention).length;
+
   return (
     <main
-      className="app-shell page-frame"
+      className="app-shell page-frame settings-shell"
       data-settings-shell="true"
       aria-label="设置页面"
     >
@@ -91,54 +179,53 @@ export function SettingsClient() {
           <h1>设置</h1>
         </div>
       </header>
-      {garminQuery.data ? (
-        <GarminIntegrationCard
-          trackerKey={trackerKey}
-          initialStatus={garminQuery.data}
-          initialWellnessProgress={garminWellnessQuery.data}
-        />
+      {attentionCount > 0 ? (
+        <section className="settings-attention-summary" role="alert">
+          <strong>{attentionCount} 项需要处理</strong>
+          <span>请查看标有“需要处理”的项目。</span>
+        </section>
+      ) : null}
+      {loading ? (
+        <SettingsSkeleton />
       ) : (
-        <SettingsSectionState
-          label="Garmin 活动"
-          error={garminQuery.isError}
-          onRetry={() => void garminQuery.refetch()}
-        />
+        <div className="settings-groups">
+          <section className="settings-list-group" aria-label="训练数据来源">
+            <p className="settings-group-label">训练与恢复</p>
+            <SettingsRow
+              href="/settings/garmin"
+              name="Garmin"
+              {...garminStatus}
+            />
+            <SettingsRow href="/settings/xunji" name="训记" {...xunjiStatus} />
+          </section>
+          <section className="settings-list-group" aria-label="建议与备份">
+            <p className="settings-group-label">建议与备份</p>
+            <SettingsRow
+              href="/settings/deepseek"
+              name="DeepSeek"
+              {...deepSeekStatus}
+            />
+            <SettingsRow
+              href="/settings/backup"
+              name="GitHub 数据备份"
+              {...mirrorStatus}
+            />
+          </section>
+          <section className="settings-list-group" aria-label="本机与账号">
+            <p className="settings-group-label">本机与账号</p>
+            <SettingsRow
+              href="/settings/storage"
+              name="本机数据"
+              detail="离线内容与待同步记录"
+            />
+            <SettingsRow
+              href="/settings/account"
+              name="账号"
+              detail="退出登录"
+            />
+          </section>
+        </div>
       )}
-      {integrationQuery.data ? (
-        <IntegrationCard
-          trackerKey={trackerKey}
-          definition={xunjiDefinition}
-          initialStatus={integrationQuery.data}
-        />
-      ) : (
-        <SettingsSectionState
-          label="训练数据源"
-          error={integrationQuery.isError}
-          onRetry={() => void integrationQuery.refetch()}
-        />
-      )}
-      {deepSeekQuery.data ? (
-        <DeepSeekIntegrationCard
-          trackerKey={trackerKey}
-          initialStatus={deepSeekQuery.data}
-        />
-      ) : (
-        <SettingsSectionState
-          label="训练建议"
-          error={deepSeekQuery.isError}
-          onRetry={() => void deepSeekQuery.refetch()}
-        />
-      )}
-      {mirrorQuery.data ? (
-        <GitHubMirrorCard initialStatus={mirrorQuery.data} />
-      ) : (
-        <SettingsSectionState
-          label="GitHub 数据备份"
-          error={mirrorQuery.isError}
-          onRetry={() => void mirrorQuery.refetch()}
-        />
-      )}
-      <LocalDataCard />
     </main>
   );
 }

@@ -20,7 +20,6 @@ import { useOfflineCommands } from "@/offline/offline-command-context";
 import type { PendingProjectionSummary } from "@/offline/command-projection";
 import { usePrivateOfflineIdentity } from "@/offline/private-offline-context";
 
-import { SignOutButton } from "./sign-out-button";
 import { ExternalTrainingSection } from "./external-training-section";
 import { RecoveryReferenceCard } from "./recovery-reference-card";
 import {
@@ -557,18 +556,16 @@ function safetyGuidance(level: "green" | "yellow" | "red") {
   return "当前反馈支持维持计划；升级仍需连续满足计划条件。";
 }
 
-function executionModeLabel(execution: ExecutionContextToday) {
+function executionExceptionLabel(execution: ExecutionContextToday) {
   if (execution.resumption?.status === "pending") return "待接续评估";
   if (execution.pause?.status === "active") return "暂停模式";
   if (execution.pause?.status === "pending_resume_assessment") {
     return "待接续评估";
   }
   const context = execution.context;
-  if (!context) return "正常模式";
+  if (!context) return null;
   if (context.status === "upcoming") {
-    return context.kind === "travel"
-      ? "正常模式 · 已安排出差"
-      : "正常模式 · 已安排器械受限";
+    return context.kind === "travel" ? "已安排出差" : "已安排器械受限";
   }
   return context.kind === "travel" ? "出差维持模式" : "器械受限模式";
 }
@@ -609,6 +606,13 @@ export function DashboardShell({
   const writesDisabled = readOnlyOffline || !online;
   const refreshingFromLocal = online && readOnlyOffline;
   const [refreshing, setRefreshing] = useState(false);
+  const [adjustmentsOpen, setAdjustmentsOpen] = useState(
+    execution.safety.blocked || Boolean(execution.pause),
+  );
+
+  useEffect(() => {
+    if (execution.safety.blocked || execution.pause) setAdjustmentsOpen(true);
+  }, [execution.pause, execution.safety.blocked]);
 
   const tasks = initialDashboard.tasks;
   const feedbackCount = initialDashboard.feedbackCount;
@@ -632,6 +636,8 @@ export function DashboardShell({
   const unassignedRecords = externalRecords.filter(
     (record) => taskIdForRecord(record, tasks) === null,
   );
+  const adjustmentException = executionExceptionLabel(execution);
+  const adjustmentPanelId = "today-adjustments";
 
   const planTitle = missing
     ? "等待导入私人计划"
@@ -654,7 +660,7 @@ export function DashboardShell({
           <button
             className="refresh-button"
             type="button"
-            aria-label="刷新今日数据"
+            aria-label={refreshing ? "正在刷新今日数据" : "刷新今日数据"}
             title={online ? "刷新今日数据" : "联网后刷新"}
             disabled={!online || refreshing}
             onClick={async () => {
@@ -667,26 +673,7 @@ export function DashboardShell({
             }}
           >
             <span aria-hidden="true">↻</span>
-            {refreshing ? "刷新中" : "刷新"}
           </button>
-        </div>
-        <div className="today-meta-row">
-          <div className="today-meta-copy">
-            <span>
-              {initialDashboard.planVersion
-                ? `康复计划 v${initialDashboard.planVersion}`
-                : "康复计划待设置"}
-            </span>
-            <span aria-hidden="true">·</span>
-            <span>{executionModeLabel(execution)}</span>
-          </div>
-          <StatusPill
-            tone={online ? "neutral" : "attention"}
-            icon={online ? "●" : "!"}
-          >
-            {online ? "当前在线" : "当前离线"}
-          </StatusPill>
-          <SignOutButton />
         </div>
       </header>
 
@@ -773,14 +760,6 @@ export function DashboardShell({
         </section>
       ) : null}
 
-      <fieldset className="offline-write-boundary" disabled={writesDisabled}>
-        <ExecutionPauseCard
-          trackerKey="knee-rehab"
-          execution={execution}
-          onChanged={onExecutionChanged}
-        />
-      </fieldset>
-
       {execution.resumption?.status === "pending" ? (
         <SurfaceCard className="resumption-entry-card" aria-label="待接续评估">
           <SectionHeading
@@ -809,15 +788,27 @@ export function DashboardShell({
         </SurfaceCard>
       ) : null}
 
-      <fieldset className="offline-write-boundary" disabled={writesDisabled}>
-        <ExecutionContextCard
-          trackerKey="knee-rehab"
-          localDate={localDate}
-          planVersion={planVersion}
-          execution={execution}
-          onChanged={onExecutionChanged}
-        />
-      </fieldset>
+      {adjustmentException ? (
+        <section className="today-exception-entry" role="status">
+          <div>
+            <strong>{adjustmentException}</strong>
+            <span>
+              {execution.pause
+                ? "今天的训练安排已暂停。"
+                : "今天的安排会按这个临时条件执行。"}
+            </span>
+          </div>
+          <button
+            className="text-button"
+            type="button"
+            aria-expanded={adjustmentsOpen}
+            aria-controls={adjustmentPanelId}
+            onClick={() => setAdjustmentsOpen((value) => !value)}
+          >
+            调整今天
+          </button>
+        </section>
+      ) : null}
 
       <SurfaceCard className="today-plan-card" aria-label="今日计划">
         <SectionHeading
@@ -880,11 +871,8 @@ export function DashboardShell({
               : "今天还没有记录"
           }
           aside={
-            currentSafety ? (
-              <StatusPill
-                tone={safetyTone(currentSafety)}
-                icon={currentSafety === "green" ? "✓" : "!"}
-              >
+            currentSafety && currentSafety !== "green" ? (
+              <StatusPill tone={safetyTone(currentSafety)} icon="!">
                 {safetyLabel(currentSafety)}
               </StatusPill>
             ) : (
@@ -894,7 +882,7 @@ export function DashboardShell({
             )
           }
         />
-        {currentSafety ? (
+        {currentSafety && currentSafety !== "green" ? (
           <p className={`safety-message ${currentSafety}`}>
             {safetyGuidance(currentSafety)}
           </p>
@@ -902,30 +890,67 @@ export function DashboardShell({
         <p className="feedback-supporting-copy">
           可提交训练前后、次日反应或突发情况；每天至少记录一次。
         </p>
-        <Link className="secondary-button" href="/feedback" scroll={false}>
+        <Link className="primary-button" href="/feedback" scroll={false}>
           {feedbackCount > 0 ? "再次反馈" : "添加反馈"}
         </Link>
       </SurfaceCard>
 
-      <RecoveryReferenceCard reference={initialDashboard.recoveryReference} />
+      {!adjustmentException ? (
+        <section className="today-adjustment-entry">
+          <button
+            className="text-button"
+            type="button"
+            aria-expanded={adjustmentsOpen}
+            aria-controls={adjustmentPanelId}
+            onClick={() => setAdjustmentsOpen((value) => !value)}
+          >
+            调整今天
+          </button>
+        </section>
+      ) : null}
 
-      <SurfaceCard className="pending-sources-card" aria-label="待处理来源">
-        <SectionHeading
-          eyebrow="活动与训练来源"
-          title={
-            pendingRecords.length > 0
-              ? `${pendingRecords.length} 条需要确认`
-              : "暂无待处理来源"
-          }
-          aside={
-            pendingRecords.length > 0 ? (
+      {adjustmentsOpen ? (
+        <div id={adjustmentPanelId} className="today-adjustment-panel">
+          <fieldset
+            className="offline-write-boundary"
+            disabled={writesDisabled}
+          >
+            <ExecutionPauseCard
+              trackerKey="knee-rehab"
+              execution={execution}
+              onChanged={onExecutionChanged}
+            />
+          </fieldset>
+          <fieldset
+            className="offline-write-boundary"
+            disabled={writesDisabled}
+          >
+            <ExecutionContextCard
+              trackerKey="knee-rehab"
+              localDate={localDate}
+              planVersion={planVersion}
+              execution={execution}
+              onChanged={onExecutionChanged}
+            />
+          </fieldset>
+        </div>
+      ) : null}
+
+      {initialDashboard.recoveryReference ? (
+        <RecoveryReferenceCard reference={initialDashboard.recoveryReference} />
+      ) : null}
+
+      {pendingRecords.length > 0 ? (
+        <SurfaceCard className="pending-sources-card" aria-label="待处理来源">
+          <SectionHeading
+            eyebrow="活动与训练来源"
+            title={`${pendingRecords.length} 条需要确认`}
+            aside={
               <StatusPill tone="attention" icon="!">
                 待处理
               </StatusPill>
-            ) : null
-          }
-        />
-        {pendingRecords.length > 0 ? (
+            }
+          />
           <div className="pending-source-list">
             {pendingRecords.map((record) => (
               <div key={record.id}>
@@ -947,22 +972,18 @@ export function DashboardShell({
               </div>
             ))}
           </div>
-        ) : (
-          <p className="empty-state-copy">
-            有待确认的活动或训练记录时，会显示在这里。
-          </p>
-        )}
-        {unassignedRecords.length > 0 ? (
-          <ExternalTrainingSection
-            trackerKey="knee-rehab"
-            records={unassignedRecords}
-            tasks={tasks}
-            heading="未归入任务的记录"
-            onUpdated={onExternalTrainingUpdated}
-            readOnly={writesDisabled}
-          />
-        ) : null}
-      </SurfaceCard>
+          {unassignedRecords.length > 0 ? (
+            <ExternalTrainingSection
+              trackerKey="knee-rehab"
+              records={unassignedRecords}
+              tasks={tasks}
+              heading="未归入任务的记录"
+              onUpdated={onExternalTrainingUpdated}
+              readOnly={writesDisabled}
+            />
+          ) : null}
+        </SurfaceCard>
+      ) : null}
     </main>
   );
 }
