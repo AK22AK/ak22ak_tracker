@@ -606,13 +606,7 @@ export function DashboardShell({
   const writesDisabled = readOnlyOffline || !online;
   const refreshingFromLocal = online && readOnlyOffline;
   const [refreshing, setRefreshing] = useState(false);
-  const [adjustmentsOpen, setAdjustmentsOpen] = useState(
-    execution.safety.blocked || Boolean(execution.pause),
-  );
-
-  useEffect(() => {
-    if (execution.safety.blocked || execution.pause) setAdjustmentsOpen(true);
-  }, [execution.pause, execution.safety.blocked]);
+  const [adjustmentsOpen, setAdjustmentsOpen] = useState(false);
 
   const tasks = initialDashboard.tasks;
   const feedbackCount = initialDashboard.feedbackCount;
@@ -638,6 +632,9 @@ export function DashboardShell({
   );
   const adjustmentException = executionExceptionLabel(execution);
   const adjustmentPanelId = "today-adjustments";
+  const forceAdjustmentPanel =
+    execution.safety.blocked || Boolean(execution.pause);
+  const adjustmentPanelOpen = adjustmentsOpen || forceAdjustmentPanel;
 
   const planTitle = missing
     ? "等待导入私人计划"
@@ -798,15 +795,17 @@ export function DashboardShell({
                 : "今天的安排会按这个临时条件执行。"}
             </span>
           </div>
-          <button
-            className="text-button"
-            type="button"
-            aria-expanded={adjustmentsOpen}
-            aria-controls={adjustmentPanelId}
-            onClick={() => setAdjustmentsOpen((value) => !value)}
-          >
-            调整今天
-          </button>
+          {!forceAdjustmentPanel ? (
+            <button
+              className="text-button"
+              type="button"
+              aria-expanded={adjustmentPanelOpen}
+              aria-controls={adjustmentPanelId}
+              onClick={() => setAdjustmentsOpen((value) => !value)}
+            >
+              调整今天
+            </button>
+          ) : null}
         </section>
       ) : null}
 
@@ -829,8 +828,7 @@ export function DashboardShell({
         ) : null}
         {notStarted ? (
           <p className="empty-state-copy">
-            计划 v{initialDashboard.planVersion}{" "}
-            已就绪。开始前可以先记录一次基线反馈。
+            计划已就绪。开始前可以先记录一次基线反馈。
           </p>
         ) : null}
         {!missing && !notStarted && tasks.length === 0 ? (
@@ -900,7 +898,7 @@ export function DashboardShell({
           <button
             className="text-button"
             type="button"
-            aria-expanded={adjustmentsOpen}
+            aria-expanded={adjustmentPanelOpen}
             aria-controls={adjustmentPanelId}
             onClick={() => setAdjustmentsOpen((value) => !value)}
           >
@@ -909,7 +907,7 @@ export function DashboardShell({
         </section>
       ) : null}
 
-      {adjustmentsOpen ? (
+      {adjustmentPanelOpen ? (
         <div id={adjustmentPanelId} className="today-adjustment-panel">
           <fieldset
             className="offline-write-boundary"

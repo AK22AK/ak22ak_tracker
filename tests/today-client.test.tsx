@@ -606,12 +606,6 @@ describe("today background refresh", () => {
       </QueryClientProvider>,
     );
 
-    const adjustToday = await screen.findByRole("button", {
-      name: "调整今天",
-    });
-    if (adjustToday.getAttribute("aria-expanded") !== "true") {
-      fireEvent.click(adjustToday);
-    }
     expect(await screen.findByText("暂停模式")).toBeTruthy();
     expect(screen.getByText("今天暂停训练")).toBeTruthy();
     expect(screen.queryByRole("radio")).toBeNull();
