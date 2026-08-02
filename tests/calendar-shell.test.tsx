@@ -156,7 +156,7 @@ describe("calendar visual semantics", () => {
     expect(screen.queryByText("当天没有计划任务")).toBeNull();
   });
 
-  it("shows an honest empty state and source summary for a ready day without tasks", () => {
+  it("keeps normal plan metadata and empty sources out of the day detail", () => {
     renderCalendarShell("2026-07-19", {
       dashboard: {
         ...dashboard,
@@ -168,7 +168,33 @@ describe("calendar visual semantics", () => {
 
     expect(screen.getByText("当天没有计划任务")).toBeTruthy();
     expect(screen.getByLabelText("当天概览").textContent).toContain("0 项任务");
-    expect(screen.getByLabelText("当天概览").textContent).toContain("0 条来源");
+    expect(screen.getByLabelText("当天概览").textContent).not.toContain(
+      "条来源",
+    );
+    expect(screen.queryByText("计划 v1")).toBeNull();
+  });
+
+  it("keeps only the calendar markers that occur this month behind a disclosure", () => {
+    renderCalendarShell("2026-07-18", {
+      days: [
+        {
+          date: "2026-07-18",
+          taskCount: 0,
+          completedCount: 0,
+          skippedCount: 0,
+          feedbackCount: 1,
+        },
+      ],
+    });
+
+    expect(screen.getByText("说明")).toBeTruthy();
+    expect(screen.getByLabelText("日历标记说明").textContent).toContain(
+      "有反馈",
+    );
+    expect(screen.queryByText("全部完成")).toBeNull();
+    expect(screen.queryByText("已跳过")).toBeNull();
+    expect(screen.queryByText("本机待同步")).toBeNull();
+    expect(screen.queryByText("暂停日")).toBeNull();
   });
 
   it("keeps dates selectable and exposes a retry when the month summary fails", () => {

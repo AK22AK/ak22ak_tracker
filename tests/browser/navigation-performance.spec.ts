@@ -218,6 +218,25 @@ const trendsAggregate = aggregateEightWeekTrends({
   ],
 });
 
+const emptyTrendsAggregate = aggregateEightWeekTrends({
+  trackerKey: "knee-rehab",
+  trackerStartedOn: "2026-07-01",
+  timeZone: "Asia/Shanghai",
+  currentDate: localDate,
+  generatedAt: new Date().toISOString(),
+  planVersions: [
+    {
+      id: todayAggregate.plan.id,
+      version: 1,
+      effectiveFrom: "2026-07-01",
+    },
+  ],
+  tasks: [],
+  feedbacks: [],
+  externalRecords: [],
+  wellnessRecords: [],
+});
+
 const planAdvice = {
   schemaVersion: "1.0.0",
   configuration: "configured",
@@ -441,6 +460,7 @@ async function mockPrivateReads(
   delayMs: number,
   advice: unknown = planAdvice,
   evaluation: unknown = evaluationAggregate,
+  trends: unknown = trendsAggregate,
 ) {
   const counters: RequestCounters = {
     today: 0,
@@ -486,7 +506,7 @@ async function mockPrivateReads(
       body = advice;
     } else if (url.pathname.endsWith("/trends")) {
       counters.trends += 1;
-      body = trendsAggregate;
+      body = trends;
     } else if (url.pathname.endsWith("/evaluation")) {
       counters.evaluation += 1;
       body = evaluation;
@@ -567,46 +587,79 @@ for (const width of [320, 375, 390, 430]) {
     await mockPrivateReads(page, 0);
     await page.goto("/trends");
 
-    await expect(page.getByRole("heading", { name: "本周完成" })).toBeVisible();
     await expect(
-      page.getByRole("img", { name: /本周任务完成率 50%/ }),
+      page.getByRole("heading", { name: "完成 1/2（50%）" }),
     ).toBeVisible();
     await expect(
-      page.getByRole("img", {
-        name: /本周完成训练 1 项，共 1 天；时长 35 分钟，覆盖 1 项；距离 未测量/,
-      }),
+      page.getByRole("list", { name: "最近八周趋势" }),
     ).toBeVisible();
-    await expect(page.getByText(/不表示两者存在因果关系/)).toBeVisible();
-    await expect(
-      page.getByRole("img", { name: /本周没有身体反馈/ }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "睡眠与步数" }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("img", {
-        name: /本周睡眠平均 8 小时，覆盖 1 天.*步数平均 未测量，覆盖 0 天/,
-      }),
-    ).toBeVisible();
-    await expect(
-      page.getByText(/同期变化仅供参考，不代表存在因果关系/),
-    ).toBeVisible();
+    await expect(page.locator(".trend-series-row")).toHaveCount(8);
+    await expect(page.getByText(/缺失记录不会按 0 计算/)).toBeVisible();
+    await expect(page.getByText("查看数据覆盖与说明")).toBeVisible();
+    await expect(page.getByText("更多")).toBeVisible();
 
     const layout = await page.evaluate(() => {
-      const button = document.querySelector<HTMLElement>(
-        ".trend-refresh-button",
-      );
-      const rect = button?.getBoundingClientRect();
+      const controls = [
+        ...document.querySelectorAll<HTMLElement>(
+          ".trend-refresh-button, .trend-details summary, .trend-more-actions summary",
+        ),
+      ];
       return {
         clientWidth: document.documentElement.clientWidth,
         scrollWidth: document.documentElement.scrollWidth,
-        buttonHeight: rect?.height ?? 0,
-        buttonRight: rect?.right ?? Number.POSITIVE_INFINITY,
+        controls: controls.map((control) => {
+          const rect = control.getBoundingClientRect();
+          return { height: rect.height, left: rect.left, right: rect.right };
+        }),
       };
     });
     expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
-    expect(layout.buttonHeight).toBeGreaterThanOrEqual(44);
-    expect(layout.buttonRight).toBeLessThanOrEqual(layout.clientWidth);
+    expect(
+      layout.controls.every(
+        ({ height, left, right }) =>
+          height >= 44 && left >= 0 && right <= layout.clientWidth,
+      ),
+    ).toBe(true);
+  });
+}
+
+for (const width of [320, 375, 390, 430]) {
+  test(`empty trends and quiet calendar stay accessible at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await mockPrivateReads(
+      page,
+      0,
+      planAdvice,
+      evaluationAggregate,
+      emptyTrendsAggregate,
+    );
+    await page.goto("/trends");
+
+    await expect(
+      page.getByRole("heading", { name: "还没有可回顾的趋势" }),
+    ).toBeVisible();
+    await expect(page.locator(".trend-series-row")).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "回到今天" })).toBeVisible();
+
+    await page.goto("/calendar");
+    await expect(page.getByText(/计划 v\d/)).toHaveCount(0);
+    await expect(page.locator(".calendar-legend")).toHaveCount(0);
+    const calendarDay = page.getByRole("button", {
+      name: new RegExp(`^${localDate}，`),
+    });
+    await expect(calendarDay).toBeVisible();
+
+    const layout = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      dayHeight: document
+        .querySelector<HTMLElement>(".calendar-day:not(.empty)")
+        ?.getBoundingClientRect().height,
+    }));
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
+    expect(layout.dayHeight).toBeGreaterThanOrEqual(44);
   });
 }
 

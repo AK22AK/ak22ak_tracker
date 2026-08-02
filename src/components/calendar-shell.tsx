@@ -234,6 +234,51 @@ function dayClass(
     .join(" ");
 }
 
+function calendarLegendItems(days: CalendarDisplayDay[], today: string) {
+  return [
+    {
+      key: "completed",
+      symbol: "✓",
+      label: "全部完成",
+      visible: days.some(
+        (day) =>
+          day.date <= today &&
+          day.taskCount > 0 &&
+          day.completedCount === day.taskCount,
+      ),
+    },
+    {
+      key: "skipped",
+      symbol: "跳",
+      label: "已跳过",
+      visible: days.some(
+        (day) =>
+          day.date <= today &&
+          day.taskCount > 0 &&
+          day.skippedCount === day.taskCount,
+      ),
+    },
+    {
+      key: "feedback",
+      symbol: "◆",
+      label: "有反馈",
+      visible: days.some((day) => day.feedbackCount > 0),
+    },
+    {
+      key: "local-pending",
+      symbol: "本",
+      label: "本机待同步",
+      visible: days.some((day) => (day.localPendingCount ?? 0) > 0),
+    },
+    {
+      key: "paused",
+      symbol: "暂",
+      label: "暂停日",
+      visible: days.some((day) => day.paused),
+    },
+  ].filter((item) => item.visible);
+}
+
 export function CalendarShell({
   month,
   today,
@@ -279,6 +324,7 @@ export function CalendarShell({
   const cells = calendarMonthCells(month);
   const previousMonth = shiftMonth(month, -1);
   const nextMonth = shiftMonth(month, 1);
+  const legendItems = calendarLegendItems(days, today);
 
   return (
     <main className="app-shell calendar-shell">
@@ -424,38 +470,21 @@ export function CalendarShell({
             );
           })}
         </div>
-        <div className="calendar-legend" aria-label="日历标记说明">
-          <span>
-            <i className="legend-symbol completed" aria-hidden="true">
-              ✓
-            </i>
-            全部完成
-          </span>
-          <span>
-            <i className="legend-symbol skipped" aria-hidden="true">
-              跳
-            </i>
-            已跳过
-          </span>
-          <span>
-            <i className="legend-symbol feedback" aria-hidden="true">
-              ◆
-            </i>
-            有反馈
-          </span>
-          <span>
-            <i className="legend-symbol local-pending" aria-hidden="true">
-              本
-            </i>
-            本机待同步
-          </span>
-          <span>
-            <i className="legend-symbol paused" aria-hidden="true">
-              暂
-            </i>
-            暂停日
-          </span>
-        </div>
+        {legendItems.length > 0 ? (
+          <details className="calendar-legend" aria-label="日历标记说明">
+            <summary>说明</summary>
+            <div className="calendar-legend-items">
+              {legendItems.map((item) => (
+                <span key={item.key}>
+                  <i className={`legend-symbol ${item.key}`} aria-hidden="true">
+                    {item.symbol}
+                  </i>
+                  {item.label}
+                </span>
+              ))}
+            </div>
+          </details>
+        ) : null}
       </section>
 
       <section
@@ -469,11 +498,6 @@ export function CalendarShell({
             </p>
             <h2 id="selected-date-title">{formatSelectedDate(selectedDate)}</h2>
           </div>
-          <span className="status-pill date-plan-version" data-tone="brand">
-            {dashboard?.planVersion
-              ? `计划 v${dashboard.planVersion}`
-              : "无计划"}
-          </span>
         </div>
 
         {detailLoading && (
@@ -509,15 +533,19 @@ export function CalendarShell({
                 <span>
                   <strong>{dashboard.feedbackCount}</strong> 次反馈
                 </span>
-                <span>
-                  <strong>{dashboard.externalTrainingRecords.length}</strong>{" "}
-                  条来源
-                </span>
+                {dashboard.externalTrainingRecords.length > 0 ? (
+                  <span>
+                    <strong>{dashboard.externalTrainingRecords.length}</strong>{" "}
+                    条来源
+                  </span>
+                ) : null}
               </div>
-              <RecoveryReferenceCard
-                reference={dashboard.recoveryReference}
-                compact
-              />
+              {dashboard.recoveryReference ? (
+                <RecoveryReferenceCard
+                  reference={dashboard.recoveryReference}
+                  compact
+                />
+              ) : null}
               <ExternalTrainingSection
                 trackerKey="knee-rehab"
                 records={dashboard.externalTrainingRecords}
