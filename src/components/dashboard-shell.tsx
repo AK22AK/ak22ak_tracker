@@ -858,7 +858,47 @@ export function DashboardShell({
             })}
           </div>
         ) : null}
+        {!adjustmentException ? (
+          <div className="today-adjustment-entry">
+            <button
+              className="text-button"
+              type="button"
+              aria-expanded={adjustmentPanelOpen}
+              aria-controls={adjustmentPanelId}
+              onClick={() => setAdjustmentsOpen((value) => !value)}
+            >
+              调整今天
+            </button>
+          </div>
+        ) : null}
       </SurfaceCard>
+
+      {adjustmentPanelOpen ? (
+        <div id={adjustmentPanelId} className="today-adjustment-panel">
+          <fieldset
+            className="offline-write-boundary"
+            disabled={writesDisabled}
+          >
+            <ExecutionPauseCard
+              trackerKey="knee-rehab"
+              execution={execution}
+              onChanged={onExecutionChanged}
+            />
+          </fieldset>
+          <fieldset
+            className="offline-write-boundary"
+            disabled={writesDisabled}
+          >
+            <ExecutionContextCard
+              trackerKey="knee-rehab"
+              localDate={localDate}
+              planVersion={planVersion}
+              execution={execution}
+              onChanged={onExecutionChanged}
+            />
+          </fieldset>
+        </div>
+      ) : null}
 
       <SurfaceCard className="feedback-card" aria-label="身体反馈">
         <SectionHeading
@@ -892,47 +932,6 @@ export function DashboardShell({
           {feedbackCount > 0 ? "再次反馈" : "添加反馈"}
         </Link>
       </SurfaceCard>
-
-      {!adjustmentException ? (
-        <section className="today-adjustment-entry">
-          <button
-            className="text-button"
-            type="button"
-            aria-expanded={adjustmentPanelOpen}
-            aria-controls={adjustmentPanelId}
-            onClick={() => setAdjustmentsOpen((value) => !value)}
-          >
-            调整今天
-          </button>
-        </section>
-      ) : null}
-
-      {adjustmentPanelOpen ? (
-        <div id={adjustmentPanelId} className="today-adjustment-panel">
-          <fieldset
-            className="offline-write-boundary"
-            disabled={writesDisabled}
-          >
-            <ExecutionPauseCard
-              trackerKey="knee-rehab"
-              execution={execution}
-              onChanged={onExecutionChanged}
-            />
-          </fieldset>
-          <fieldset
-            className="offline-write-boundary"
-            disabled={writesDisabled}
-          >
-            <ExecutionContextCard
-              trackerKey="knee-rehab"
-              localDate={localDate}
-              planVersion={planVersion}
-              execution={execution}
-              onChanged={onExecutionChanged}
-            />
-          </fieldset>
-        </div>
-      ) : null}
 
       {initialDashboard.recoveryReference ? (
         <RecoveryReferenceCard reference={initialDashboard.recoveryReference} />

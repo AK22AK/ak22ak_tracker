@@ -227,7 +227,11 @@ describe("today background refresh", () => {
     expect(screen.queryByText("康复计划 v1")).toBeNull();
     expect(screen.queryByRole("button", { name: "退出" })).toBeNull();
     expect(screen.getByRole("link", { name: "添加反馈" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "调整今天" })).toBeTruthy();
+    expect(
+      within(screen.getByLabelText("今日计划")).getByRole("button", {
+        name: "调整今天",
+      }),
+    ).toBeTruthy();
     expect(screen.queryByText("网络可用")).toBeNull();
     expect(screen.queryByLabelText("应用状态")).toBeNull();
     expect(screen.queryByText("已同步到云端")).toBeNull();

@@ -60,6 +60,19 @@ const day = {
   ],
 };
 
+function anonymousFeedback(safetyLevel: "green" | "yellow" | "red") {
+  return {
+    id: "019c0000-0000-7000-8000-000000000099",
+    occurredAt: `${localDate}T08:00:00+08:00`,
+    timing: "morning",
+    leftPain: 0,
+    rightPain: 0,
+    swelling: "none",
+    safetyLevel,
+    note: "Anonymous feedback",
+  };
+}
+
 const todayAggregate = {
   tracker: {
     key: "knee-rehab",
@@ -444,6 +457,10 @@ type RequestCounters = {
   evaluation: number;
 };
 
+type MockPrivateReadOptions = {
+  today?: unknown | (() => unknown);
+};
+
 async function authorize(context: BrowserContext) {
   const token = await encode({
     secret: "anonymous-navigation-browser-test-secret",
@@ -466,6 +483,7 @@ async function mockPrivateReads(
   advice: unknown = planAdvice,
   evaluation: unknown = evaluationAggregate,
   trends: unknown = trendsAggregate,
+  options: MockPrivateReadOptions = {},
 ) {
   const counters: RequestCounters = {
     today: 0,
@@ -485,7 +503,10 @@ async function mockPrivateReads(
     let body: unknown = null;
     if (url.pathname.endsWith("/today")) {
       counters.today += 1;
-      body = todayAggregate;
+      body =
+        typeof options.today === "function"
+          ? options.today()
+          : (options.today ?? todayAggregate);
     } else if (url.pathname.endsWith("/calendar")) {
       counters.month += 1;
       body = calendarAggregate;
@@ -536,6 +557,281 @@ async function mockPrivateReads(
     await route.fulfill({ status: 200, json: body });
   });
   return counters;
+}
+
+async function expectMobileLayoutIntegrity(page: Page) {
+  const layout = await page.evaluate(() => {
+    const viewportWidth = document.documentElement.clientWidth;
+    const viewportHeight = window.innerHeight;
+    const isVisible = (element: HTMLElement) => {
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return (
+        style.visibility !== "hidden" &&
+        style.display !== "none" &&
+        rect.width > 0 &&
+        rect.height > 0
+      );
+    };
+    const inViewportHorizontally = (rect: DOMRect) =>
+      rect.left >= -0.5 && rect.right <= viewportWidth + 0.5;
+    const controls = [
+      ...document.querySelectorAll<HTMLElement>(
+        "main button, main a[href], main select, main textarea, main input:not([type='checkbox']), main summary, main label.task-check",
+      ),
+    ].filter(isVisible);
+    const textBlocks = [
+      ...document.querySelectorAll<HTMLElement>(
+        "main p, main h1, main h2, main h3, main label, main summary, main .settings-row-copy",
+      ),
+    ].filter(
+      (element) =>
+        isVisible(element) &&
+        window.getComputedStyle(element).display !== "inline",
+    );
+    const cardSelector =
+      ".surface-card, .feedback-card, .today-plan-card, .task-card, .settings-list-group, .calendar-day-detail, .feedback-safety-preview";
+    const errors = [
+      ...controls.flatMap((control) => {
+        const rect = control.getBoundingClientRect();
+        const card = control.closest<HTMLElement>(cardSelector);
+        const cardRect = card?.getBoundingClientRect();
+        const errors = [] as string[];
+        if (!inViewportHorizontally(rect))
+          errors.push("control-overflows-viewport");
+        if (rect.height < 44) errors.push("control-under-44px");
+        if (
+          cardRect &&
+          (rect.left < cardRect.left - 0.5 ||
+            rect.right > cardRect.right + 0.5 ||
+            rect.top < cardRect.top - 0.5 ||
+            rect.bottom > cardRect.bottom + 0.5)
+        ) {
+          errors.push("control-escapes-card");
+        }
+        return errors;
+      }),
+      ...textBlocks.flatMap((text) => {
+        const rect = text.getBoundingClientRect();
+        if (!inViewportHorizontally(rect)) return ["text-overflows-viewport"];
+        return text.scrollWidth > text.clientWidth + 1 ||
+          text.scrollHeight > text.clientHeight + 1
+          ? ["text-is-clipped"]
+          : [];
+      }),
+    ];
+
+    const flowOverlap = [...document.querySelectorAll<HTMLElement>("main p")]
+      .filter(isVisible)
+      .flatMap((copy) => {
+        const next = copy.nextElementSibling;
+        if (
+          !(next instanceof HTMLElement) ||
+          !isVisible(next) ||
+          !next.matches("a[href], button, label, select, textarea, input")
+        ) {
+          return [];
+        }
+        const copyRect = copy.getBoundingClientRect();
+        const nextRect = next.getBoundingClientRect();
+        return copyRect.bottom > nextRect.top + 0.5
+          ? ["copy-overlaps-action"]
+          : [];
+      });
+
+    const bottomNav = document.querySelector<HTMLElement>(
+      'nav[aria-label="主导航"]',
+    );
+    const nonNavControls = controls.filter(
+      (control) => !bottomNav?.contains(control),
+    );
+    const lastControl = [...nonNavControls]
+      .sort(
+        (left, right) =>
+          right.getBoundingClientRect().bottom -
+          left.getBoundingClientRect().bottom,
+      )
+      .at(-1);
+    lastControl?.scrollIntoView({ block: "end" });
+    const lastControlRect = lastControl?.getBoundingClientRect();
+    const bottomNavRect = bottomNav?.getBoundingClientRect();
+
+    return {
+      errors: [...errors, ...flowOverlap],
+      lastControlCoveredByBottomNav: Boolean(
+        lastControlRect &&
+        bottomNavRect &&
+        lastControlRect.bottom > bottomNavRect.top + 0.5 &&
+        lastControlRect.top < viewportHeight,
+      ),
+    };
+  });
+
+  expect(layout.errors).toEqual([]);
+  expect(layout.lastControlCoveredByBottomNav).toBe(false);
+}
+
+for (const width of [320, 375, 390, 430]) {
+  test(`today feedback action remains in flow at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await mockPrivateReads(page, 0);
+    await page.goto("/");
+
+    const feedbackAction = page.getByRole("link", { name: "添加反馈" });
+    await expect(feedbackAction).toBeVisible();
+    const adjustment = page.getByRole("button", { name: "调整今天" });
+    await expect(adjustment).toBeVisible();
+    await expect(adjustment).toHaveAttribute("aria-expanded", "false");
+    await expect(adjustment).toHaveAttribute(
+      "aria-controls",
+      "today-adjustments",
+    );
+
+    const layout = await page.evaluate(() => {
+      const feedbackCard =
+        document.querySelector<HTMLElement>(".feedback-card");
+      const supportingCopy = document.querySelector<HTMLElement>(
+        ".feedback-supporting-copy",
+      );
+      const feedbackAction = feedbackCard?.querySelector<HTMLElement>(
+        'a[href="/feedback"]',
+      );
+      const planCard = document.querySelector<HTMLElement>(".today-plan-card");
+      const adjustment = [
+        ...document.querySelectorAll<HTMLButtonElement>("button"),
+      ].find((button) => button.textContent?.trim() === "调整今天");
+      const feedbackCardRect = feedbackCard?.getBoundingClientRect();
+      const supportingCopyRect = supportingCopy?.getBoundingClientRect();
+      const feedbackActionRect = feedbackAction?.getBoundingClientRect();
+      return {
+        feedbackCardRect,
+        supportingCopyRect,
+        feedbackActionRect,
+        actionHeight: feedbackActionRect?.height ?? 0,
+        supportingCopyClipped:
+          (supportingCopy?.scrollHeight ?? 0) >
+          (supportingCopy?.clientHeight ?? 0),
+        adjustmentInPlanCard: Boolean(planCard?.contains(adjustment ?? null)),
+      };
+    });
+
+    expect(layout.supportingCopyClipped).toBe(false);
+    expect(layout.actionHeight).toBeGreaterThanOrEqual(44);
+    expect(layout.feedbackActionRect?.top).toBeGreaterThanOrEqual(
+      (layout.supportingCopyRect?.bottom ?? Number.POSITIVE_INFINITY) + 12,
+    );
+    expect(layout.feedbackActionRect?.left).toBeGreaterThanOrEqual(
+      layout.feedbackCardRect?.left ?? Number.POSITIVE_INFINITY,
+    );
+    expect(layout.feedbackActionRect?.right).toBeLessThanOrEqual(
+      layout.feedbackCardRect?.right ?? Number.NEGATIVE_INFINITY,
+    );
+    expect(layout.feedbackActionRect?.bottom).toBeLessThanOrEqual(
+      layout.feedbackCardRect?.bottom ?? Number.NEGATIVE_INFINITY,
+    );
+    expect(layout.adjustmentInPlanCard).toBe(true);
+
+    await adjustment.click();
+    await expect(adjustment).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator("#today-adjustments")).toBeVisible();
+  });
+}
+
+for (const width of [320, 375, 390, 430]) {
+  test(`anonymous mobile layout audit passes at ${width}px`, async ({
+    page,
+  }) => {
+    let activeToday: unknown = todayAggregate;
+    await page.setViewportSize({ width, height: 844 });
+    await mockPrivateReads(
+      page,
+      0,
+      planAdvice,
+      evaluationAggregate,
+      trendsAggregate,
+      { today: () => activeToday },
+    );
+
+    const inspectToday = async (
+      aggregate: unknown,
+      expectedText: string | RegExp,
+    ) => {
+      activeToday = aggregate;
+      await page.goto("/");
+      await expect(page.getByText(expectedText).first()).toBeVisible();
+      await expectMobileLayoutIntegrity(page);
+    };
+
+    await inspectToday(todayAggregate, "Anonymous task");
+    await inspectToday(
+      {
+        ...todayAggregate,
+        day: {
+          ...day,
+          state: "not_started",
+          startDate: nextLocalDate,
+          tasks: [],
+          externalTrainingRecords: [],
+        },
+      },
+      /计划将于/,
+    );
+    await inspectToday(
+      {
+        ...todayAggregate,
+        day: { ...day, tasks: [], externalTrainingRecords: [] },
+      },
+      "今天没有安排训练",
+    );
+    for (const safety of ["green", "yellow", "red"] as const) {
+      await inspectToday(
+        {
+          ...todayAggregate,
+          day: {
+            ...day,
+            feedbackCount: 1,
+            feedbacks: [anonymousFeedback(safety)],
+          },
+        },
+        safety === "green"
+          ? "今天已记录 1 次"
+          : safety === "yellow"
+            ? "今天不要升级"
+            : "停止相关诱发负荷",
+      );
+    }
+
+    activeToday = todayAggregate;
+    await page.goto("/");
+    await page.getByRole("button", { name: "调整今天" }).click();
+    await expect(page.locator("#today-adjustments")).toBeVisible();
+    await expectMobileLayoutIntegrity(page);
+
+    await page.context().setOffline(true);
+    await page.evaluate(() => window.dispatchEvent(new Event("offline")));
+    await expect(page.getByText("当前离线").first()).toBeVisible();
+    await expectMobileLayoutIntegrity(page);
+    await page.context().setOffline(false);
+
+    for (const path of [
+      "/calendar",
+      "/trends",
+      "/settings",
+      "/settings/garmin",
+      "/settings/xunji",
+      "/settings/deepseek",
+      "/settings/backup",
+      "/settings/storage",
+      "/settings/account",
+      "/feedback",
+    ]) {
+      await page.goto(path);
+      await expect(page.getByRole("main")).toBeVisible();
+      await expectMobileLayoutIntegrity(page);
+    }
+  });
 }
 
 for (const width of [320, 375, 390, 430]) {
