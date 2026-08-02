@@ -240,18 +240,21 @@ describe("P2b-2 atomic queue-head discard", () => {
         trackerKey: "knee-rehab",
         kind: "today",
         scope: "2026-07-20",
+        now: new Date("2026-07-20T10:05:00.000Z"),
       }),
       readQuerySnapshot(db, {
         githubUserId: "10001",
         trackerKey: "knee-rehab",
         kind: "day",
         scope: "2026-07-20",
+        now: new Date("2026-07-20T10:05:00.000Z"),
       }),
       readQuerySnapshot(db, {
         githubUserId: "10001",
         trackerKey: "knee-rehab",
         kind: "calendar-month",
         scope: "2026-07",
+        now: new Date("2026-07-20T10:05:00.000Z"),
       }),
     ]);
     const restoredToday = offlineTodaySnapshotSchema.parse(todayRow!.data);

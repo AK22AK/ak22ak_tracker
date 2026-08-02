@@ -286,12 +286,13 @@ export async function getTodayDashboardForTracker(
     ];
   });
 
+  const beforeFormalStart = localDate < tracker.startedOn;
   return {
-    state: localDate < tracker.startedOn ? "not_started" : "ready",
+    state: beforeFormalStart ? "not_started" : "ready",
     trackerName: tracker.name,
     startDate: tracker.startedOn,
     planVersion: plan.version,
-    tasks,
+    tasks: beforeFormalStart ? [] : tasks,
     feedbackCount: feedbacks.length,
     feedbacks,
     externalTrainingRecords: [],
@@ -397,6 +398,7 @@ export async function getCalendarMonthForTracker(
   };
 
   for (const task of taskRows) {
+    if (task.date < tracker.startedOn) continue;
     const effectiveVersion = resolveEffectivePlanVersion(planRows, task.date);
     if (effectiveVersion?.id !== task.planVersionId) continue;
     const summary = summaryFor(task.date);

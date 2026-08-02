@@ -1,19 +1,18 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-
 import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 
+import { parsePlanImportArguments } from "../src/domain/plan-import";
 import { planVersionSchema } from "../src/domain/schemas";
-import { planVersions, taskInstances, trackers } from "../src/server/db/schema";
+import * as schema from "../src/server/db/schema";
+import { importPlanVersion } from "../src/server/plans/import-plan";
 
 async function main() {
-  const planPath = process.argv.slice(2).find((argument) => argument !== "--");
+  const { planPath, trackerStartedOn } = parsePlanImportArguments(
+    process.argv.slice(2),
+  );
   const databaseUrl = process.env.DATABASE_URL;
-
-  if (!planPath) {
-    throw new Error("Usage: pnpm plan:import -- <plan-version.json>");
-  }
 
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is required");
@@ -22,64 +21,23 @@ async function main() {
   const document = planVersionSchema.parse(
     JSON.parse(await readFile(resolve(planPath), "utf8")),
   );
-  const database = drizzle(neon(databaseUrl));
+  const database = drizzle(neon(databaseUrl), { schema });
   const trackerName = process.env.TRACKER_NAME ?? document.trackerKey;
   const trackerModule = process.env.TRACKER_MODULE ?? document.trackerKey;
   const planningTimeZone =
     process.env.TRACKER_PLANNING_TIME_ZONE ?? "Asia/Shanghai";
 
-  const [tracker] = await database
-    .insert(trackers)
-    .values({
-      key: document.trackerKey,
-      name: trackerName,
-      module: trackerModule,
-      startedOn: document.effectiveFrom,
-      planningTimeZone,
-    })
-    .onConflictDoUpdate({
-      target: trackers.key,
-      set: {
-        name: trackerName,
-        module: trackerModule,
-        planningTimeZone,
-        active: true,
-        updatedAt: new Date(),
-      },
-    })
-    .returning({ id: trackers.id });
-
-  if (!tracker) {
-    throw new Error("Tracker upsert did not return an id");
-  }
-
-  await database
-    .insert(planVersions)
-    .values({
-      id: document.id,
-      trackerId: tracker.id,
-      version: document.version,
-      effectiveFrom: document.effectiveFrom,
-      document,
-    })
-    .onConflictDoNothing({ target: planVersions.id });
-
-  await database
-    .insert(taskInstances)
-    .values(
-      document.tasks.map((task) => ({
-        trackerId: tracker.id,
-        planVersionId: document.id,
-        taskDefinitionId: task.id,
-        scheduledOn: task.scheduledDate,
-      })),
-    )
-    .onConflictDoNothing({
-      target: [taskInstances.planVersionId, taskInstances.taskDefinitionId],
-    });
+  const result = await importPlanVersion({
+    database,
+    document,
+    trackerName,
+    trackerModule,
+    planningTimeZone,
+    trackerStartedOn,
+  });
 
   console.log(
-    `Imported tracker=${document.trackerKey} plan=v${document.version} tasks=${document.tasks.length}`,
+    `Imported tracker=${result.trackerKey} plan=v${result.planVersion} tasks=${result.taskCount}${result.trackerStartUpdated ? " tracker-start-updated" : ""}`,
   );
 }
 
