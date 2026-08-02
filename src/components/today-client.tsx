@@ -4,6 +4,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
 import {
+  announceTodayContentVisible,
+  markStartupMilestone,
+} from "@/client/startup-performance";
+import {
   fetchDeepSeekConnectionStatus,
   fetchGarminConnectionStatus,
   fetchGitHubMirrorStatus,
@@ -73,7 +77,10 @@ export function TodayClient() {
   const prefetchedDateRef = useRef<string | null>(null);
   const query = useQuery({
     queryKey,
-    queryFn: ({ signal }) => fetchTodayAggregate(trackerKey, localDate, signal),
+    queryFn: ({ signal }) => {
+      markStartupMilestone("today-request");
+      return fetchTodayAggregate(trackerKey, localDate, signal);
+    },
     staleTime: 60_000,
   });
   const {
@@ -178,6 +185,17 @@ export function TodayClient() {
     ? projectTodayPendingCommands(baseAggregate, commands)
     : null;
   const aggregate = projected?.data ?? null;
+
+  useEffect(() => {
+    if (!aggregate) return;
+    const frame = window.requestAnimationFrame(() => {
+      const content = document.querySelector<HTMLElement>(
+        "[data-today-content-visible='true']",
+      );
+      if (content?.getClientRects().length) announceTodayContentVisible();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [aggregate]);
   const readOnlyOffline =
     !query.data && snapshotData !== null && snapshotData !== undefined;
 

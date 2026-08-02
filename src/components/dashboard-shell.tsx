@@ -644,7 +644,7 @@ export function DashboardShell({
           : "今天的任务已处理";
 
   return (
-    <main className="app-shell today-page">
+    <main className="app-shell today-page" data-today-content-visible="true">
       <header className="today-header">
         <div className="today-title-row">
           <div>

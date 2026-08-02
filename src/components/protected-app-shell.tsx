@@ -11,13 +11,24 @@ import {
   useState,
 } from "react";
 
+import { markStartupMilestone } from "@/client/startup-performance";
 import { useOfflineCommands } from "@/offline/offline-command-context";
 
 import { BottomNav } from "./bottom-nav";
-import { CalendarClient } from "./calendar-client";
 import { PwaUpdatePrompt } from "./service-worker-registration";
-import { SettingsClient } from "./settings-client";
 import { TodayClient } from "./today-client";
+
+const CalendarClient = lazy(() =>
+  import("./calendar-client").then((module) => ({
+    default: module.CalendarClient,
+  })),
+);
+
+const SettingsClient = lazy(() =>
+  import("./settings-client").then((module) => ({
+    default: module.SettingsClient,
+  })),
+);
 
 const TrendsClient = lazy(() =>
   import("./trends-client").then((module) => ({
@@ -40,6 +51,43 @@ function TrendsTabLoading() {
       </header>
       <section className="surface-card page-section-loading" role="status">
         正在整理最近记录…
+      </section>
+    </main>
+  );
+}
+
+function CalendarTabLoading() {
+  return (
+    <main className="app-shell page-frame calendar-shell" aria-busy="true">
+      <header className="topbar">
+        <div>
+          <p className="eyebrow">AK Tracker</p>
+          <h1>日历</h1>
+        </div>
+      </header>
+      <section className="surface-card page-section-loading" role="status">
+        正在打开日历…
+      </section>
+    </main>
+  );
+}
+
+function SettingsTabLoading() {
+  return (
+    <main
+      className="app-shell page-frame settings-shell"
+      data-settings-shell="true"
+      aria-label="设置页面"
+      aria-busy="true"
+    >
+      <header className="topbar">
+        <div>
+          <p className="eyebrow">AK Tracker</p>
+          <h1>设置</h1>
+        </div>
+      </header>
+      <section className="surface-card page-section-loading" role="status">
+        正在打开设置…
       </section>
     </main>
   );
@@ -79,7 +127,13 @@ function TabContent({
 }) {
   if (tab === initialTab) return initialChildren;
   if (tab === "today") return <TodayClient />;
-  if (tab === "calendar") return <CalendarClient />;
+  if (tab === "calendar") {
+    return (
+      <Suspense fallback={<CalendarTabLoading />}>
+        <CalendarClient />
+      </Suspense>
+    );
+  }
   if (tab === "trends") {
     return (
       <Suspense fallback={<TrendsTabLoading />}>
@@ -87,7 +141,13 @@ function TabContent({
       </Suspense>
     );
   }
-  if (tab === "settings") return <SettingsClient />;
+  if (tab === "settings") {
+    return (
+      <Suspense fallback={<SettingsTabLoading />}>
+        <SettingsClient />
+      </Suspense>
+    );
+  }
   return null;
 }
 
@@ -140,6 +200,7 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     shellRef.current?.setAttribute("data-app-shell-ready", "true");
+    markStartupMilestone("shell-hydrated");
   }, []);
 
   useEffect(() => {

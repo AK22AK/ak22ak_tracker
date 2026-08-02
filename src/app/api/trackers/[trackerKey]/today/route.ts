@@ -8,31 +8,94 @@ import {
 } from "@/server/aggregates/tracker";
 import { TrackerSafetyPolicyNotFoundError } from "@/server/safety-policy/repository";
 
+function startupTiming(
+  startedAt: number,
+  authFinishedAt: number,
+  todayFinishedAt = authFinishedAt,
+) {
+  const duration = (from: number, to: number) =>
+    Math.max(0, to - from).toFixed(1);
+  return [
+    `ak_auth;dur=${duration(startedAt, authFinishedAt)}`,
+    `ak_today;dur=${duration(authFinishedAt, todayFinishedAt)}`,
+    `ak_total;dur=${duration(startedAt, todayFinishedAt)}`,
+  ].join(", ");
+}
+
+function timedJson(
+  body: unknown,
+  status: number,
+  startedAt: number,
+  authFinishedAt: number,
+  todayFinishedAt = authFinishedAt,
+) {
+  return Response.json(body, {
+    status,
+    headers: {
+      "Server-Timing": startupTiming(
+        startedAt,
+        authFinishedAt,
+        todayFinishedAt,
+      ),
+    },
+  });
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ trackerKey: string }> },
 ) {
-  if (!(await getAuthorizedSession())) {
-    return Response.json({ error: "unauthorized" }, { status: 401 });
+  const startedAt = performance.now();
+  const session = await getAuthorizedSession();
+  const authFinishedAt = performance.now();
+  if (!session) {
+    return timedJson({ error: "unauthorized" }, 401, startedAt, authFinishedAt);
   }
   const targetDate = new URL(request.url).searchParams.get("date");
   if (!isLocalDate(targetDate)) {
-    return Response.json({ error: "invalid_date" }, { status: 400 });
+    return timedJson({ error: "invalid_date" }, 400, startedAt, authFinishedAt);
   }
 
   try {
-    return Response.json(
-      await getTodayAggregate((await params).trackerKey, targetDate),
+    const aggregate = await getTodayAggregate(
+      (await params).trackerKey,
+      targetDate,
+    );
+    return timedJson(
+      aggregate,
+      200,
+      startedAt,
+      authFinishedAt,
+      performance.now(),
     );
   } catch (error) {
+    const todayFinishedAt = performance.now();
     if (error instanceof AggregateTrackerNotFoundError) {
-      return Response.json({ error: error.message }, { status: 404 });
+      return timedJson(
+        { error: error.message },
+        404,
+        startedAt,
+        authFinishedAt,
+        todayFinishedAt,
+      );
     }
     if (error instanceof TrackerSafetyPolicyNotFoundError) {
-      return Response.json({ error: error.message }, { status: 503 });
+      return timedJson(
+        { error: error.message },
+        503,
+        startedAt,
+        authFinishedAt,
+        todayFinishedAt,
+      );
     }
     if (error instanceof ZodError) {
-      return Response.json({ error: "invalid_aggregate" }, { status: 500 });
+      return timedJson(
+        { error: "invalid_aggregate" },
+        500,
+        startedAt,
+        authFinishedAt,
+        todayFinishedAt,
+      );
     }
     throw error;
   }

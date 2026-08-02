@@ -929,9 +929,12 @@ test("warm Calendar and Settings content remains visible without aggregate refet
   const calendarFirst = await measureTabClick(
     page,
     "/calendar",
-    '[data-tab-panel="calendar"] .calendar-task',
+    '[data-tab-panel="calendar"] .calendar-shell',
   );
   expect(calendarFirst).toBeLessThan(100);
+  await expect(
+    page.locator('[data-tab-panel="calendar"] .calendar-task'),
+  ).toBeVisible();
   await page.evaluate(() => {
     document.body.style.minHeight = "3000px";
     window.scrollTo(0, 320);
@@ -941,9 +944,12 @@ test("warm Calendar and Settings content remains visible without aggregate refet
   const settingsFirst = await measureTabClick(
     page,
     "/settings",
-    '[data-tab-panel="settings"] .integration-card',
+    '[data-tab-panel="settings"] [data-settings-shell="true"]',
   );
   expect(settingsFirst).toBeLessThan(100);
+  await expect(
+    page.locator('[data-tab-panel="settings"] .integration-card').first(),
+  ).toBeVisible();
   await page.getByLabel("API Key", { exact: true }).fill("anonymous-ui-draft");
   await page.evaluate(() => window.scrollTo(0, 640));
 

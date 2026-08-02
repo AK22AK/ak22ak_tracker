@@ -83,7 +83,7 @@ describe("protected app shell navigation (P0-05)", () => {
     expect(navigation.push).not.toHaveBeenCalled();
   });
 
-  it("keeps visited tab content, drafts and instances mounted across warm switches", () => {
+  it("keeps visited tab content, drafts and instances mounted across warm switches", async () => {
     render(
       <ProtectedAppShell>
         <main aria-label="日历缓存内容">
@@ -101,7 +101,10 @@ describe("protected app shell navigation (P0-05)", () => {
     const settingsStartedAt = performance.now();
     fireEvent.click(screen.getByRole("link", { name: /设置/ }));
     expect(performance.now() - settingsStartedAt).toBeLessThan(100);
-    const settings = screen.getByRole("main", { name: "设置缓存内容" });
+    expect(screen.getByRole("main", { name: "设置页面" })).toBeTruthy();
+    const settings = await screen.findByRole("main", {
+      name: "设置缓存内容",
+    });
     fireEvent.change(within(settings).getByLabelText("设置草稿"), {
       target: { value: "保留设置草稿" },
     });

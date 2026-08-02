@@ -1,10 +1,12 @@
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { AppProviders } from "@/components/app-providers";
 import { ProtectedAppShell } from "@/components/protected-app-shell";
+import { ProtectedStartupShell } from "@/components/protected-startup-shell";
 import { getAuthorizedSession } from "@/server/auth/session";
 
-export default async function ProtectedLayout({
+async function AuthorizedProtectedLayout({
   children,
   feedback,
 }: Readonly<{ children: React.ReactNode; feedback: React.ReactNode }>) {
@@ -19,5 +21,18 @@ export default async function ProtectedLayout({
       <ProtectedAppShell>{children}</ProtectedAppShell>
       {feedback}
     </AppProviders>
+  );
+}
+
+export default function ProtectedLayout(
+  props: Readonly<{
+    children: React.ReactNode;
+    feedback: React.ReactNode;
+  }>,
+) {
+  return (
+    <Suspense fallback={<ProtectedStartupShell />}>
+      <AuthorizedProtectedLayout {...props} />
+    </Suspense>
   );
 }

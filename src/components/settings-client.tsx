@@ -80,7 +80,11 @@ export function SettingsClient() {
   });
 
   return (
-    <main className="app-shell page-frame" aria-label="设置页面">
+    <main
+      className="app-shell page-frame"
+      data-settings-shell="true"
+      aria-label="设置页面"
+    >
       <header className="topbar">
         <div>
           <p className="eyebrow">AK Tracker</p>

@@ -10,6 +10,8 @@ import {
   useState,
 } from "react";
 
+import { observeFirstContentfulPaint } from "@/client/startup-performance";
+
 const UPDATE_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 function reloadCurrentPage() {
@@ -58,6 +60,8 @@ export function ServiceWorkerRegistration({
   const reloadRequestedRef = useRef(false);
   const reloadedRef = useRef(false);
   const lastUpdateCheckAtRef = useRef(0);
+
+  useEffect(() => observeFirstContentfulPaint(), []);
 
   const publishWaitingWorker = useCallback((worker: ServiceWorker | null) => {
     visibleWorkerRef.current = worker;
