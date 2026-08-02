@@ -208,7 +208,16 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
     if (rootTab) {
       const currentUrl = `${window.location.pathname}${window.location.search}`;
       tabUrlsRef.current[rootTab] = currentUrl;
-      if (activeTabRef.current !== rootTab) activateTab(rootTab, currentUrl);
+      if (activeTabRef.current !== rootTab) {
+        activateTab(rootTab, currentUrl);
+      } else {
+        setVisitedTabs((current) => {
+          if (current.has(rootTab)) return current;
+          const next = new Set(current);
+          next.add(rootTab);
+          return next;
+        });
+      }
       return;
     }
   }, [activateTab, pathname]);
@@ -230,7 +239,9 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
       if (!tab) return;
       if (tab === activeTabRef.current && exactRootTab(pathname) === tab)
         return;
-      const currentUrl = `${window.location.pathname}${window.location.search}`;
+      const currentUrl = exactRootTab(pathname)
+        ? `${window.location.pathname}${window.location.search}`
+        : tabUrlsRef.current[activeTabRef.current];
       const targetUrl = tabUrlsRef.current[tab] || href;
       window.history.pushState(null, "", targetUrl);
       activateTab(tab, targetUrl, currentUrl);
@@ -245,6 +256,10 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
     visitedTabs.has("today");
   const showTabHost = rootTab !== null || interceptedFeedback;
   const activePath = showTabHost ? rootTabPaths[activeTab] : pathname;
+  const renderedTabs =
+    rootTab !== null && !visitedTabs.has(rootTab)
+      ? new Set([...visitedTabs, rootTab])
+      : visitedTabs;
 
   return (
     <div
@@ -254,7 +269,7 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
     >
       <PwaUpdatePrompt pendingCommandCount={commands.length} />
       <div hidden={!showTabHost} data-tab-host="persistent">
-        {([...visitedTabs] as RootTab[]).map((tab) => (
+        {([...renderedTabs] as RootTab[]).map((tab) => (
           <Activity key={tab} mode={activeTab === tab ? "visible" : "hidden"}>
             <div data-tab-panel={tab}>
               <TabContent

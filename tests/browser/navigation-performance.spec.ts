@@ -868,8 +868,16 @@ for (const width of [320, 375, 390, 430]) {
     ).toBe(true);
 
     await page.getByRole("link", { name: /Garmin/ }).click();
-    await expect(page.getByRole("heading", { name: "Garmin" })).toBeVisible();
-    await expect(page.getByLabel("Token 文件")).toBeVisible();
+    await expect(
+      page
+        .getByRole("main", { name: "Garmin设置" })
+        .getByRole("heading", { name: "Garmin", level: 1 }),
+    ).toBeVisible();
+    const garminSettings = page.getByRole("main", { name: "Garmin设置" });
+    await expect(garminSettings.locator("#garmin-token-file")).toHaveCount(1);
+    await expect(
+      garminSettings.getByRole("button", { name: "导入并加密保存" }),
+    ).toBeVisible();
 
     await page.goto("/");
     await expect(page.getByText("3.00 km")).toBeVisible();
@@ -894,6 +902,93 @@ for (const width of [320, 375, 390, 430]) {
     );
   });
 }
+
+test("settings detail return restores the cached settings list", async ({
+  page,
+}) => {
+  await mockPrivateReads(page, 0);
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "设置" })).toBeVisible();
+
+  await page.getByRole("link", { name: /账号/ }).click();
+  await expect(page.getByRole("heading", { name: "账号" })).toBeVisible();
+  await expectActiveTab(page, "/settings", "/settings/account");
+
+  await page.getByRole("link", { name: "返回" }).click();
+  await expect(page.getByRole("heading", { name: "设置" })).toBeVisible();
+  await expect(page.locator(".settings-row")).toHaveCount(6);
+  await expectActiveTab(page, "/settings", "/settings");
+});
+
+test("direct settings detail return restores the root settings list", async ({
+  page,
+}) => {
+  await mockPrivateReads(page, 0);
+  await page.goto("/settings/account");
+  await expect(page.getByRole("heading", { name: "账号" })).toBeVisible();
+  await expectActiveTab(page, "/settings", "/settings/account");
+
+  await page.getByRole("link", { name: "返回" }).click();
+  await expect(page.getByRole("heading", { name: "设置" })).toBeVisible();
+  await expect(page.locator(".settings-row")).toHaveCount(6);
+  await expectActiveTab(page, "/settings", "/settings");
+});
+
+test("settings detail return keeps browser back and forward aligned", async ({
+  page,
+}) => {
+  await mockPrivateReads(page, 0);
+  await page.goto("/settings");
+  await page.getByRole("link", { name: /Garmin/ }).click();
+  await expect(
+    page
+      .getByRole("main", { name: "Garmin设置" })
+      .getByRole("heading", { name: "Garmin", level: 1 }),
+  ).toBeVisible();
+
+  await page.getByRole("link", { name: "返回" }).click();
+  await expect(page.locator(".settings-row")).toHaveCount(6);
+  await expectActiveTab(page, "/settings", "/settings");
+
+  await page.goBack();
+  await expect(
+    page
+      .getByRole("main", { name: "Garmin设置" })
+      .getByRole("heading", { name: "Garmin", level: 1 }),
+  ).toBeVisible();
+  await expectActiveTab(page, "/settings", "/settings/garmin");
+
+  await page.goForward();
+  await expect(page.locator(".settings-row")).toHaveCount(6);
+  await expectActiveTab(page, "/settings", "/settings");
+});
+
+test("direct settings detail survives reload and returns from another root tab", async ({
+  page,
+}) => {
+  await mockPrivateReads(page, 0);
+  await page.goto("/settings/deepseek");
+  const deepSeekHeading = page
+    .getByRole("main", { name: "DeepSeek设置" })
+    .getByRole("heading", { name: "DeepSeek", level: 1 });
+  await expect(deepSeekHeading).toBeVisible();
+  await expectActiveTab(page, "/settings", "/settings/deepseek");
+
+  await page.reload();
+  await expect(deepSeekHeading).toBeVisible();
+  await expectActiveTab(page, "/settings", "/settings/deepseek");
+
+  await page.getByRole("link", { name: /日历/ }).click();
+  await expect(
+    page.locator('[data-tab-panel="calendar"] .calendar-shell'),
+  ).toBeVisible();
+  await expectActiveTab(page, "/calendar", "/calendar");
+
+  await page.getByRole("link", { name: /设置/ }).click();
+  await expect(page.getByRole("heading", { name: "设置" })).toBeVisible();
+  await expect(page.locator(".settings-row")).toHaveCount(6);
+  await expectActiveTab(page, "/settings", "/settings");
+});
 
 test("cold uncached Calendar exposes a stable target shell within 100 ms", async ({
   page,
