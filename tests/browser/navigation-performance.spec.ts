@@ -10,6 +10,11 @@ const localDate = new Intl.DateTimeFormat("en-CA", {
   month: "2-digit",
   day: "2-digit",
 }).format(new Date());
+const nextLocalDate = (() => {
+  const date = new Date(`${localDate}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+})();
 
 const taskId = "019c0000-0000-7000-8000-000000000002";
 
@@ -1183,4 +1188,37 @@ test("persistent tabs keep DOM, active state and browser history URLs aligned", 
       .getByText("Anonymous task", { exact: true }),
   ).toBeVisible();
   await expectActiveTab(page, "/", "/");
+});
+
+test("calendar only offers return-to-today away from today and restores focus", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockPrivateReads(page, 0);
+  await page.goto(`/calendar?date=${localDate}`);
+
+  await expect(page.getByRole("button", { name: "回到今天" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "退出" })).toHaveCount(0);
+
+  await page
+    .getByRole("button", { name: new RegExp(`^${nextLocalDate}，`) })
+    .click();
+  await expectActiveTab(
+    page,
+    "/calendar",
+    "/calendar",
+    `?date=${nextLocalDate}`,
+  );
+
+  const returnToToday = page.getByRole("button", { name: "回到今天" });
+  await expect(returnToToday).toBeVisible();
+  await returnToToday.click();
+
+  await expectActiveTab(page, "/calendar", "/calendar", `?date=${localDate}`);
+  const todayButton = page.getByRole("button", {
+    name: new RegExp(`^${localDate}，已选中，今天`),
+  });
+  await expect(todayButton).toHaveAttribute("aria-pressed", "true");
+  await expect(todayButton).toBeFocused();
+  await expect(returnToToday).toHaveCount(0);
 });

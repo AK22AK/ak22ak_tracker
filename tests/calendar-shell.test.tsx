@@ -100,6 +100,13 @@ function renderCalendarShell(
 describe("calendar visual semantics", () => {
   afterEach(cleanup);
 
+  it("keeps the today header free of redundant return and sign-out controls", () => {
+    renderCalendarShell("2026-07-19");
+
+    expect(screen.queryByRole("button", { name: "回到今天" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "退出" })).toBeNull();
+  });
+
   it("describes today, selection, future plans and historical outcomes without relying on color", () => {
     renderCalendarShell();
 

@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+
 import { calendarMonthCells, shiftMonth } from "@/domain/calendar";
 import type {
   CalendarDaySummary,
@@ -7,7 +9,6 @@ import type {
 } from "@/server/dashboard";
 import type { ExternalRecordAssociation } from "@/domain/external-training";
 
-import { SignOutButton } from "./sign-out-button";
 import { ExternalTrainingSection } from "./external-training-section";
 import { RecoveryReferenceCard } from "./recovery-reference-card";
 import { useNetworkState } from "@/client/use-network-state";
@@ -317,6 +318,8 @@ export function CalendarShell({
   readOnlyOffline?: boolean;
   offlineSavedAt?: string | null;
 }) {
+  const returnFocusPending = useRef(false);
+  const todayDayRef = useRef<HTMLButtonElement>(null);
   const online = useNetworkState();
   const writesDisabled = readOnlyOffline || !online;
   const refreshingFromLocal = online && readOnlyOffline;
@@ -326,6 +329,12 @@ export function CalendarShell({
   const nextMonth = shiftMonth(month, 1);
   const legendItems = calendarLegendItems(days, today);
 
+  useEffect(() => {
+    if (!returnFocusPending.current || selectedDate !== today) return;
+    todayDayRef.current?.focus();
+    returnFocusPending.current = false;
+  }, [selectedDate, today]);
+
   return (
     <main className="app-shell calendar-shell">
       <header className="calendar-topbar">
@@ -334,14 +343,18 @@ export function CalendarShell({
           <h1>训练日历</h1>
         </div>
         <div className="calendar-topbar-actions">
-          <button
-            className="today-link"
-            type="button"
-            onClick={() => onSelectDate(today)}
-          >
-            回到今天
-          </button>
-          <SignOutButton />
+          {selectedDate !== today ? (
+            <button
+              className="today-link"
+              type="button"
+              onClick={() => {
+                returnFocusPending.current = true;
+                onSelectDate(today);
+              }}
+            >
+              回到今天
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -423,6 +436,7 @@ export function CalendarShell({
               <button
                 type="button"
                 key={date}
+                ref={date === today ? todayDayRef : undefined}
                 className={dayClass(date, summary, selectedDate, today)}
                 onClick={() => onSelectDate(date)}
                 aria-current={date === today ? "date" : undefined}

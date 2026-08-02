@@ -137,6 +137,38 @@ describe("calendar instant interaction (P0-04/P0-06)", () => {
     expect(await screen.findByText("Newest day")).toBeTruthy();
   });
 
+  it("returns from another date to today with URL, selection and focus restored", () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        if (String(input).includes("/calendar?month=")) {
+          return Promise.resolve(
+            jsonResponse({
+              trackerKey: "knee-rehab",
+              month: "2026-07",
+              days: [],
+            }),
+          );
+        }
+        return new Promise<Response>(() => undefined);
+      }),
+    );
+
+    renderCalendar();
+    fireEvent.click(screen.getByRole("button", { name: /^2026-07-20/ }));
+
+    const returnToToday = screen.getByRole("button", { name: "回到今天" });
+    expect(window.location.search).toBe("?date=2026-07-20");
+    returnToToday.focus();
+    fireEvent.click(returnToToday);
+
+    const todayButton = screen.getByRole("button", { name: /^2026-07-19/ });
+    expect(window.location.search).toBe("?date=2026-07-19");
+    expect(todayButton.getAttribute("aria-pressed")).toBe("true");
+    expect(document.activeElement).toBe(todayButton);
+    expect(screen.queryByRole("button", { name: "回到今天" })).toBeNull();
+  });
+
   it("does not let a late response overwrite a newer date", async () => {
     const older = deferred<Response>();
     const newer = deferred<Response>();
