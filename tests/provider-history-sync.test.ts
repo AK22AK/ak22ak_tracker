@@ -201,7 +201,11 @@ describe("provider-neutral bounded history sync", () => {
         },
       }),
     ]);
-    expect(result.recordDates).toEqual([
+    expect(result.historyRecordDates).toEqual([
+      { date: "2026-07-22", sources: ["garmin_activity"] },
+      { date: "2026-07-21", sources: ["garmin_wellness"] },
+    ]);
+    expect(result.savedRecordDates).toEqual([
       { date: "2026-08-02", sources: ["xunji_training"] },
       { date: "2026-07-22", sources: ["garmin_activity"] },
       { date: "2026-07-21", sources: ["garmin_wellness"] },

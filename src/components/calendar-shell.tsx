@@ -284,6 +284,7 @@ export function CalendarShell({
   month,
   today,
   selectedDate,
+  externallyFocusedDate,
   days,
   monthLoading,
   monthError,
@@ -293,6 +294,7 @@ export function CalendarShell({
   onRetryDetail,
   onRetryMonth,
   onSelectDate,
+  onExternalDateFocused,
   onSelectMonth,
   onExternalTrainingUpdated,
   readOnlyOffline = false,
@@ -301,6 +303,7 @@ export function CalendarShell({
   month: string;
   today: string;
   selectedDate: string;
+  externallyFocusedDate?: string | null;
   days: CalendarDisplayDay[];
   monthLoading: boolean;
   monthError: boolean;
@@ -310,6 +313,7 @@ export function CalendarShell({
   onRetryDetail: () => void;
   onRetryMonth: () => void;
   onSelectDate: (date: string) => void;
+  onExternalDateFocused?: () => void;
   onSelectMonth: (month: string) => void;
   onExternalTrainingUpdated: (
     recordId: string,
@@ -320,6 +324,7 @@ export function CalendarShell({
 }) {
   const returnFocusPending = useRef(false);
   const todayDayRef = useRef<HTMLButtonElement>(null);
+  const selectedDayRef = useRef<HTMLButtonElement>(null);
   const online = useNetworkState();
   const writesDisabled = readOnlyOffline || !online;
   const refreshingFromLocal = online && readOnlyOffline;
@@ -334,6 +339,14 @@ export function CalendarShell({
     todayDayRef.current?.focus();
     returnFocusPending.current = false;
   }, [selectedDate, today]);
+
+  useEffect(() => {
+    if (externallyFocusedDate !== selectedDate) return;
+    const selectedDay = selectedDayRef.current;
+    selectedDay?.focus();
+    if (document.activeElement !== selectedDay) return;
+    onExternalDateFocused?.();
+  }, [externallyFocusedDate, onExternalDateFocused, selectedDate]);
 
   return (
     <main className="app-shell calendar-shell">
@@ -436,7 +449,10 @@ export function CalendarShell({
               <button
                 type="button"
                 key={date}
-                ref={date === today ? todayDayRef : undefined}
+                ref={(element) => {
+                  if (date === today) todayDayRef.current = element;
+                  if (date === selectedDate) selectedDayRef.current = element;
+                }}
                 className={dayClass(date, summary, selectedDate, today)}
                 onClick={() => onSelectDate(date)}
                 aria-current={date === today ? "date" : undefined}

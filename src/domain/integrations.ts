@@ -170,7 +170,15 @@ export const providerHistoryOverviewSchema = z
       .nullable(),
     updatedAt: z.string().datetime().nullable(),
     scopes: z.array(providerHistoryScopeOverviewSchema).length(3),
-    recordDates: z.array(
+    historyRecordDates: z.array(
+      z
+        .object({
+          date: localDateSchema,
+          sources: z.array(providerHistoryRecordSourceSchema).min(1).max(3),
+        })
+        .strict(),
+    ),
+    savedRecordDates: z.array(
       z
         .object({
           date: localDateSchema,

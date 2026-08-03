@@ -97,6 +97,10 @@ export function projectProviderHistoryOverview(input: {
       }
     : null;
   const connected = new Set(input.connectedProviders);
+  const historySourcesByDate = new Map<
+    string,
+    Set<"garmin_activity" | "garmin_wellness" | "xunji_training">
+  >();
 
   const sourcesByDate = new Map<
     string,
@@ -167,7 +171,12 @@ export function projectProviderHistoryOverview(input: {
       scope === "garmin_wellness_history"
         ? sourcesByDate.get(state.localDate)?.has(recordSource)
         : state.recordCount > 0,
-    ).length;
+    );
+    for (const state of records) {
+      const sources = historySourcesByDate.get(state.localDate) ?? new Set();
+      sources.add(recordSource);
+      historySourcesByDate.set(state.localDate, sources);
+    }
     return {
       scope,
       connected: connected.has(historyScopeProvider(scope)),
@@ -179,8 +188,8 @@ export function projectProviderHistoryOverview(input: {
       updatedAt: matchingSync?.row.updatedAt.toISOString() ?? null,
       summary: {
         processed: processed.length,
-        records,
-        empty: processed.length - records,
+        records: records.length,
+        empty: processed.length - records.length,
         failed,
         unknown: range
           ? Math.max(0, range.days - processed.length - failed)
@@ -199,7 +208,13 @@ export function projectProviderHistoryOverview(input: {
     range,
     updatedAt: latest?.row.updatedAt.toISOString() ?? null,
     scopes,
-    recordDates: [...sourcesByDate.entries()]
+    historyRecordDates: [...historySourcesByDate.entries()]
+      .sort(([left], [right]) => right.localeCompare(left))
+      .map(([date, sources]) => ({
+        date,
+        sources: sourceOrder.filter((source) => sources.has(source)),
+      })),
+    savedRecordDates: [...sourcesByDate.entries()]
       .sort(([left], [right]) => right.localeCompare(left))
       .map(([date, sources]) => ({
         date,

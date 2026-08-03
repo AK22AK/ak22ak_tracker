@@ -169,6 +169,65 @@ describe("calendar instant interaction (P0-04/P0-06)", () => {
     expect(screen.queryByRole("button", { name: "回到今天" })).toBeNull();
   });
 
+  it("follows an external cross-month calendar URL in the persistent tab", async () => {
+    const requestedDays: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/calendar?month=")) {
+          const requestedMonth =
+            new URL(url, "https://anonymous.invalid").searchParams.get(
+              "month",
+            ) ?? "2026-07";
+          return Promise.resolve(
+            jsonResponse({
+              trackerKey: "knee-rehab",
+              month: requestedMonth,
+              days: [],
+            }),
+          );
+        }
+        const requestedDate = url.match(/\/days\/(\d{4}-\d{2}-\d{2})$/)?.[1];
+        if (requestedDate) {
+          requestedDays.push(requestedDate);
+          return Promise.resolve(
+            jsonResponse(
+              dayAggregate(requestedDate, `Detail ${requestedDate}`),
+            ),
+          );
+        }
+        return new Promise<Response>(() => undefined);
+      }),
+    );
+
+    renderCalendar();
+    expect(await screen.findByText("Detail 2026-07-19")).toBeTruthy();
+
+    act(() => {
+      window.history.pushState(null, "", "/calendar?date=2026-06-18");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    const selected = await screen.findByRole("button", {
+      name: /^2026-06-18，已选中/,
+    });
+    expect(screen.getByRole("heading", { name: "2026 年 6 月" })).toBeTruthy();
+    expect(await screen.findByText("Detail 2026-06-18")).toBeTruthy();
+    expect(requestedDays).toContain("2026-06-18");
+    await waitFor(() => expect(document.activeElement).toBe(selected));
+
+    act(() => {
+      window.history.pushState(null, "", "/calendar?date=2026-07-17");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    const restored = await screen.findByRole("button", {
+      name: /^2026-07-17，已选中/,
+    });
+    expect(await screen.findByText("Detail 2026-07-17")).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(restored));
+  });
+
   it("does not let a late response overwrite a newer date", async () => {
     const older = deferred<Response>();
     const newer = deferred<Response>();

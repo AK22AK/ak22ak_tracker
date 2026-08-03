@@ -35,7 +35,8 @@ describe("provider history overview route", () => {
       range: null,
       updatedAt: null,
       scopes: [],
-      recordDates: [],
+      historyRecordDates: [],
+      savedRecordDates: [],
     });
     const response = await GET(request, { params });
     expect(response.status).toBe(200);

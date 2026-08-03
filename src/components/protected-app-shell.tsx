@@ -12,6 +12,10 @@ import {
 } from "react";
 
 import { markStartupMilestone } from "@/client/startup-performance";
+import {
+  RootTabLocationProvider,
+  type RootTabLocation,
+} from "@/client/root-tab-location";
 import { useOfflineCommands } from "@/offline/offline-command-context";
 
 import { BottomNav } from "./bottom-nav";
@@ -163,6 +167,8 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
     () => new Set(initialTab ? [initialTab] : []),
   );
   const [showGeometryGate, setShowGeometryGate] = useState(true);
+  const [rootTabLocation, setRootTabLocation] =
+    useState<RootTabLocation | null>(null);
   const [standaloneFeedbackEntry] = useState(pathname === "/feedback");
   const [initialChildren] = useState<React.ReactNode>(() => children);
   const shellRef = useRef<HTMLDivElement>(null);
@@ -192,6 +198,10 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
         return next;
       });
       setActiveTab(tab);
+      setRootTabLocation((current) => ({
+        url,
+        revision: (current?.revision ?? 0) + 1,
+      }));
       window.requestAnimationFrame(() => {
         const target = scrollPositionsRef.current[tab];
         if (
@@ -284,38 +294,43 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
       : visitedTabs;
 
   return (
-    <div
-      ref={shellRef}
-      className="protected-app-shell"
-      data-app-shell-ready="false"
-    >
-      {showGeometryGate ? (
-        <div className="protected-app-geometry-gate">
-          <ProtectedStartupShell />
-        </div>
-      ) : null}
-      <PwaUpdatePrompt pendingCommandCount={commands.length} />
+    <RootTabLocationProvider value={rootTabLocation}>
       <div
-        ref={contentRef}
-        className="protected-app-content"
-        data-app-shell-content
+        ref={shellRef}
+        className="protected-app-shell"
+        data-app-shell-ready="false"
       >
-        <div hidden={!showTabHost} data-tab-host="persistent">
-          {([...renderedTabs] as RootTab[]).map((tab) => (
-            <Activity key={tab} mode={activeTab === tab ? "visible" : "hidden"}>
-              <div data-tab-panel={tab}>
-                <TabContent
-                  tab={tab}
-                  initialTab={initialTab}
-                  initialChildren={initialChildren}
-                />
-              </div>
-            </Activity>
-          ))}
+        {showGeometryGate ? (
+          <div className="protected-app-geometry-gate">
+            <ProtectedStartupShell />
+          </div>
+        ) : null}
+        <PwaUpdatePrompt pendingCommandCount={commands.length} />
+        <div
+          ref={contentRef}
+          className="protected-app-content"
+          data-app-shell-content
+        >
+          <div hidden={!showTabHost} data-tab-host="persistent">
+            {([...renderedTabs] as RootTab[]).map((tab) => (
+              <Activity
+                key={tab}
+                mode={activeTab === tab ? "visible" : "hidden"}
+              >
+                <div data-tab-panel={tab}>
+                  <TabContent
+                    tab={tab}
+                    initialTab={initialTab}
+                    initialChildren={initialChildren}
+                  />
+                </div>
+              </Activity>
+            ))}
+          </div>
+          {showTabHost ? null : children}
         </div>
-        {showTabHost ? null : children}
+        <BottomNav activePath={activePath} onNavigate={navigate} />
       </div>
-      <BottomNav activePath={activePath} onNavigate={navigate} />
-    </div>
+    </RootTabLocationProvider>
   );
 }

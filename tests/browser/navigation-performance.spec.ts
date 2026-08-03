@@ -20,6 +20,11 @@ const historyRangeFrom = (() => {
   date.setUTCDate(date.getUTCDate() - 13);
   return date.toISOString().slice(0, 10);
 })();
+const historyRecordDate = (() => {
+  const date = new Date(`${localDate}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+})();
 
 const taskId = "019c0000-0000-7000-8000-000000000002";
 
@@ -139,6 +144,25 @@ const dayAggregate = {
   day,
 };
 
+function dayAggregateFor(date: string) {
+  return {
+    ...dayAggregate,
+    targetDate: date,
+    day: {
+      ...day,
+      externalTrainingRecords: day.externalTrainingRecords.map((record) => ({
+        ...record,
+        localDate: date,
+        occurredAt: `${date}T02:00:00+08:00`,
+        details: {
+          ...record.details,
+          startedAt: `${date}T02:00:00+08:00`,
+        },
+      })),
+    },
+  };
+}
+
 const integrationStatus = {
   provider: "xunji",
   configured: false,
@@ -225,9 +249,15 @@ const providerHistoryOverview = {
       },
     },
   ],
-  recordDates: [
+  historyRecordDates: [
     {
-      date: localDate,
+      date: historyRecordDate,
+      sources: ["garmin_activity", "garmin_wellness"],
+    },
+  ],
+  savedRecordDates: [
+    {
+      date: historyRecordDate,
       sources: ["garmin_activity", "garmin_wellness"],
     },
   ],
@@ -607,9 +637,9 @@ async function mockPrivateReads(
     } else if (url.pathname.endsWith("/calendar")) {
       counters.month += 1;
       body = calendarAggregate;
-    } else if (url.pathname.endsWith(`/days/${localDate}`)) {
+    } else if (/\/days\/\d{4}-\d{2}-\d{2}$/.test(url.pathname)) {
       counters.day += 1;
-      body = dayAggregate;
+      body = dayAggregateFor(url.pathname.slice(-10));
     } else if (url.pathname.endsWith("/integrations/history-sync")) {
       body = providerHistoryOverview;
     } else if (url.pathname.endsWith("/integrations/xunji/credential")) {
@@ -1485,9 +1515,12 @@ for (const width of [320, 375, 390, 430]) {
     await expect(
       visibleHistoryCard.getByText(`${historyRangeFrom} 至 ${localDate}`),
     ).toBeVisible();
-    const recordLink = visibleHistoryCard.getByRole("link", {
-      name: new RegExp(`${localDate}.*Garmin 活动.*睡眠与步数`),
-    });
+    const recordLink = visibleHistoryCard
+      .locator(".history-sync-record-dates")
+      .first()
+      .getByRole("link", {
+        name: new RegExp(`${historyRecordDate}.*Garmin 活动.*睡眠与步数`),
+      });
     await expect(recordLink).toBeVisible();
     const historyLayout = await page.evaluate(() => {
       const card = [
@@ -1532,10 +1565,24 @@ for (const width of [320, 375, 390, 430]) {
     ).toBe(true);
 
     await recordLink.click();
-    await expect(page).toHaveURL(`/calendar?date=${localDate}`);
+    await expect(page).toHaveURL(`/calendar?date=${historyRecordDate}`);
+    const selectedHistoryDay = page.getByRole("button", {
+      name: new RegExp(`^${historyRecordDate}，已选中`),
+    });
+    await expect(selectedHistoryDay).toBeVisible();
+    await expect(selectedHistoryDay).toBeFocused();
     await expect(
       page.getByRole("region", { name: "外部活动与训练记录" }),
     ).toBeVisible();
+
+    await page.goBack();
+    await expect(page).toHaveURL("/settings/history");
+    await page.goForward();
+    await expect(page).toHaveURL(`/calendar?date=${historyRecordDate}`);
+    await expect(selectedHistoryDay).toHaveAttribute("aria-pressed", "true");
+    await page.reload();
+    await expect(page).toHaveURL(`/calendar?date=${historyRecordDate}`);
+    await expect(selectedHistoryDay).toHaveAttribute("aria-pressed", "true");
 
     await page.goto("/settings");
     await page.getByRole("link", { name: /Garmin/ }).click();
@@ -1576,6 +1623,35 @@ for (const width of [320, 375, 390, 430]) {
     );
   });
 }
+
+test("history link retargets an already visited persistent calendar", async ({
+  page,
+}) => {
+  await mockPrivateReads(page, 0);
+  await page.goto(`/calendar?date=${localDate}`);
+  await expect(
+    page.getByRole("button", { name: new RegExp(`^${localDate}，已选中`) }),
+  ).toBeVisible();
+
+  await page.getByRole("link", { name: "设置" }).click();
+  await page.getByRole("link", { name: /历史数据补录/ }).click();
+  const historyCard = page.locator(".history-sync-card:visible");
+  await historyCard
+    .locator(".history-sync-record-dates")
+    .first()
+    .getByRole("link", { name: new RegExp(`^${historyRecordDate}`) })
+    .click();
+
+  await expect(page).toHaveURL(`/calendar?date=${historyRecordDate}`);
+  const selected = page.getByRole("button", {
+    name: new RegExp(`^${historyRecordDate}，已选中`),
+  });
+  await expect(selected).toBeVisible();
+  await expect(selected).toBeFocused();
+  await expect(
+    page.getByRole("region", { name: "外部活动与训练记录" }),
+  ).toBeVisible();
+});
 
 test("settings detail return restores the cached settings list", async ({
   page,

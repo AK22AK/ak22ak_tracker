@@ -212,7 +212,8 @@ integration("P5b provider-neutral bounded history persistence", () => {
           },
         }),
       ]),
-      recordDates: [],
+      historyRecordDates: [],
+      savedRecordDates: [],
     });
   });
 });

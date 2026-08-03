@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 
 import { trackerQueryKeys } from "@/client/query-keys";
+import { useRootTabLocation } from "@/client/root-tab-location";
 import {
   fetchCalendarAggregate,
   fetchDayAggregate,
@@ -30,13 +31,34 @@ import {
 const trackerKey = "knee-rehab";
 const planningTimeZone = "Asia/Shanghai";
 
+function calendarDateFromUrl(url: string) {
+  const parsed = new URL(url, "https://anonymous.invalid");
+  if (parsed.pathname !== "/calendar") return null;
+  const date = parsed.searchParams.get("date");
+  return isLocalDate(date) ? date : null;
+}
+
+function calendarDateFromLocation() {
+  if (typeof window === "undefined") return null;
+  return calendarDateFromUrl(
+    `${window.location.pathname}${window.location.search}`,
+  );
+}
+
 export function CalendarClient({ initialDate }: { initialDate?: string }) {
   const queryClient = useQueryClient();
+  const rootTabLocation = useRootTabLocation();
   const { commands } = useOfflineCommands();
   const today = localDateInTimeZone(new Date(), planningTimeZone);
-  const startingDate = isLocalDate(initialDate) ? initialDate : today;
+  const locationDate = calendarDateFromLocation();
+  const startingDate = isLocalDate(initialDate)
+    ? initialDate
+    : (locationDate ?? today);
   const [selectedDate, setSelectedDate] = useState(startingDate);
   const [month, setMonth] = useState(startingDate.slice(0, 7));
+  const [externallyFocusedDate, setExternallyFocusedDate] = useState<
+    string | null
+  >(!isLocalDate(initialDate) && locationDate ? locationDate : null);
   const monthQuery = useQuery({
     queryKey: trackerQueryKeys.calendar(trackerKey, month),
     queryFn: ({ signal }) => fetchCalendarAggregate(trackerKey, month, signal),
@@ -66,6 +88,32 @@ export function CalendarClient({ initialDate }: { initialDate?: string }) {
     kind: "day",
     scope: selectedDate,
   });
+
+  useEffect(() => {
+    const syncFromLocation = () => {
+      const date = calendarDateFromLocation();
+      if (!date) return;
+      setSelectedDate(date);
+      setMonth(date.slice(0, 7));
+      setExternallyFocusedDate(date);
+    };
+    window.addEventListener("popstate", syncFromLocation);
+    return () => {
+      window.removeEventListener("popstate", syncFromLocation);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!rootTabLocation) return;
+    const date = calendarDateFromUrl(rootTabLocation.url);
+    if (!date) return;
+    const frame = window.requestAnimationFrame(() => {
+      setSelectedDate(date);
+      setMonth(date.slice(0, 7));
+      setExternallyFocusedDate(date);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [rootTabLocation]);
 
   useEffect(() => {
     if (!monthQuery.data) return;
@@ -144,6 +192,7 @@ export function CalendarClient({ initialDate }: { initialDate?: string }) {
       month={month}
       today={today}
       selectedDate={selectedDate}
+      externallyFocusedDate={externallyFocusedDate}
       days={monthData?.days ?? []}
       monthLoading={
         !monthData &&
@@ -175,6 +224,7 @@ export function CalendarClient({ initialDate }: { initialDate?: string }) {
       onRetryDetail={() => void dayQuery.refetch()}
       onRetryMonth={() => void monthQuery.refetch()}
       onSelectDate={selectDate}
+      onExternalDateFocused={() => setExternallyFocusedDate(null)}
       onSelectMonth={selectMonth}
       onExternalTrainingUpdated={updateAssociation}
     />

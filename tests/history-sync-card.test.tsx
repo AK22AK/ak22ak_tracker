@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
 
 import {
+  act,
   cleanup,
   fireEvent,
   render,
   screen,
+  within,
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -64,7 +66,13 @@ const overview = {
       },
     },
   ],
-  recordDates: [
+  historyRecordDates: [
+    {
+      date: "2026-07-31",
+      sources: ["garmin_activity"],
+    },
+  ],
+  savedRecordDates: [
     {
       date: "2026-07-31",
       sources: ["garmin_activity", "garmin_wellness"],
@@ -91,7 +99,8 @@ const emptyOverview = {
       unknown: 0,
     },
   })),
-  recordDates: [],
+  historyRecordDates: [],
+  savedRecordDates: [],
 };
 
 function renderCard() {
@@ -147,7 +156,7 @@ describe("history sync card", () => {
     vi.unstubAllGlobals();
   });
 
-  it("restores the latest canonical range and links only dates with records", async () => {
+  it("separates this history run from all saved records in the same range", async () => {
     const fetchMock = vi.fn(async () => Response.json(overview));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -159,15 +168,19 @@ describe("history sync card", () => {
     expect(screen.getByText(/失败 1 天/)).toBeTruthy();
     expect(screen.getByText(/未处理 5 天/)).toBeTruthy();
     expect(screen.getByText(/已处理不等于当天有记录/)).toBeTruthy();
+    const historyDates = screen
+      .getByText("本次补录有记录的日期")
+      .closest("div")!;
     expect(
-      screen
+      within(historyDates)
         .getByRole("link", {
-          name: /2026-07-31.*Garmin 活动.*睡眠与步数/,
+          name: /2026-07-31.*Garmin 活动/,
         })
         .getAttribute("href"),
     ).toBe("/calendar?date=2026-07-31");
+    const savedDates = screen.getByText("当前已保存的记录日期").closest("div")!;
     expect(
-      screen
+      within(savedDates)
         .getByRole("link", { name: /2026-08-02.*训记/ })
         .getAttribute("href"),
     ).toBe("/calendar?date=2026-08-02");
@@ -183,7 +196,7 @@ describe("history sync card", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const first = renderCard();
-    expect(await screen.findByText("有记录的日期")).toBeTruthy();
+    expect(await screen.findByText("本次补录有记录的日期")).toBeTruthy();
     first.unmount();
 
     renderCard();
@@ -223,6 +236,8 @@ describe("history sync card", () => {
   it("invalidates only successful day and month queries after a batch", async () => {
     const succeeded = {
       ...result("garmin_activity_history", "garmin"),
+      nextCursor: null,
+      complete: true,
       days: [
         {
           date: "2026-07-31",
@@ -276,7 +291,7 @@ describe("history sync card", () => {
 
     await screen.findByText("还没有历史补录结果。");
     fireEvent.click(screen.getByRole("button", { name: "同步过去 14 天" }));
-    await screen.findByText(/本批已完成/);
+    await screen.findByText(/所选范围已处理完成/);
 
     expect(
       touched.every((key) => queryClient.getQueryState(key)?.isInvalidated),
@@ -284,19 +299,42 @@ describe("history sync card", () => {
     expect(queryClient.getQueryState(untouched)?.isInvalidated).toBe(false);
   });
 
-  it("defaults to 14 days and advances Garmin activity, wellness, then Xunji without arbitrary dates", async () => {
+  it("finishes a 14-day activity range across bounded batches while isolating wellness failure and disconnected Xunji", async () => {
     const calls: Array<{ url: string; body: unknown }> = [];
+    let activityBatch = 0;
+    const connectedOverview = {
+      ...emptyOverview,
+      scopes: emptyOverview.scopes.map((scope) =>
+        scope.scope === "xunji_training_history"
+          ? { ...scope, connected: false }
+          : scope,
+      ),
+    };
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input, init) => {
         const url = String(input);
-        if (!init?.method) return Response.json(emptyOverview);
+        if (!init?.method) return Response.json(connectedOverview);
         const body = JSON.parse(String(init?.body)) as unknown;
         calls.push({ url, body });
         const scope = url.split("/").at(-1)!;
-        return Response.json(
-          result(scope, scope.startsWith("xunji") ? "xunji" : "garmin"),
-        );
+        if (scope === "garmin_wellness_history") {
+          return Response.json(
+            { error: "provider_unavailable" },
+            { status: 503 },
+          );
+        }
+        activityBatch += 1;
+        return Response.json({
+          ...result(scope, "garmin"),
+          nextCursor:
+            activityBatch === 5
+              ? null
+              : ["2026-07-24", "2026-07-27", "2026-07-30", "2026-08-02"][
+                  activityBatch - 1
+                ],
+          complete: activityBatch === 5,
+        });
       }),
     );
 
@@ -304,16 +342,27 @@ describe("history sync card", () => {
     await screen.findByText("还没有历史补录结果。");
     fireEvent.click(screen.getByRole("button", { name: "同步过去 14 天" }));
 
-    await waitFor(() => expect(calls).toHaveLength(3));
+    await waitFor(() => expect(calls).toHaveLength(6));
     expect(calls.map((call) => call.url)).toEqual([
       "/api/trackers/knee-rehab/integrations/history-sync/garmin_activity_history",
+      "/api/trackers/knee-rehab/integrations/history-sync/garmin_activity_history",
+      "/api/trackers/knee-rehab/integrations/history-sync/garmin_activity_history",
+      "/api/trackers/knee-rehab/integrations/history-sync/garmin_activity_history",
+      "/api/trackers/knee-rehab/integrations/history-sync/garmin_activity_history",
       "/api/trackers/knee-rehab/integrations/history-sync/garmin_wellness_history",
-      "/api/trackers/knee-rehab/integrations/history-sync/xunji_training_history",
     ]);
     expect(
       calls.every((call) => JSON.stringify(call.body) === '{"days":14}'),
     ).toBe(true);
-    expect(screen.getByText(/当天没有记录 3 天/)).toBeTruthy();
+    expect(
+      screen.getByText("Garmin 活动").parentElement?.textContent,
+    ).toContain("已完成");
+    expect(
+      screen.getByText("Garmin 睡眠与步数").parentElement?.textContent,
+    ).toContain("本次同步没有完成");
+    expect(screen.getByText("训记训练").parentElement?.textContent).toContain(
+      "等待处理",
+    );
   });
 
   it("offers only 7, 14 and 30 day choices and keeps the selected value after a failure", async () => {
@@ -328,9 +377,11 @@ describe("history sync card", () => {
           return Response.json({ error: "rate_limited" }, { status: 429 });
         }
         const scope = url.split("/").at(-1)!;
-        return Response.json(
-          result(scope, scope.startsWith("xunji") ? "xunji" : "garmin"),
-        );
+        return Response.json({
+          ...result(scope, scope.startsWith("xunji") ? "xunji" : "garmin"),
+          nextCursor: null,
+          complete: true,
+        });
       }),
     );
     renderCard();
@@ -356,10 +407,129 @@ describe("history sync card", () => {
     ).toContain("请求较多");
     expect(
       screen.getByText("Garmin 睡眠与步数").parentElement?.textContent,
-    ).toContain("下次从");
+    ).toContain("已完成");
     expect(screen.getByText("训记训练").parentElement?.textContent).toContain(
-      "下次从",
+      "已完成",
     );
     expect((select as HTMLSelectElement).value).toBe("30");
+  });
+
+  it("caps a 30-day scope at ten bounded requests", async () => {
+    let postCount = 0;
+    const activityOnly = {
+      ...emptyOverview,
+      scopes: emptyOverview.scopes.map((scope) => ({
+        ...scope,
+        connected: scope.scope === "garmin_activity_history",
+      })),
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input, init) => {
+        if (!init?.method) return Response.json(activityOnly);
+        postCount += 1;
+        return Response.json({
+          ...result("garmin_activity_history", "garmin"),
+          nextCursor: `2026-07-${String(21 + postCount).padStart(2, "0")}`,
+          complete: false,
+        });
+      }),
+    );
+
+    renderCard();
+    await screen.findByText("还没有历史补录结果。");
+    fireEvent.change(screen.getByLabelText("补录范围"), {
+      target: { value: "30" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "同步过去 30 天" }));
+
+    await waitFor(() => expect(postCount).toBe(10));
+    expect(await screen.findByText(/本次已推进到安全边界/)).toBeTruthy();
+  });
+
+  it("merges rapid repeated clicks into one coordination sequence", async () => {
+    let resolvePost!: (response: Response) => void;
+    const postResponse = new Promise<Response>((resolve) => {
+      resolvePost = resolve;
+    });
+    let postCount = 0;
+    const activityOnly = {
+      ...emptyOverview,
+      scopes: emptyOverview.scopes.map((scope) => ({
+        ...scope,
+        connected: scope.scope === "garmin_activity_history",
+      })),
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input, init) => {
+        if (!init?.method) return Response.json(activityOnly);
+        postCount += 1;
+        return postResponse;
+      }),
+    );
+
+    renderCard();
+    await screen.findByText("还没有历史补录结果。");
+    const button = screen.getByRole("button", { name: "同步过去 14 天" });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(postCount).toBe(1);
+
+    await act(async () => {
+      resolvePost(
+        Response.json({
+          ...result("garmin_activity_history", "garmin"),
+          nextCursor: null,
+          complete: true,
+        }),
+      );
+    });
+    expect(await screen.findByText(/所选范围已处理完成/)).toBeTruthy();
+    expect(postCount).toBe(1);
+  });
+
+  it("stops a busy scope without blocking the next connected source", async () => {
+    const postScopes: string[] = [];
+    const garminOnly = {
+      ...emptyOverview,
+      scopes: emptyOverview.scopes.map((scope) => ({
+        ...scope,
+        connected: scope.scope !== "xunji_training_history",
+      })),
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input, init) => {
+        if (!init?.method) return Response.json(garminOnly);
+        const scope = String(input).split("/").at(-1)!;
+        postScopes.push(scope);
+        if (scope === "garmin_activity_history") {
+          return Response.json({ error: "sync_in_progress" }, { status: 409 });
+        }
+        return Response.json({
+          ...result(scope, "garmin"),
+          nextCursor: null,
+          complete: true,
+        });
+      }),
+    );
+
+    renderCard();
+    await screen.findByText("还没有历史补录结果。");
+    fireEvent.click(screen.getByRole("button", { name: "同步过去 14 天" }));
+
+    await waitFor(() =>
+      expect(postScopes).toEqual([
+        "garmin_activity_history",
+        "garmin_wellness_history",
+      ]),
+    );
+    expect(
+      screen.getByText("Garmin 活动").parentElement?.textContent,
+    ).toContain("另一项同步正在进行");
+    expect(
+      screen.getByText("Garmin 睡眠与步数").parentElement?.textContent,
+    ).toContain("已完成");
   });
 });

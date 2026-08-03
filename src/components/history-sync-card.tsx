@@ -26,6 +26,7 @@ const sourceLabels = {
   garmin_wellness: "睡眠与步数",
   xunji_training: "训记",
 } as const;
+const maxHistoryRequestsPerScope = 10;
 
 function failureMessage(code: string) {
   if (
@@ -56,6 +57,7 @@ export function HistorySyncCard({ trackerKey }: { trackerKey: string }) {
   const [errors, setErrors] = useState<
     Partial<Record<ProviderHistoryScope, string>>
   >({});
+  const syncInFlight = useRef(false);
   const initializedDays = useRef(false);
   const overviewQuery = useQuery({
     queryKey: integrationQueryKeys.providerHistory(trackerKey),
@@ -73,7 +75,8 @@ export function HistorySyncCard({ trackerKey }: { trackerKey: string }) {
     overviewQuery.data?.scopes.every((scope) => !scope.connected) ?? false;
 
   async function sync() {
-    if (busy) return;
+    if (syncInFlight.current) return;
+    syncInFlight.current = true;
     setBusy(true);
     setMessage(null);
     const nextResults = { ...results };
@@ -91,42 +94,63 @@ export function HistorySyncCard({ trackerKey }: { trackerKey: string }) {
       : scopes;
     if (runnableScopes.length === 0) {
       setMessage("请先连接 Garmin 或训记，再补录历史记录。");
+      syncInFlight.current = false;
       setBusy(false);
       return;
     }
     try {
       for (const { scope } of runnableScopes) {
-        try {
-          const response = await fetch(
-            `/api/trackers/${encodeURIComponent(trackerKey)}/integrations/history-sync/${scope}`,
-            {
-              method: "POST",
-              headers: {
-                Accept: "application/json",
-                "Content-Type": "application/json",
+        const requestLimit = maxHistoryRequestsPerScope;
+        let previousCursor: string | null | undefined;
+        for (
+          let requestCount = 0;
+          requestCount < requestLimit;
+          requestCount += 1
+        ) {
+          try {
+            const response = await fetch(
+              `/api/trackers/${encodeURIComponent(trackerKey)}/integrations/history-sync/${scope}`,
+              {
+                method: "POST",
+                headers: {
+                  Accept: "application/json",
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ days }),
               },
-              body: JSON.stringify({ days }),
-            },
-          );
-          const body: unknown = await response.json().catch(() => null);
-          if (!response.ok) {
-            const code =
-              typeof body === "object" &&
-              body !== null &&
-              "error" in body &&
-              typeof body.error === "string"
-                ? body.error
-                : "sync_unavailable";
-            throw new Error(code);
+            );
+            const body: unknown = await response.json().catch(() => null);
+            if (!response.ok) {
+              const code =
+                typeof body === "object" &&
+                body !== null &&
+                "error" in body &&
+                typeof body.error === "string"
+                  ? body.error
+                  : "sync_unavailable";
+              throw new Error(code);
+            }
+            const result = providerHistorySyncResultSchema.parse(body);
+            nextResults[scope] = result;
+            for (const day of result.days) {
+              if (day.status === "succeeded") affectedDates.add(day.date);
+            }
+            setResults({ ...nextResults });
+            setErrors({ ...nextErrors });
+            if (
+              result.complete ||
+              result.summary.failed > 0 ||
+              !result.nextCursor ||
+              result.nextCursor === previousCursor
+            ) {
+              break;
+            }
+            previousCursor = result.nextCursor;
+          } catch (error) {
+            nextErrors[scope] =
+              error instanceof Error ? error.message : "sync_unavailable";
+            break;
           }
-          const result = providerHistorySyncResultSchema.parse(body);
-          nextResults[scope] = result;
-          for (const day of result.days) {
-            if (day.status === "succeeded") affectedDates.add(day.date);
-          }
-        } catch (error) {
-          nextErrors[scope] =
-            error instanceof Error ? error.message : "sync_unavailable";
         }
         setResults({ ...nextResults });
         setErrors({ ...nextErrors });
@@ -163,21 +187,16 @@ export function HistorySyncCard({ trackerKey }: { trackerKey: string }) {
         setMessage(failureMessage(firstError));
         return;
       }
-      const succeeded = Object.values(nextResults).reduce(
-        (sum, result) => sum + (result?.summary.succeeded ?? 0),
-        0,
-      );
-      const empty = Object.values(nextResults).reduce(
-        (sum, result) => sum + (result?.summary.empty ?? 0),
-        0,
-      );
       const complete = runnableScopes.every(
         ({ scope }) => nextResults[scope]?.complete === true,
       );
       setMessage(
-        `${complete ? "所选范围已处理完成" : "本批已完成"}：成功 ${succeeded} 天，其中当天没有记录 ${empty} 天。${complete ? "" : "可继续同步剩余日期。"}`,
+        complete
+          ? "所选范围已处理完成。最近一次补录结果已更新。"
+          : "本次已推进到安全边界。未完成或失败的来源可以稍后继续。",
       );
     } finally {
+      syncInFlight.current = false;
       setBusy(false);
     }
   }
@@ -276,11 +295,11 @@ export function HistorySyncCard({ trackerKey }: { trackerKey: string }) {
                   );
                 })}
               </ul>
-              {overviewQuery.data.recordDates.length > 0 ? (
+              {overviewQuery.data.historyRecordDates.length > 0 ? (
                 <div className="history-sync-record-dates">
-                  <h3>有记录的日期</h3>
+                  <h3>本次补录有记录的日期</h3>
                   <ul>
-                    {overviewQuery.data.recordDates.map((item) => (
+                    {overviewQuery.data.historyRecordDates.map((item) => (
                       <li key={item.date}>
                         <Link href={`/calendar?date=${item.date}`}>
                           <strong>{item.date}</strong>
@@ -296,7 +315,31 @@ export function HistorySyncCard({ trackerKey }: { trackerKey: string }) {
                 </div>
               ) : (
                 <p className="integration-action-help">
-                  所选范围内暂时没有读到可展示的记录。
+                  本次补录中暂时没有读到可展示的记录。
+                </p>
+              )}
+              {overviewQuery.data.savedRecordDates.length > 0 ? (
+                <div className="history-sync-record-dates">
+                  <h3>当前已保存的记录日期</h3>
+                  <span>包括补录前由日常同步保存的记录。</span>
+                  <ul>
+                    {overviewQuery.data.savedRecordDates.map((item) => (
+                      <li key={item.date}>
+                        <Link href={`/calendar?date=${item.date}`}>
+                          <strong>{item.date}</strong>
+                          <span>
+                            {item.sources
+                              .map((source) => sourceLabels[source])
+                              .join(" · ")}
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p className="integration-action-help">
+                  当前范围内还没有已保存的记录。
                 </p>
               )}
             </>
