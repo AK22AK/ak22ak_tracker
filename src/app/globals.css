@@ -2115,6 +2115,10 @@ summary:focus-visible {
   gap: 0.875rem;
 }
 
+.plan-advice-page {
+  align-content: start;
+}
+
 .trend-advice-card h2,
 .plan-advice-page h2 {
   margin: 0.2rem 0 0;

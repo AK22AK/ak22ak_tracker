@@ -299,6 +299,39 @@ const planAdvice = {
   },
 };
 
+const emptyPlanAdvice = {
+  schemaVersion: "1.0.0",
+  configuration: "configured",
+  selectedModel: "deepseek-v4-flash",
+  job: null,
+};
+
+const planAdviceContextPreview = {
+  schemaVersion: "1.0.0",
+  previewHash: "a".repeat(64),
+  range: { from: "2026-07-22", through: "2026-08-04" },
+  plan: { version: 2, effectiveFrom: "2026-08-03", taskCount: 60 },
+  feedback: {
+    count: 2,
+    days: 2,
+    observations: [{ localDate: "2026-08-03", text: "Anonymous note" }],
+  },
+  confirmedTrainingCount: 1,
+  externalTraining: {
+    garminActivities: 2,
+    xunjiTrainings: 1,
+    unconfirmed: 1,
+    overlapGroups: 1,
+  },
+  recovery: { sleepDays: 5, stepsDays: 6 },
+  coverage: {
+    garminActivity: { records: 2, empty: 3, failed: 1, unknown: 8 },
+    garminWellness: { records: 5, empty: 1, failed: 0, unknown: 8 },
+    xunjiTraining: { records: 1, empty: 4, failed: 0, unknown: 9 },
+  },
+  safetyLevel: "green",
+};
+
 const rollbackAdvice = {
   ...planAdvice,
   job: {
@@ -527,9 +560,11 @@ async function mockPrivateReads(
     } else if (url.pathname === "/api/mirror/status") {
       counters.mirror += 1;
       body = mirrorStatus;
+    } else if (url.pathname.endsWith("/ai-analysis/context-preview")) {
+      body = planAdviceContextPreview;
     } else if (url.pathname.endsWith("/ai-analysis")) {
       counters.advice += 1;
-      body = advice;
+      body = request.method() === "POST" ? planAdvice : advice;
     } else if (url.pathname.endsWith("/trends")) {
       counters.trends += 1;
       body = trends;
@@ -1041,6 +1076,84 @@ for (const width of [320, 375, 390, 430]) {
 }
 
 for (const width of [320, 375, 390, 430]) {
+  test(`plan advice steps stay compact at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await mockPrivateReads(page, 0, emptyPlanAdvice);
+    await page.route(
+      "**/api/trackers/knee-rehab/ai-analysis",
+      async (route) => {
+        if (route.request().method() !== "POST") {
+          await route.fallback();
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        await route.fulfill({ status: 200, json: planAdvice });
+      },
+    );
+
+    const expectCompactState = async (cardSelector: string) => {
+      const layout = await page.locator(cardSelector).evaluate((card) => {
+        const cardRect = card.getBoundingClientRect();
+        const buttons = [
+          ...card.querySelectorAll<HTMLButtonElement>("button"),
+        ].filter((button) => button.getClientRects().length > 0);
+        return {
+          viewportWidth: document.documentElement.clientWidth,
+          scrollWidth: document.documentElement.scrollWidth,
+          cardLeft: cardRect.left,
+          cardRight: cardRect.right,
+          buttons: buttons.map((button) => {
+            const rect = button.getBoundingClientRect();
+            return {
+              height: rect.height,
+              left: rect.left,
+              right: rect.right,
+            };
+          }),
+        };
+      });
+      expect(layout.scrollWidth).toBeLessThanOrEqual(layout.viewportWidth);
+      expect(layout.cardLeft).toBeGreaterThanOrEqual(0);
+      expect(layout.cardRight).toBeLessThanOrEqual(layout.viewportWidth);
+      expect(layout.buttons.length).toBeGreaterThan(0);
+      expect(
+        layout.buttons.every(
+          ({ height, left, right }) =>
+            height >= 44 &&
+            height <= 64 &&
+            left >= layout.cardLeft &&
+            right <= layout.cardRight,
+        ),
+      ).toBe(true);
+    };
+
+    await page.goto("/trends/advice");
+    const prepare = page.getByRole("button", {
+      name: "查看本次分析内容",
+    });
+    await expect(prepare).toBeVisible();
+    await expectCompactState(".plan-advice-intro");
+
+    await prepare.click();
+    await expect(
+      page.getByRole("heading", { name: "本次分析上下文" }),
+    ).toBeVisible();
+    const confirm = page.getByRole("button", { name: "确认并生成建议" });
+    await expect(confirm).toBeVisible();
+    await expectCompactState(".plan-advice-context-preview");
+
+    await confirm.click();
+    await expect(page.getByRole("button", { name: "正在分析…" })).toBeVisible();
+    await expectCompactState(".plan-advice-context-preview");
+
+    await expect(
+      page.getByRole("heading", { name: "Anonymous future adjustment" }),
+    ).toBeVisible();
+    await expectCompactState(".plan-advice-result");
+  });
+}
+
+for (const width of [320, 375, 390, 430]) {
   test(`plan rollback confirmation remains accessible at ${width}px`, async ({
     page,
   }) => {
@@ -1523,7 +1636,7 @@ test("warm Calendar and Settings list remains visible without aggregate refetch"
   expect(settingsFirst).toBeLessThan(100);
   await expect(
     page.locator('[data-tab-panel="settings"] .settings-row'),
-  ).toHaveCount(6);
+  ).toHaveCount(7);
   await page.evaluate(() => {
     document
       .querySelector<HTMLElement>('[data-tab-panel="settings"] main')
@@ -1559,7 +1672,7 @@ test("warm Calendar and Settings list remains visible without aggregate refetch"
   expect(settingsReturn).toBeLessThan(100);
   await expect(
     page.locator('[data-tab-panel="settings"] .settings-row'),
-  ).toHaveCount(6);
+  ).toHaveCount(7);
   await expect
     .poll(() =>
       page.evaluate(

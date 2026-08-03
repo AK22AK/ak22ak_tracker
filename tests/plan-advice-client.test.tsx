@@ -155,8 +155,9 @@ describe("plan advice UI", () => {
     renderClient();
 
     const startButton = await screen.findByRole("button", {
-      name: "分析并生成建议",
+      name: "查看本次分析内容",
     });
+    expect(screen.queryByRole("button", { name: "分析并生成建议" })).toBeNull();
     await waitFor(() =>
       expect((startButton as HTMLButtonElement).disabled).toBe(false),
     );

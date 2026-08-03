@@ -273,14 +273,14 @@ export function PlanAdviceClient() {
           ，参考当前计划和最近 14
           天的训练、身体反馈与恢复参考。建议不会自动修改计划。
         </p>
-        {!job || job.status === "running" ? (
+        {(!job || job.status === "running") && !showContextPreview ? (
           <button
             className="primary-button"
             type="button"
             disabled={analyzing || unavailable || query.isPending}
             onClick={() => start()}
           >
-            {analyzing ? "正在分析…" : "分析并生成建议"}
+            {analyzing ? "正在分析…" : "查看本次分析内容"}
           </button>
         ) : null}
         {unavailable ? (
