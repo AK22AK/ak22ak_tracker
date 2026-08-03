@@ -1,0 +1,34 @@
+{
+  "environment": {
+    "displayMode": "standalone",
+    "screenWidth": 393,
+    "screenHeight": 852,
+    "outerHeight": 852,
+    "innerHeight": 793
+  },
+  "samples": [
+    { "at": 1324, "reason": "bootstrap", "vh": 793, "safeBottom": 0 },
+    { "at": 1847, "reason": "window-load", "vh": 793, "safeBottom": 0 },
+    {
+      "at": 1854,
+      "reason": "viewport-unit-ready",
+      "vh": 852,
+      "safeBottom": 0
+    },
+    {
+      "at": 1856,
+      "reason": "safe-area-ready",
+      "vh": 852,
+      "safeBottom": 34
+    },
+    { "at": 1872, "reason": "stable-frame-1", "vh": 852, "safeBottom": 34 },
+    { "at": 1888, "reason": "stable-frame-2", "vh": 852, "safeBottom": 34 },
+    { "at": 1904, "reason": "stable-frame-3", "vh": 852, "safeBottom": 34 }
+  ],
+  "expected": {
+    "canvasHeight": 852,
+    "safeBottom": 34,
+    "navBottom": 852,
+    "contentHiddenBeforeStableFrame": true
+  }
+}

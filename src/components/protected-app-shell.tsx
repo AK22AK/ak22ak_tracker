@@ -15,6 +15,7 @@ import { markStartupMilestone } from "@/client/startup-performance";
 import { useOfflineCommands } from "@/offline/offline-command-context";
 
 import { BottomNav } from "./bottom-nav";
+import { ProtectedStartupShell } from "./protected-startup-shell";
 import { PwaUpdatePrompt } from "./service-worker-registration";
 import { TodayClient } from "./today-client";
 
@@ -161,6 +162,7 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
   const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<RootTab>>(
     () => new Set(initialTab ? [initialTab] : []),
   );
+  const [showGeometryGate, setShowGeometryGate] = useState(true);
   const [standaloneFeedbackEntry] = useState(pathname === "/feedback");
   const [initialChildren] = useState<React.ReactNode>(() => children);
   const shellRef = useRef<HTMLDivElement>(null);
@@ -204,8 +206,23 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
   );
 
   useEffect(() => {
-    shellRef.current?.setAttribute("data-app-shell-ready", "true");
-    markStartupMilestone("shell-hydrated");
+    const publishShellReady = () => {
+      setShowGeometryGate(false);
+      shellRef.current?.setAttribute("data-app-shell-ready", "true");
+      markStartupMilestone("shell-hydrated");
+    };
+    if (
+      document.documentElement.getAttribute("data-ak-shell-geometry-ready") !==
+      "false"
+    ) {
+      publishShellReady();
+      return;
+    }
+    window.addEventListener("ak-shell-geometry-ready", publishShellReady, {
+      once: true,
+    });
+    return () =>
+      window.removeEventListener("ak-shell-geometry-ready", publishShellReady);
   }, []);
 
   useEffect(() => {
@@ -272,6 +289,11 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
       className="protected-app-shell"
       data-app-shell-ready="false"
     >
+      {showGeometryGate ? (
+        <div className="protected-app-geometry-gate">
+          <ProtectedStartupShell />
+        </div>
+      ) : null}
       <PwaUpdatePrompt pendingCommandCount={commands.length} />
       <div
         ref={contentRef}

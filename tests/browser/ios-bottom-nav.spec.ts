@@ -111,6 +111,144 @@ async function simulateIosFirstPaintFixedAnchor(page: Page) {
   });
 }
 
+async function installCapturedStandaloneReplay(page: Page) {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "standalone", {
+      configurable: true,
+      value: true,
+    });
+    Object.defineProperty(navigator, "platform", {
+      configurable: true,
+      value: "iPhone",
+    });
+    Object.defineProperty(window.screen, "width", {
+      configurable: true,
+      value: 393,
+    });
+    Object.defineProperty(window.screen, "height", {
+      configurable: true,
+      value: 852,
+    });
+    Object.defineProperty(window.screen, "availWidth", {
+      configurable: true,
+      value: 393,
+    });
+    Object.defineProperty(window.screen, "availHeight", {
+      configurable: true,
+      value: 852,
+    });
+    Object.defineProperty(window, "outerHeight", {
+      configurable: true,
+      value: 852,
+    });
+
+    const replay = { vh: 793, safeBottom: 0 };
+    Object.defineProperty(window, "__akStandaloneReplay", {
+      configurable: true,
+      value: replay,
+    });
+    const originalRect = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = function () {
+      const kind = (this as HTMLElement).dataset.akShellGeometryProbe;
+      if (kind === "vh" || kind === "safe-bottom") {
+        const height = kind === "vh" ? replay.vh : replay.safeBottom;
+        return DOMRect.fromRect({ width: 1, height });
+      }
+      return originalRect.call(this);
+    };
+  });
+}
+
+test("captured standalone sequence fills the final canvas before protected content appears", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 393, height: 852 });
+  await installCapturedStandaloneReplay(page);
+  await authorize(page.context());
+  await mockToday(page);
+  await page.goto("/");
+
+  const shell = page.locator(".protected-app-shell");
+  await expect(shell).toBeAttached();
+  await expect(shell).toHaveAttribute("data-app-shell-ready", "false");
+  await expect(page.locator(".protected-app-geometry-gate")).toBeVisible();
+  await expect(
+    page.locator("[data-today-content-visible='true']"),
+  ).toBeHidden();
+
+  const wrongViewportFrame = await page.screenshot();
+  await testInfo.attach("captured-793-gated", {
+    body: wrongViewportFrame,
+    contentType: "image/png",
+  });
+
+  const phasedState = await page.evaluate(() => {
+    const replay = (
+      window as typeof window & {
+        __akStandaloneReplay: { vh: number; safeBottom: number };
+      }
+    ).__akStandaloneReplay;
+    replay.vh = 852;
+    const afterViewportUnit = document.documentElement.getAttribute(
+      "data-ak-shell-geometry-ready",
+    );
+    replay.safeBottom = 34;
+    document.documentElement.style.setProperty(
+      "--ak-replay-safe-bottom",
+      "34px",
+    );
+    return { afterViewportUnit };
+  });
+  expect(phasedState.afterViewportUnit).toBe("false");
+  await page.addStyleTag({
+    content:
+      ".protected-app-shell .bottom-nav { padding-bottom: var(--ak-replay-safe-bottom) !important; }",
+  });
+
+  await expect(shell).toHaveAttribute("data-app-shell-ready", "true");
+  await expect(page.locator(".protected-app-geometry-gate")).toHaveCount(0);
+  await expect(
+    page.locator("[data-today-content-visible='true']"),
+  ).toBeVisible();
+
+  const geometry = await page.evaluate(() => {
+    const shell = document.querySelector<HTMLElement>(".protected-app-shell");
+    const nav = document.querySelector<HTMLElement>(".bottom-nav");
+    const shellRect = shell?.getBoundingClientRect();
+    const navRect = nav?.getBoundingClientRect();
+    return {
+      canvasHeight: Number.parseFloat(
+        document.documentElement.style.getPropertyValue(
+          "--ak-standalone-canvas-height",
+        ),
+      ),
+      shellBottom: shellRect?.bottom ?? null,
+      shellHeight: shellRect?.height ?? null,
+      navTop: navRect?.top ?? null,
+      navBottom: navRect?.bottom ?? null,
+      navHeight: navRect?.height ?? null,
+      navPaddingBottom: nav
+        ? Number.parseFloat(getComputedStyle(nav).paddingBottom)
+        : null,
+    };
+  });
+  expect(geometry).toEqual({
+    canvasHeight: 852,
+    shellBottom: 852,
+    shellHeight: 852,
+    navTop: 767,
+    navBottom: 852,
+    navHeight: 85,
+    navPaddingBottom: 34,
+  });
+
+  const stableFrame = await page.screenshot();
+  await testInfo.attach("captured-852-stable", {
+    body: stableFrame,
+    contentType: "image/png",
+  });
+});
+
 const iphonePortraits = [
   { width: 320, height: 568 },
   { width: 375, height: 667 },

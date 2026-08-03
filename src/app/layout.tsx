@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 
 import { ServiceWorkerRegistration } from "@/components/service-worker-registration";
 import { ShellViewportDiagnosticsBootstrap } from "@/components/shell-viewport-diagnostics-bootstrap";
+import { StandaloneShellViewportBootstrap } from "@/components/standalone-shell-viewport-bootstrap";
 
 import "./globals.css";
 
@@ -39,6 +40,7 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" className="h-full antialiased">
       <body>
+        <StandaloneShellViewportBootstrap />
         <ShellViewportDiagnosticsBootstrap />
         <ServiceWorkerRegistration>{children}</ServiceWorkerRegistration>
       </body>

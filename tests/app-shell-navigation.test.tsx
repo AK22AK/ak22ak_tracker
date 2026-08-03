@@ -50,9 +50,37 @@ vi.mock("next/navigation", () => ({
 describe("protected app shell navigation (P0-05)", () => {
   afterEach(() => {
     cleanup();
+    document.documentElement.removeAttribute("data-ak-shell-geometry-ready");
     vi.useRealTimers();
     navigation.pathname = "/calendar";
     navigation.push.mockReset();
+  });
+
+  it("keeps protected content behind the startup gate until standalone geometry is ready", () => {
+    document.documentElement.setAttribute(
+      "data-ak-shell-geometry-ready",
+      "false",
+    );
+    const { container } = render(
+      <ProtectedAppShell>
+        <main aria-label="日历缓存内容">日历缓存内容</main>
+      </ProtectedAppShell>,
+    );
+
+    const shell = container.querySelector(".protected-app-shell");
+    expect(shell?.getAttribute("data-app-shell-ready")).toBe("false");
+    expect(
+      container.querySelector(".protected-app-geometry-gate"),
+    ).not.toBeNull();
+
+    document.documentElement.setAttribute(
+      "data-ak-shell-geometry-ready",
+      "true",
+    );
+    fireEvent(window, new CustomEvent("ak-shell-geometry-ready"));
+
+    expect(shell?.getAttribute("data-app-shell-ready")).toBe("true");
+    expect(container.querySelector(".protected-app-geometry-gate")).toBeNull();
   });
 
   it("shows an uncached target tab's stable content shell in the same event turn", () => {
