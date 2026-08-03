@@ -548,7 +548,22 @@ export function CalendarShell({
           !detailLoading &&
           !detailError &&
           (dashboard.state !== "ready" ? (
-            <CalendarDayUnavailable dashboard={dashboard} />
+            <>
+              <CalendarDayUnavailable dashboard={dashboard} />
+              {dashboard.recoveryReference ? (
+                <RecoveryReferenceCard
+                  reference={dashboard.recoveryReference}
+                  compact
+                />
+              ) : null}
+              <ExternalTrainingSection
+                trackerKey="knee-rehab"
+                records={dashboard.externalTrainingRecords}
+                tasks={dashboard.tasks}
+                onUpdated={onExternalTrainingUpdated}
+                readOnly={writesDisabled}
+              />
+            </>
           ) : (
             <>
               {summaries.get(selectedDate)?.paused ? (

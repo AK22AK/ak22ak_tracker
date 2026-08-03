@@ -145,11 +145,20 @@ const dayAggregate = {
 };
 
 function dayAggregateFor(date: string) {
+  const beforeFormalPlan = date === historyRecordDate;
   return {
     ...dayAggregate,
     targetDate: date,
     day: {
       ...day,
+      ...(beforeFormalPlan
+        ? {
+            state: "not_started" as const,
+            startDate: localDate,
+            planVersion: null,
+            tasks: [],
+          }
+        : {}),
       externalTrainingRecords: day.externalTrainingRecords.map((record) => ({
         ...record,
         localDate: date,

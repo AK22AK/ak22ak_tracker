@@ -163,6 +163,46 @@ describe("calendar visual semantics", () => {
     expect(screen.queryByText("当天没有计划任务")).toBeNull();
   });
 
+  it("keeps persisted source facts visible before the formal plan starts", () => {
+    renderCalendarShell("2026-07-18", {
+      dashboard: {
+        ...dashboard,
+        state: "not_started",
+        startDate: "2026-07-20",
+        planVersion: null,
+        tasks: [],
+        feedbackCount: 0,
+        feedbacks: [],
+        externalTrainingRecords: [
+          {
+            id: "019c0000-0000-7000-8000-000000000003",
+            provider: "garmin",
+            localDate: "2026-07-18",
+            occurredAt: "2026-07-18T02:00:00+08:00",
+            sourceVersion: 1,
+            details: {
+              kind: "activity",
+              activityType: "walking",
+              startedAt: "2026-07-18T02:00:00+08:00",
+              durationSeconds: 1_200,
+              distanceMeters: 1_500,
+              averagePaceSecondsPerKilometer: 800,
+              averageHeartRateBpm: 105,
+            },
+            association: null,
+            suggestion: null,
+          },
+        ],
+      },
+    });
+
+    expect(screen.getByText("计划尚未开始")).toBeTruthy();
+    expect(
+      screen.getByRole("region", { name: "外部活动与训练记录" }),
+    ).toBeTruthy();
+    expect(screen.getByText("步行")).toBeTruthy();
+  });
+
   it("keeps normal plan metadata and empty sources out of the day detail", () => {
     renderCalendarShell("2026-07-19", {
       dashboard: {
