@@ -7,6 +7,7 @@ import {
   screen,
   within,
 } from "@testing-library/react";
+import Link from "next/link";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ProtectedAppShell } from "@/components/protected-app-shell";
@@ -14,6 +15,7 @@ import { ProtectedAppShell } from "@/components/protected-app-shell";
 const navigation = vi.hoisted(() => ({
   pathname: "/calendar",
   push: vi.fn(),
+  replace: vi.fn(),
 }));
 
 vi.mock("@/components/today-client", () => ({
@@ -44,7 +46,10 @@ vi.mock("@/components/trends-client", () => ({
 
 vi.mock("next/navigation", () => ({
   usePathname: () => navigation.pathname,
-  useRouter: () => ({ push: navigation.push }),
+  useRouter: () => ({
+    push: navigation.push,
+    replace: navigation.replace,
+  }),
 }));
 
 describe("protected app shell navigation (P0-05)", () => {
@@ -54,6 +59,7 @@ describe("protected app shell navigation (P0-05)", () => {
     vi.useRealTimers();
     navigation.pathname = "/calendar";
     navigation.push.mockReset();
+    navigation.replace.mockReset();
   });
 
   it("keeps protected content behind the startup gate until standalone geometry is ready", () => {
@@ -150,6 +156,91 @@ describe("protected app shell navigation (P0-05)", () => {
       "保留设置草稿",
     );
     expect(screen.queryByText(/正在切换/)).toBeNull();
+  });
+
+  it("routes a later root-tab intent through App Router while a detail navigation is pending", () => {
+    navigation.pathname = "/settings";
+    window.history.replaceState(null, "", "/settings");
+    const view = render(
+      <ProtectedAppShell>
+        <main aria-label="设置缓存内容">
+          <Link
+            href="/settings/garmin"
+            onClick={(event) => event.preventDefault()}
+          >
+            打开 Garmin 详情
+          </Link>
+        </main>
+      </ProtectedAppShell>,
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: "打开 Garmin 详情" }));
+    fireEvent.click(screen.getByRole("link", { name: /今日/ }));
+
+    expect(navigation.replace).toHaveBeenCalledWith("/", { scroll: false });
+    expect(screen.getByRole("main", { name: "今日缓存内容" })).toBeTruthy();
+
+    // An older pathname/children publication must not cover the newer root
+    // intent while the App Router transition is settling.
+    navigation.pathname = "/settings/garmin";
+    view.rerender(
+      <ProtectedAppShell>
+        <main aria-label="Garmin设置">迟到的 Garmin 详情</main>
+      </ProtectedAppShell>,
+    );
+    expect(screen.getByRole("main", { name: "今日缓存内容" })).toBeTruthy();
+    expect(screen.queryByRole("main", { name: "Garmin设置" })).toBeNull();
+  });
+
+  it("lets the latest rapid root-tab intent replace an earlier escape intent", async () => {
+    navigation.pathname = "/settings/account";
+    window.history.replaceState(null, "", "/settings/account");
+    render(
+      <ProtectedAppShell>
+        <main aria-label="账号设置">账号详情</main>
+      </ProtectedAppShell>,
+    );
+
+    fireEvent.click(screen.getByRole("link", { name: /今日/ }));
+    fireEvent.click(screen.getByRole("link", { name: /日历/ }));
+
+    expect(navigation.replace.mock.calls).toEqual([
+      ["/", { scroll: false }],
+      ["/calendar", { scroll: false }],
+    ]);
+    expect(
+      await screen.findByRole("main", { name: "日历缓存内容" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: /日历/ }).getAttribute("aria-current"),
+    ).toBe("page");
+    expect(screen.queryByRole("main", { name: "账号设置" })).toBeNull();
+  });
+
+  it("keeps the last of 20 rapid root-tab intents as the single visible truth", async () => {
+    navigation.pathname = "/settings/history";
+    window.history.replaceState(null, "", "/settings/history");
+    render(
+      <ProtectedAppShell>
+        <main aria-label="历史数据补录设置">历史数据补录详情</main>
+      </ProtectedAppShell>,
+    );
+    const labels = [/今日/, /日历/, /趋势/, /设置/] as const;
+
+    for (let index = 0; index < 20; index += 1) {
+      fireEvent.click(
+        screen.getByRole("link", { name: labels[index % labels.length] }),
+      );
+    }
+
+    expect(navigation.replace).toHaveBeenCalledTimes(20);
+    expect(
+      screen.getByRole("link", { name: /设置/ }).getAttribute("aria-current"),
+    ).toBe("page");
+    expect(
+      await screen.findByRole("main", { name: "设置缓存内容" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("main", { name: "历史数据补录设置" })).toBeNull();
   });
 
   it("renders all four product tabs as operable links", () => {

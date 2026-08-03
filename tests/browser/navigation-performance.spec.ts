@@ -1722,6 +1722,157 @@ test("settings detail return keeps browser back and forward aligned", async ({
   await expectActiveTab(page, "/settings", "/settings");
 });
 
+const pendingSettingsEscapes = [
+  {
+    width: 320,
+    detailPath: "/settings/garmin",
+    detailName: /Garmin/,
+    rootHref: "/",
+    rootName: /今日/,
+    rootSelector: '[data-tab-panel="today"] .task-card-summary',
+    settleDelayMs: 0,
+  },
+  {
+    width: 375,
+    detailPath: "/settings/history",
+    detailName: /历史数据补录/,
+    rootHref: "/calendar",
+    rootName: /日历/,
+    rootSelector: '[data-tab-panel="calendar"] .calendar-shell',
+    settleDelayMs: 20,
+  },
+  {
+    width: 390,
+    detailPath: "/settings/deepseek",
+    detailName: /DeepSeek/,
+    rootHref: "/trends",
+    rootName: /趋势/,
+    rootSelector: '[data-tab-panel="trends"] .trends-page',
+    settleDelayMs: 60,
+  },
+  {
+    width: 430,
+    detailPath: "/settings/account",
+    detailName: /账号/,
+    rootHref: "/",
+    rootName: /今日/,
+    rootSelector: '[data-tab-panel="today"] .task-card-summary',
+    settleDelayMs: 120,
+  },
+] as const;
+
+for (const scenario of pendingSettingsEscapes) {
+  test(`the later ${scenario.rootHref} intent wins a pending ${scenario.detailPath} navigation at ${scenario.width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: scenario.width, height: 844 });
+    await mockPrivateReads(page, 0);
+    let releaseDetail!: () => void;
+    const detailReleased = new Promise<void>((resolve) => {
+      releaseDetail = resolve;
+    });
+    let markDetailStarted!: () => void;
+    const detailStarted = new Promise<void>((resolve) => {
+      markDetailStarted = resolve;
+    });
+    let heldRequestCount = 0;
+    let rootRscRequestCount = 0;
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (url.pathname === scenario.rootHref && request.headers().rsc === "1") {
+        rootRscRequestCount += 1;
+      }
+    });
+    await page.route(`**${scenario.detailPath}?*`, async (route) => {
+      const request = route.request();
+      const headers = request.headers();
+      if (
+        request.method() !== "GET" ||
+        headers.rsc !== "1" ||
+        headers["next-router-prefetch"] === "1" ||
+        headers["next-router-segment-prefetch"] !== undefined
+      ) {
+        await route.continue();
+        return;
+      }
+      heldRequestCount += 1;
+      markDetailStarted();
+      await detailReleased;
+      await route.continue();
+    });
+
+    await page.goto("/settings");
+    await expect(page.locator(".settings-row")).toHaveCount(7);
+
+    const detailClick = page
+      .getByRole("link", { name: scenario.detailName })
+      .click();
+    await detailStarted;
+    if (scenario.settleDelayMs > 0) {
+      await page.waitForTimeout(scenario.settleDelayMs);
+    }
+    await page.getByRole("link", { name: scenario.rootName }).click();
+    await expect(page.locator(scenario.rootSelector)).toBeVisible();
+    await expectActiveTab(page, scenario.rootHref, scenario.rootHref);
+    await expect.poll(() => rootRscRequestCount).toBeGreaterThan(0);
+
+    releaseDetail();
+    await detailClick;
+    expect(heldRequestCount).toBeGreaterThan(0);
+    await expect(page.locator(scenario.rootSelector)).toBeVisible();
+    await expectActiveTab(page, scenario.rootHref, scenario.rootHref);
+    await expect(page.locator(".settings-detail-page:visible")).toHaveCount(0);
+  });
+}
+
+test("a loaded settings error cannot cover a later Today intent", async ({
+  page,
+}) => {
+  await mockPrivateReads(page, 0);
+  await page.route(
+    "**/api/trackers/knee-rehab/integrations/deepseek/credential",
+    async (route) => {
+      await route.fulfill({ status: 503, json: { error: "unavailable" } });
+    },
+  );
+  await page.goto("/settings/deepseek");
+  await expect(page.locator(".settings-detail-error")).toContainText(
+    "暂时无法加载",
+  );
+
+  await page.getByRole("link", { name: /今日/ }).click();
+  await expect(
+    page.locator('[data-tab-panel="today"] .task-card-summary'),
+  ).toBeVisible();
+  await expectActiveTab(page, "/", "/");
+  await expect(page.locator(".settings-detail-page:visible")).toHaveCount(0);
+});
+
+test("detail escape preserves a cached calendar query through back and forward", async ({
+  page,
+}) => {
+  await mockPrivateReads(page, 0);
+  await page.goto(`/calendar?date=${localDate}`);
+  await expect(
+    page.getByRole("button", { name: new RegExp(`^${localDate}，已选中`) }),
+  ).toBeVisible();
+
+  await page.getByRole("link", { name: /设置/ }).click();
+  await page.getByRole("link", { name: /账号/ }).click();
+  await expect(page.getByRole("heading", { name: "账号" })).toBeVisible();
+  await page.getByRole("link", { name: /日历/ }).click();
+  await expectActiveTab(page, "/calendar", "/calendar", `?date=${localDate}`);
+
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "账号" })).toBeVisible();
+  await expectActiveTab(page, "/settings", "/settings/account");
+  await page.goForward();
+  await expect(
+    page.getByRole("button", { name: new RegExp(`^${localDate}，已选中`) }),
+  ).toBeVisible();
+  await expectActiveTab(page, "/calendar", "/calendar", `?date=${localDate}`);
+});
+
 test("direct settings detail survives reload and returns from another root tab", async ({
   page,
 }) => {

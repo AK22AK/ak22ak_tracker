@@ -1,15 +1,17 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Activity,
   lazy,
   Suspense,
   useCallback,
   useEffect,
+  type MouseEvent,
   useRef,
   useState,
 } from "react";
+import { flushSync } from "react-dom";
 
 import { markStartupMilestone } from "@/client/startup-performance";
 import {
@@ -100,6 +102,12 @@ function SettingsTabLoading() {
 
 type RootTab = "today" | "calendar" | "trends" | "settings";
 
+type RootNavigationIntent = {
+  generation: number;
+  tab: RootTab;
+  url: string;
+};
+
 const rootTabPaths: Record<RootTab, string> = {
   today: "/",
   calendar: "/calendar",
@@ -119,6 +127,27 @@ function navigationTab(pathname: string): RootTab {
   if (pathname.startsWith("/trends")) return "trends";
   if (pathname.startsWith("/settings")) return "settings";
   return "today";
+}
+
+function internalNonRootHref(event: MouseEvent<HTMLDivElement>) {
+  if (
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey
+  ) {
+    return null;
+  }
+  const target = event.target;
+  if (!(target instanceof Element)) return null;
+  const anchor = target.closest<HTMLAnchorElement>("a[href]");
+  if (!anchor || anchor.target || anchor.hasAttribute("download")) return null;
+  const url = new URL(anchor.href, window.location.href);
+  if (url.origin !== window.location.origin || exactRootTab(url.pathname)) {
+    return null;
+  }
+  return `${url.pathname}${url.search}`;
 }
 
 function TabContent({
@@ -158,6 +187,7 @@ function TabContent({
 
 export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const { commands } = useOfflineCommands();
   const [initialTab] = useState<RootTab | null>(() => exactRootTab(pathname));
   const [activeTab, setActiveTab] = useState<RootTab>(
@@ -169,11 +199,16 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
   const [showGeometryGate, setShowGeometryGate] = useState(true);
   const [rootTabLocation, setRootTabLocation] =
     useState<RootTabLocation | null>(null);
+  const [rootNavigationIntent, setRootNavigationIntent] =
+    useState<RootNavigationIntent | null>(null);
   const [standaloneFeedbackEntry] = useState(pathname === "/feedback");
   const [initialChildren] = useState<React.ReactNode>(() => children);
   const shellRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const activeTabRef = useRef(activeTab);
+  const pendingNonRootHrefRef = useRef<string | null>(null);
+  const rootNavigationIntentRef = useRef<RootNavigationIntent | null>(null);
+  const rootNavigationGenerationRef = useRef(0);
   const scrollPositionsRef = useRef<Record<RootTab, number>>({
     today: 0,
     calendar: 0,
@@ -237,6 +272,14 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const rootTab = exactRootTab(pathname);
+    const intent = rootNavigationIntentRef.current;
+    if (intent) {
+      const currentUrl = `${window.location.pathname}${window.location.search}`;
+      if (rootTab !== intent.tab || currentUrl !== intent.url) return;
+      rootNavigationIntentRef.current = null;
+      pendingNonRootHrefRef.current = null;
+      setRootNavigationIntent(null);
+    }
     if (rootTab) {
       const currentUrl = `${window.location.pathname}${window.location.search}`;
       tabUrlsRef.current[rootTab] = currentUrl;
@@ -252,6 +295,7 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
       }
       return;
     }
+    pendingNonRootHrefRef.current = null;
   }, [activateTab, pathname]);
 
   useEffect(() => {
@@ -269,16 +313,51 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
     (href: string) => {
       const tab = exactRootTab(href);
       if (!tab) return;
-      if (tab === activeTabRef.current && exactRootTab(pathname) === tab)
+      const renderedRootTab = exactRootTab(pathname);
+      const browserRootTab = exactRootTab(window.location.pathname);
+      const hasOlderNonRootNavigation =
+        pendingNonRootHrefRef.current !== null ||
+        rootNavigationIntentRef.current !== null ||
+        renderedRootTab === null ||
+        browserRootTab === null;
+      if (
+        tab === activeTabRef.current &&
+        renderedRootTab === tab &&
+        browserRootTab === tab &&
+        !hasOlderNonRootNavigation
+      ) {
         return;
-      const currentUrl = exactRootTab(pathname)
-        ? `${window.location.pathname}${window.location.search}`
-        : tabUrlsRef.current[activeTabRef.current];
+      }
+      const currentUrl =
+        renderedRootTab !== null && browserRootTab === renderedRootTab
+          ? `${window.location.pathname}${window.location.search}`
+          : tabUrlsRef.current[activeTabRef.current];
       const targetUrl = tabUrlsRef.current[tab] || href;
+      if (hasOlderNonRootNavigation) {
+        const intent = {
+          generation: rootNavigationGenerationRef.current + 1,
+          tab,
+          url: targetUrl,
+        } satisfies RootNavigationIntent;
+        rootNavigationGenerationRef.current = intent.generation;
+        rootNavigationIntentRef.current = intent;
+        pendingNonRootHrefRef.current = null;
+        // Keep the persistent host as the immediate visual source of truth.
+        // App Router navigation is intentionally started only after this local
+        // state is committed, otherwise its transition can defer Activity's
+        // visible panel and leave the preceding detail/root panel on screen.
+        flushSync(() => {
+          setRootNavigationIntent(intent);
+          activateTab(tab, targetUrl, currentUrl);
+        });
+        window.history.pushState(null, "", targetUrl);
+        router.replace(targetUrl, { scroll: false });
+        return;
+      }
       window.history.pushState(null, "", targetUrl);
       activateTab(tab, targetUrl, currentUrl);
     },
-    [activateTab, pathname],
+    [activateTab, pathname, router],
   );
 
   const rootTab = exactRootTab(pathname);
@@ -286,7 +365,8 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
     pathname === "/feedback" &&
     !standaloneFeedbackEntry &&
     visitedTabs.has("today");
-  const showTabHost = rootTab !== null || interceptedFeedback;
+  const showTabHost =
+    rootNavigationIntent !== null || rootTab !== null || interceptedFeedback;
   const activePath = showTabHost ? rootTabPaths[activeTab] : pathname;
   const renderedTabs =
     rootTab !== null && !visitedTabs.has(rootTab)
@@ -310,6 +390,10 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
           ref={contentRef}
           className="protected-app-content"
           data-app-shell-content
+          onClickCapture={(event) => {
+            const href = internalNonRootHref(event);
+            if (href) pendingNonRootHrefRef.current = href;
+          }}
         >
           <div hidden={!showTabHost} data-tab-host="persistent">
             {([...renderedTabs] as RootTab[]).map((tab) => (
