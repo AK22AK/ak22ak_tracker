@@ -265,8 +265,10 @@ describe("protected app shell navigation (P0-05)", () => {
     window.history.replaceState(null, "", "/settings");
     render(
       <ProtectedAppShell>
-        <div data-root-tab-content="calendar">
-          <main aria-label="迟到的日历路由内容">迟到的日历路由内容</main>
+        <div data-route-segment-wrapper="true">
+          <div data-root-tab-content="calendar">
+            <main aria-label="迟到的日历路由内容">迟到的日历路由内容</main>
+          </div>
         </div>
       </ProtectedAppShell>,
     );

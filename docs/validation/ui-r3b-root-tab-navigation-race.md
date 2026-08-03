@@ -29,9 +29,10 @@ transition 的 children 可能来自不同提交。旧壳仅按 pathname 选择 
    目标 URL 都命中最新代次时才清除意图。
 4. 根 Tab 之间继续走既有快速 History 路径；设置根 URL 不接收详情 URL。日历日期 query、
    持久 DOM、草稿、滚动和 back/forward 行为保持不变。
-5. 今日、日历、趋势和设置四个根 Server Component 在顶层 children 上声明稳定 Tab 身份。
-   壳以声明身份绑定流式 children；pathname 只决定当前根选中项。两者错位时目标面板挂载自己的
-   客户端组件，迟到 children 只保留在其真实 Tab，不再污染当前面板。
+5. 今日、日历、趋势和设置四个根 Server Component 在 route children 树中声明稳定 Tab 身份。
+   壳穿过 Next Flight/segment 包装读取声明并绑定流式 children；pathname 只决定当前根选中项。
+   两者错位时目标面板挂载自己的客户端组件，迟到 children 只保留在其真实 Tab，不再污染当前
+   面板。
 
 ## RED / GREEN 门禁
 
@@ -45,8 +46,9 @@ transition 的 children 可能来自不同提交。旧壳仅按 pathname 选择 
 - DeepSeek 详情加载失败时同样覆盖根 Tab 逃逸；既有详情返回、browser back/forward、日历
   query 与持久 Tab 测试继续通过；浏览器 history 恢复根 URL 时，即使 Next children 暂时仍是
   详情，根壳也以浏览器位置恢复对应持久 Tab。
-- 组件门禁显式注入“设置 pathname + 日历声明 children”。旧实现 RED 为设置面板直接显示迟到
-  日历且没有设置客户端；修复后设置客户端唯一可见。浏览器门禁在详情→日历→back→forward
-  后再次进入设置，必须恢复唯一 7 行列表且设置面板内不得存在日历壳。
+- 组件门禁显式注入“设置 pathname + Next segment 包装内的日历声明 children”。只看顶层
+  React 元素的实现仍为 RED：设置面板直接显示迟到日历且没有设置客户端；递归读取声明后设置
+  客户端唯一可见。浏览器门禁在详情→日历→back→forward 后再次进入设置，必须恢复唯一 7 行
+  列表且设置面板内不得存在日历壳。
 
 本返修不改变 DB、Schema、Provider、计划、安全、离线命令或 P5b 领域语义。

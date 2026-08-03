@@ -175,17 +175,28 @@ function navigationTab(pathname: string): RootTab {
   return "today";
 }
 
-function declaredRootTab(children: React.ReactNode): RootTab | null {
-  if (!isValidElement(children)) return null;
-  const declared = (children.props as { "data-root-tab-content"?: unknown })[
-    "data-root-tab-content"
-  ];
-  return declared === "today" ||
-    declared === "calendar" ||
-    declared === "trends" ||
-    declared === "settings"
-    ? declared
-    : null;
+function declaredRootTab(children: React.ReactNode, depth = 0): RootTab | null {
+  if (depth > 12) return null;
+  const nodes = Array.isArray(children) ? children : [children];
+  for (const node of nodes) {
+    if (!isValidElement(node)) continue;
+    const props = node.props as {
+      children?: React.ReactNode;
+      "data-root-tab-content"?: unknown;
+    };
+    const declared = props["data-root-tab-content"];
+    if (
+      declared === "today" ||
+      declared === "calendar" ||
+      declared === "trends" ||
+      declared === "settings"
+    ) {
+      return declared;
+    }
+    const nested = declaredRootTab(props.children, depth + 1);
+    if (nested) return nested;
+  }
+  return null;
 }
 
 function internalNonRootHref(event: MouseEvent<HTMLDivElement>) {
