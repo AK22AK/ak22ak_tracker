@@ -1776,13 +1776,6 @@ for (const scenario of pendingSettingsEscapes) {
       markDetailStarted = resolve;
     });
     let heldRequestCount = 0;
-    let rootRscRequestCount = 0;
-    page.on("request", (request) => {
-      const url = new URL(request.url());
-      if (url.pathname === scenario.rootHref && request.headers().rsc === "1") {
-        rootRscRequestCount += 1;
-      }
-    });
     await page.route(`**${scenario.detailPath}?*`, async (route) => {
       const request = route.request();
       const headers = request.headers();
@@ -1814,7 +1807,6 @@ for (const scenario of pendingSettingsEscapes) {
     await page.getByRole("link", { name: scenario.rootName }).click();
     await expect(page.locator(scenario.rootSelector)).toBeVisible();
     await expectActiveTab(page, scenario.rootHref, scenario.rootHref);
-    await expect.poll(() => rootRscRequestCount).toBeGreaterThan(0);
 
     releaseDetail();
     await detailClick;
@@ -1822,6 +1814,10 @@ for (const scenario of pendingSettingsEscapes) {
     await expect(page.locator(scenario.rootSelector)).toBeVisible();
     await expectActiveTab(page, scenario.rootHref, scenario.rootHref);
     await expect(page.locator(".settings-detail-page:visible")).toHaveCount(0);
+
+    await page.getByRole("link", { name: /设置/ }).click();
+    await expect(page.locator(".settings-row:visible")).toHaveCount(7);
+    await expectActiveTab(page, "/settings", "/settings");
   });
 }
 

@@ -62,7 +62,8 @@ neutral 字段，未在 UI 中猜测。Garmin、训记和 DeepSeek 的 disabled 
 
 UI-R3b 根 Tab 时序返修已完成，待项目经理独立生产复核：设置详情 Link 的 RSC 导航尚未提交时，
 后点的今日、日历或趋势会立即成为 URL、`aria-current` 与可见面板的共同事实；根壳通过导航代次
-忽略迟到的详情 pathname/children，并由 App Router 取消旧 transition。详情 URL 不再污染设置
+忽略迟到的详情 pathname/children。尚未写入详情 URL 的 pending 窗口由 History 代次压过，
+已加载或进入 commit 的详情只发起一次 App Router 导航，以保留正确的 back/forward tree。详情 URL 不再污染设置
 根 Tab 的缓存回退地址；根 Tab 间仍使用既有快速 History 路径，日历日期 query、持久 DOM、草稿、
 滚动及 back/forward 契约不变。匿名 production-build 门禁覆盖 Garmin、历史补录、DeepSeek、
 账号四个详情、320/375/390/430px、不同延迟、详情错误态和 20 次快速连续点击；生产只读压力

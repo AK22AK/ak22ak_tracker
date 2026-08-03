@@ -18,8 +18,9 @@ Tab Host。详情导航稳定后路径通常正确；但在详情 pathname/child
 
 1. 根壳在捕获阶段记录内部非根 Link 导航；从已加载详情、pending 详情或未完成的根逃逸意图
    点击根 Tab 时，建立单调递增的根导航代次。
-2. URL、`aria-current`、持久 Host 可见面板先在同一用户事件中同步；随后使用 App Router
-   `replace` 取消较早 transition 并重建一致的 RSC tree。History 只新增一次目标条目。
+2. URL、`aria-current`、持久 Host 可见面板在同一用户事件中同步。详情尚未写 URL 时由最新
+   代次独占 History；详情已加载或进入 commit 时只发起一次 App Router `push`。两种 transport
+   不叠加，避免共享壳收到交叉的 pathname 与 children，同时保留正确 history tree。
 3. 新根意图提交完成前，迟到的 pathname/children 不得隐藏持久 Host；只有 pathname 与完整
    目标 URL 都命中最新代次时才清除意图。
 4. 根 Tab 之间继续走既有快速 History 路径；设置根 URL 不接收详情 URL。日历日期 query、
@@ -31,9 +32,11 @@ Tab Host。详情导航稳定后路径通常正确；但在详情 pathname/child
   只允许最后一次成为可见面板及 `aria-current`。
 - production-build Playwright 冻结 Garmin、历史数据补录、DeepSeek、账号详情的真实 RSC
   请求，分别在 320/375/390/430px 与 0/20/60/120ms 窗口点击今日、日历或趋势。
-- 每条路径都要求发起新的根 RSC 导航，并在释放旧详情响应前后保持 URL、`aria-current`、
-  可见面板一致；可见设置详情数量必须为 0。
+- 每条路径都冻结真实详情 RSC 请求，并在释放旧详情响应前后保持 URL、`aria-current`、可见
+  面板一致；可见设置详情数量必须为 0。随后再次进入设置必须恢复唯一的 7 行根列表，
+  不能把前一个根面板误装入设置 Tab。
 - DeepSeek 详情加载失败时同样覆盖根 Tab 逃逸；既有详情返回、browser back/forward、日历
-  query 与持久 Tab 测试继续通过。
+  query 与持久 Tab 测试继续通过；浏览器 history 恢复根 URL 时，即使 Next children 暂时仍是
+  详情，根壳也以浏览器位置恢复对应持久 Tab。
 
 本返修不改变 DB、Schema、Provider、计划、安全、离线命令或 P5b 领域语义。

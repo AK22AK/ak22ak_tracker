@@ -10,6 +10,7 @@ import {
   type MouseEvent,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { flushSync } from "react-dom";
 
@@ -105,6 +106,7 @@ type RootTab = "today" | "calendar" | "trends" | "settings";
 type RootNavigationIntent = {
   generation: number;
   tab: RootTab;
+  transport: "history" | "router";
   url: string;
 };
 
@@ -114,6 +116,49 @@ const rootTabPaths: Record<RootTab, string> = {
   trends: "/trends",
   settings: "/settings",
 };
+
+const browserLocationListeners = new Set<() => void>();
+let browserHistoryPatched = false;
+let suppressBrowserLocationPublish = false;
+
+function publishBrowserLocation() {
+  for (const listener of browserLocationListeners) listener();
+}
+
+function ensureBrowserHistoryEvents() {
+  if (browserHistoryPatched || typeof window === "undefined") return;
+  browserHistoryPatched = true;
+  const originalPushState = window.history.pushState.bind(window.history);
+  const originalReplaceState = window.history.replaceState.bind(window.history);
+  window.history.pushState = (data, unused, url) => {
+    originalPushState(data, unused, url);
+    if (!suppressBrowserLocationPublish) publishBrowserLocation();
+  };
+  window.history.replaceState = (data, unused, url) => {
+    originalReplaceState(data, unused, url);
+    publishBrowserLocation();
+  };
+  window.addEventListener("popstate", publishBrowserLocation);
+}
+
+function pushRootTabHistory(url: string) {
+  suppressBrowserLocationPublish = true;
+  try {
+    window.history.pushState(null, "", url);
+  } finally {
+    suppressBrowserLocationPublish = false;
+  }
+}
+
+function subscribeBrowserLocation(listener: () => void) {
+  ensureBrowserHistoryEvents();
+  browserLocationListeners.add(listener);
+  return () => browserLocationListeners.delete(listener);
+}
+
+function getBrowserPathname() {
+  return typeof window === "undefined" ? "" : window.location.pathname;
+}
 
 function exactRootTab(pathname: string): RootTab | null {
   const entry = Object.entries(rootTabPaths).find(
@@ -201,6 +246,11 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
     useState<RootTabLocation | null>(null);
   const [rootNavigationIntent, setRootNavigationIntent] =
     useState<RootNavigationIntent | null>(null);
+  const browserPathname = useSyncExternalStore(
+    subscribeBrowserLocation,
+    getBrowserPathname,
+    () => pathname,
+  );
   const [standaloneFeedbackEntry] = useState(pathname === "/feedback");
   const [initialChildren] = useState<React.ReactNode>(() => children);
   const shellRef = useRef<HTMLDivElement>(null);
@@ -272,31 +322,37 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const rootTab = exactRootTab(pathname);
+    const browserRootTab = exactRootTab(window.location.pathname);
     const intent = rootNavigationIntentRef.current;
     if (intent) {
       const currentUrl = `${window.location.pathname}${window.location.search}`;
-      if (rootTab !== intent.tab || currentUrl !== intent.url) return;
+      if (rootTab !== intent.tab || currentUrl !== intent.url) {
+        if (intent.transport === "history" && currentUrl !== intent.url) {
+          window.history.replaceState(window.history.state, "", intent.url);
+        }
+        return;
+      }
       rootNavigationIntentRef.current = null;
       pendingNonRootHrefRef.current = null;
       setRootNavigationIntent(null);
     }
-    if (rootTab) {
+    if (browserRootTab) {
       const currentUrl = `${window.location.pathname}${window.location.search}`;
-      tabUrlsRef.current[rootTab] = currentUrl;
-      if (activeTabRef.current !== rootTab) {
-        activateTab(rootTab, currentUrl);
+      tabUrlsRef.current[browserRootTab] = currentUrl;
+      if (activeTabRef.current !== browserRootTab) {
+        activateTab(browserRootTab, currentUrl);
       } else {
         setVisitedTabs((current) => {
-          if (current.has(rootTab)) return current;
+          if (current.has(browserRootTab)) return current;
           const next = new Set(current);
-          next.add(rootTab);
+          next.add(browserRootTab);
           return next;
         });
       }
       return;
     }
     pendingNonRootHrefRef.current = null;
-  }, [activateTab, pathname]);
+  }, [activateTab, browserPathname, pathname]);
 
   useEffect(() => {
     if (pathname !== "/feedback" || !standaloneFeedbackEntry) return;
@@ -334,43 +390,54 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
           : tabUrlsRef.current[activeTabRef.current];
       const targetUrl = tabUrlsRef.current[tab] || href;
       if (hasOlderNonRootNavigation) {
+        const transport =
+          renderedRootTab === null || browserRootTab === null
+            ? "router"
+            : "history";
         const intent = {
           generation: rootNavigationGenerationRef.current + 1,
           tab,
+          transport,
           url: targetUrl,
         } satisfies RootNavigationIntent;
         rootNavigationGenerationRef.current = intent.generation;
         rootNavigationIntentRef.current = intent;
         pendingNonRootHrefRef.current = null;
         // Keep the persistent host as the immediate visual source of truth.
-        // App Router navigation is intentionally started only after this local
-        // state is committed, otherwise its transition can defer Activity's
-        // visible panel and leave the preceding detail/root panel on screen.
+        // A second App Router navigation here can remount the shared shell with
+        // a pathname from one transition and children from another. The latest
+        // generation instead owns History until usePathname confirms the same
+        // complete root URL.
         flushSync(() => {
           setRootNavigationIntent(intent);
           activateTab(tab, targetUrl, currentUrl);
         });
-        window.history.pushState(null, "", targetUrl);
-        router.replace(targetUrl, { scroll: false });
+        if (transport === "router") {
+          router.push(targetUrl, { scroll: false });
+        } else {
+          pushRootTabHistory(targetUrl);
+        }
         return;
       }
-      window.history.pushState(null, "", targetUrl);
       activateTab(tab, targetUrl, currentUrl);
+      pushRootTabHistory(targetUrl);
     },
     [activateTab, pathname, router],
   );
 
-  const rootTab = exactRootTab(pathname);
+  const browserRootTab = exactRootTab(browserPathname);
   const interceptedFeedback =
     pathname === "/feedback" &&
     !standaloneFeedbackEntry &&
     visitedTabs.has("today");
   const showTabHost =
-    rootNavigationIntent !== null || rootTab !== null || interceptedFeedback;
+    rootNavigationIntent !== null ||
+    browserRootTab !== null ||
+    interceptedFeedback;
   const activePath = showTabHost ? rootTabPaths[activeTab] : pathname;
   const renderedTabs =
-    rootTab !== null && !visitedTabs.has(rootTab)
-      ? new Set([...visitedTabs, rootTab])
+    browserRootTab !== null && !visitedTabs.has(browserRootTab)
+      ? new Set([...visitedTabs, browserRootTab])
       : visitedTabs;
 
   return (

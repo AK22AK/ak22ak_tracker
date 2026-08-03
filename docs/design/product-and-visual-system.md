@@ -119,9 +119,10 @@ AK Tracker 的界面气质定义为：**安静、可信、有个人温度的康�
 - **禁用必须明显不可用**：设置详情中的 native disabled 控件保留原生禁用语义，并以不同的
   背景、边框、文字和 `not-allowed` 指针与可操作的森林绿主按钮区分；这一规则同样适用于
   Garmin、训记和 DeepSeek。
-- **最后一次导航意图获胜**：从详情逃逸到根 Tab 时，根壳先同步 URL、选中态和可见面板，再由
-  App Router 仲裁并取消更早的详情 transition；迟到的 pathname 或 children 不得重新盖住根
-  Tab，也不得把详情 URL 记成设置根页的回退地址。根 Tab 之间继续保留持久 Host 的快速切换。
+- **最后一次导航意图获胜**：从详情逃逸到根 Tab 时，根壳以单调导航代次同步 URL、选中态和
+  可见面板；未提交详情由 History 直接压过，已提交详情只用一次 App Router 导航建立正确历史
+  tree。更早 transition 迟到的 pathname、children 或 URL 不得重新盖住根 Tab，也不得把详情
+  URL 记成设置根页的回退地址。根 Tab 之间继续保留持久 Host 的快速切换。
 
 ## 从 Apple 设计原则选择性吸收
 
