@@ -208,6 +208,12 @@ TrackerSafetyPolicy
 - 分页读取并按 provider record ID 幂等 upsert。
 - 超过一天没有成功且最近一次失败时，页面显示弱提醒；鉴权失效时要求重新登录。
 
+Garmin 活动和 daily wellness 还支持使用者明确触发的“同步过去 7 / 14 / 30 天”。该
+历史范围由服务端按 Tracker 计划时区的今天换算，可以早于 `startedOn`，但使用独立的
+`garmin_activity_history` / `garmin_wellness_history` 日期状态和范围 cursor；它不改变
+Tracker 正式范围，也不推进常规增量 cursor。每天成功且零记录仍保存为成功空日，技术
+失败保存安全错误并停在失败日，后续请求从数据库续跑。
+
 ### 训记到 PostgreSQL
 
 - 服务端只调用 `https://trains.xunjiapp.cn` 的训练读取接口
@@ -227,6 +233,16 @@ TrackerSafetyPolicy
   Adapter 能力面只暴露读取，即使 Provider Key 本身还具有写权限也不调用写接口。
 - 超过一天没有成功且最近一次失败时显示弱提醒；认证失败要求更新 Key，不影响
   Garmin、任务、反馈或手工兜底记录。
+
+训记历史补录使用同样的 7 / 14 / 30 天服务端范围，但保存到独立
+`xunji_training_history` scope。它复用相同的只读 Adapter、30 秒同日缓存、外部记录
+幂等与来源版本规则，不会修改从 `startedOn` 开始的常规追赶 cursor。
+
+受保护 App Shell 的日常恢复只在首次在线挂载和离线恢复联网时触发一次，顺序为 Garmin
+activity、Garmin daily wellness、训记；普通 focus、visibility、路由和 Query refetch
+不触发。两个 Garmin scope 仍共享凭证 I/O 租约，三个业务 cursor 各自独立。每日 Garmin
+Cron 在同一触发中最多推进 activity 两天和 wellness 一天，保持总调用预算；独立训记
+Cron 最多推进三天。两条 Cron 都只运行常规追赶，绝不自动触发历史补录。
 
 ### PostgreSQL 到 GitHub
 
@@ -255,6 +271,11 @@ TrackerSafetyPolicy
 - 撤销只针对仍是时间线头的已应用 AI 版本。数据库从原决定的基础计划快照创建下一
   计划日生效的新版本，并原子写入回滚投影、未来任务、专用事件和 outbox；不改写原
   决定、旧版本或历史任务。
+- AI Context v2 只读最近 14 天已持久化数据：完整当前计划、结构化反馈及限长的已保存
+  observation、使用者确认任务、Garmin activity/daily wellness 与训记力量证据。外部
+  训练不会反向改变任务完成；跨来源关联或时间重叠只形成去重提示，不生成推断完成。
+- 调用前页面读取严格白名单上下文预览；确认请求携带服务端生成的 preview hash。服务端
+  重新构造上下文并匹配后才创建分析 job，避免预览后新增记录仍使用旧内容。
 
 ### 临时执行上下文
 

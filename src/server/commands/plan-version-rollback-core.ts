@@ -27,7 +27,7 @@ export type PlanVersionRollbackSource = {
   proposal: PlanChangeProposal;
   analysisJobId: string;
   model: string;
-  contextVersion: "1";
+  contextVersion: "1" | "2";
   contextHash: string;
   contextRevision: number;
   contextFrom: string;

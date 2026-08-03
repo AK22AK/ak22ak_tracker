@@ -197,6 +197,11 @@ export function SettingsClient() {
               {...garminStatus}
             />
             <SettingsRow href="/settings/xunji" name="训记" {...xunjiStatus} />
+            <SettingsRow
+              href="/settings/history"
+              name="历史数据补录"
+              detail="同步过去 7、14 或 30 天"
+            />
           </section>
           <section className="settings-list-group" aria-label="建议与备份">
             <p className="settings-group-label">建议与备份</p>

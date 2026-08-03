@@ -228,8 +228,9 @@ Garmin activity 与 daily wellness 均使用通用的日期同步、追赶游标
   Provider I/O 仍由共享凭证租约串行保护。wellness 成功后只精确更新相应今日/单日
   缓存，不修改当前未包含恢复参考的月摘要。
 - 每日 Cron 复用同一到期判断、租约、日期状态、游标和 Garmin Runtime，不建立第二套
-  队列。它固定只处理 `knee-rehab` 的 activity，每次最多三天，Route 总时限为 45 秒；
-  某日失败立即停批，不在同一次 Cron 中重试。
+  队列。它固定只处理 `knee-rehab` 的 activity 与 daily wellness，按顺序最多推进
+  activity 两天、wellness 一天，使总 Provider 日期调用仍不超过三次并落在 Route 45 秒
+  上限内；任一 scope 的某日失败立即停该批，不在同一次 Cron 中重试。
 - GitHub 镜像与 Garmin 使用两个独立 Cron，并安排在不同 UTC 小时。Garmin Cron 通过
   Vercel 现有 `CRON_SECRET` 的 Bearer Header 鉴权，在任何数据库、凭证或 Provider
   读取前失败关闭；它不使用用户 Session。
@@ -244,6 +245,14 @@ Vercel Hobby 当前每项目最多 100 个 Cron，但单个 Cron 最多每日一
 
 参考：[Vercel Cron 使用与计费](https://vercel.com/docs/cron-jobs/usage-and-pricing)、
 [Vercel Cron 管理与鉴权](https://vercel.com/docs/cron-jobs/manage-cron-jobs)。
+
+### 使用者触发的历史补录
+
+设置页另提供过去 7、14 或 30 天的补录，默认 14 天。服务端按上海计划日换算范围，允许
+覆盖正式计划开始日前的已有记录，但不会修改 `startedOn`、趋势正式范围或 activity /
+wellness 常规追赶 cursor。两个 Garmin 历史 scope 分别保存成功、零记录、失败和续跑位置，
+仍共用相同加密凭证、Provider I/O 租约、日期同步和外部记录幂等写入。自动恢复与 Cron
+不会触发该历史范围。
 
 ## 错误与降级
 

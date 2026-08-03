@@ -12,6 +12,8 @@ export const trackerQueryKeys = {
   evaluation: (trackerKey: string) => ["evaluation", trackerKey] as const,
   planAdvice: (trackerKey: string) =>
     ["proposals", trackerKey, "latest"] as const,
+  planAdviceContext: (trackerKey: string) =>
+    ["proposals", trackerKey, "context-preview"] as const,
   resumptionAssessment: (trackerKey: string, assessmentId: string) =>
     ["resumption-assessment", trackerKey, assessmentId] as const,
 };

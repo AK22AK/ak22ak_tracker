@@ -68,6 +68,34 @@ function page(job: JobFixture | null = null) {
   };
 }
 
+function contextPreview() {
+  return {
+    schemaVersion,
+    previewHash: "a".repeat(64),
+    range: { from: "2026-07-22", through: "2026-08-04" },
+    plan: { version: 2, effectiveFrom: "2026-08-03", taskCount: 60 },
+    feedback: {
+      count: 2,
+      days: 2,
+      observations: [{ localDate: "2026-08-03", text: "匿名观察" }],
+    },
+    confirmedTrainingCount: 1,
+    externalTraining: {
+      garminActivities: 2,
+      xunjiTrainings: 1,
+      unconfirmed: 1,
+      overlapGroups: 1,
+    },
+    recovery: { sleepDays: 5, stepsDays: 6 },
+    coverage: {
+      garminActivity: { records: 2, empty: 3, failed: 1, unknown: 8 },
+      garminWellness: { records: 5, empty: 1, failed: 0, unknown: 8 },
+      xunjiTraining: { records: 1, empty: 4, failed: 0, unknown: 9 },
+    },
+    safetyLevel: "green",
+  };
+}
+
 function renderClient() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -91,6 +119,7 @@ describe("plan advice UI", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(response(page()))
+      .mockResolvedValueOnce(response(contextPreview()))
       .mockResolvedValueOnce(
         response(
           page({
@@ -148,6 +177,16 @@ describe("plan advice UI", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     fireEvent.click(startButton);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText("本次分析上下文")).toBeTruthy();
+    expect(screen.getByText("2026-08-03：匿名观察")).toBeTruthy();
+    expect(fetchMock.mock.calls[1]?.[1]?.method).toBeUndefined();
+    fireEvent.click(screen.getByRole("button", { name: "确认并生成建议" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body)),
+    ).toMatchObject({
+      previewHash: "a".repeat(64),
+    });
     expect(await screen.findByText("Repeat the current level")).toBeTruthy();
     expect(screen.getByText("移除一项训练安排")).toBeTruthy();
     expect(screen.getByText("Allow more recovery time")).toBeTruthy();
@@ -247,6 +286,7 @@ describe("plan advice UI", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(response(expired))
+      .mockResolvedValueOnce(response(contextPreview()))
       .mockResolvedValueOnce(response(next));
     vi.stubGlobal("fetch", fetchMock);
     vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(
@@ -261,9 +301,14 @@ describe("plan advice UI", () => {
     expect(screen.queryByText(/基于较早的计划/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "重新分析" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    const [, request] = fetchMock.mock.calls[1]!;
+    fireEvent.click(
+      await screen.findByRole("button", { name: "确认并生成建议" }),
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const [, request] = fetchMock.mock.calls[2]!;
     expect(JSON.parse(String(request.body))).toEqual({
       commandId: "019c1000-0000-7000-8000-000000000208",
+      previewHash: "a".repeat(64),
     });
   });
 

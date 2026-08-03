@@ -209,9 +209,11 @@ integration("P4b-1 AI analysis Neon persistence", () => {
 
     const proposeAdjustment = vi.fn(async (context) => {
       expect(context.currentPlan).not.toHaveProperty("source");
-      expect(JSON.stringify(context)).not.toContain(
-        "excluded anonymous feedback note",
-      );
+      expect(context.recentFeedback).toEqual([
+        expect.objectContaining({
+          userObservation: "excluded anonymous feedback note",
+        }),
+      ]);
       expect(JSON.stringify(context)).not.toContain(
         "excluded anonymous training summary",
       );

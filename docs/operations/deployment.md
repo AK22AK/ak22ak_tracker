@@ -106,6 +106,9 @@ Schema 快照的顺序是：公共代码 Schema 与 migration 先完成，数据
 - Cron 重复触发、超时后重跑和手动同步不能产生重复记录。
 - GitHub outbox 由业务写入后的响应后任务、应用启动、手动同步和每日 Cron 共同
   消费；AI 第一版由用户请求内执行一次，失败后保留任务供手动重试。
+- Garmin 每日 Route 依次尝试 activity 与 daily wellness，总计最多三个日期；训记使用
+  独立每日 Route，最多三个日期。两者都复用常规业务 cursor 和原子租约，不运行设置页的
+  7 / 14 / 30 天历史补录。
 - 长时间或依赖不兼容运行时的任务可以迁移到独立受控 Worker，但仍通过相同应用
   契约写入 PostgreSQL。
 

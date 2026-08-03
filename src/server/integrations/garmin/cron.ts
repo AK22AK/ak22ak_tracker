@@ -6,12 +6,17 @@ import {
   garminActivityRecoveryResponseSchema,
   garminDailyRecoveryCronResponseSchema,
   garminProviderErrorCodeSchema,
+  garminWellnessRecoveryResponseSchema,
 } from "@/domain/garmin";
 
 import { createDefaultGarminRuntime } from "./runtime";
 
 type GarminRecoveryRuntime = {
   recoverActivityHistory(input: {
+    trackerKey: "knee-rehab";
+    profile: "daily_cron";
+  }): Promise<unknown>;
+  recoverWellnessHistory?(input: {
     trackerKey: "knee-rehab";
     profile: "daily_cron";
   }): Promise<unknown>;
@@ -52,15 +57,47 @@ export function createGarminRecoveryCronHandler(
     }
 
     try {
+      const runtime = createRuntime();
       const recovery = garminActivityRecoveryResponseSchema.parse(
-        await createRuntime().recoverActivityHistory({
+        await runtime.recoverActivityHistory({
           trackerKey: "knee-rehab",
           profile: "daily_cron",
         }),
       );
+      const wellnessRecovery = runtime.recoverWellnessHistory
+        ? garminWellnessRecoveryResponseSchema.parse(
+            await runtime.recoverWellnessHistory({
+              trackerKey: "knee-rehab",
+              profile: "daily_cron",
+            }),
+          )
+        : null;
+      const summarize = (value: typeof recovery | typeof wellnessRecovery) =>
+        !value
+          ? undefined
+          : value.status === "skipped"
+            ? { status: "skipped" as const, reason: value.reason }
+            : {
+                status: "completed" as const,
+                sync: {
+                  batch: value.sync.batch,
+                  targetDate: value.sync.targetDate,
+                  summary: value.sync.summary,
+                  nextCursor: value.sync.nextCursor,
+                  complete: value.sync.complete,
+                  lastSucceededDate: value.sync.lastSucceededDate,
+                  errorCode:
+                    value.sync.days.find((day) => day.status === "failed")
+                      ?.errorCode ?? null,
+                },
+              };
       const result =
         recovery.status === "skipped"
-          ? { status: "skipped" as const, reason: recovery.reason }
+          ? {
+              status: "skipped" as const,
+              reason: recovery.reason,
+              wellness: summarize(wellnessRecovery),
+            }
           : {
               status: "completed" as const,
               sync: {
@@ -74,10 +111,19 @@ export function createGarminRecoveryCronHandler(
                   recovery.sync.days.find((day) => day.status === "failed")
                     ?.errorCode ?? null,
               },
+              wellness: summarize(wellnessRecovery),
             };
       if (result.status === "completed" && result.sync.errorCode !== null) {
         result.sync.errorCode = garminProviderErrorCodeSchema.parse(
           result.sync.errorCode,
+        );
+      }
+      if (
+        result.wellness?.status === "completed" &&
+        result.wellness.sync.errorCode !== null
+      ) {
+        result.wellness.sync.errorCode = garminProviderErrorCodeSchema.parse(
+          result.wellness.sync.errorCode,
         );
       }
       return Response.json(

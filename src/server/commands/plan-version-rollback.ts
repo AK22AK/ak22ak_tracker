@@ -166,8 +166,8 @@ export function createNeonPlanVersionRollbackStore(
         analysisJobId: requiredAuditText(row.analysisJobId, "analysis_job_id"),
         model: requiredAuditText(row.model, "model"),
         contextVersion:
-          row.contextVersion === "1"
-            ? "1"
+          row.contextVersion === "1" || row.contextVersion === "2"
+            ? row.contextVersion
             : (() => {
                 throw new Error("plan_change_context_version_invalid");
               })(),

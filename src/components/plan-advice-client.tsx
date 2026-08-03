@@ -9,6 +9,7 @@ import { deepSeekModelLabel } from "@/client/deepseek-model";
 import {
   decidePlanChange,
   fetchPlanAdvice,
+  fetchPlanAdviceContext,
   requestPlanAdvice,
   rollbackPlanVersion,
 } from "@/client/tracker-api";
@@ -73,15 +74,24 @@ export function PlanAdviceClient() {
   const [rollbackIntent, setRollbackIntent] = useState(false);
   const [rollbackError, setRollbackError] = useState<string | null>(null);
   const pendingRollback = useRef<PendingClientCommand | null>(null);
+  const [showContextPreview, setShowContextPreview] = useState(false);
   const query = useQuery({
     queryKey: trackerQueryKeys.planAdvice(trackerKey),
     queryFn: ({ signal }) => fetchPlanAdvice(trackerKey, signal),
     staleTime: 30_000,
     refetchOnMount: "always",
   });
+  const contextQuery = useQuery({
+    queryKey: trackerQueryKeys.planAdviceContext(trackerKey),
+    queryFn: ({ signal }) => fetchPlanAdviceContext(trackerKey, signal),
+    enabled: false,
+    staleTime: 0,
+  });
   const mutation = useMutation({
-    mutationFn: (commandId: string) => requestPlanAdvice(trackerKey, commandId),
+    mutationFn: (input: { commandId: string; previewHash: string }) =>
+      requestPlanAdvice(trackerKey, input.commandId, input.previewHash),
     onSuccess: (data) => {
+      setShowContextPreview(false);
       queryClient.setQueryData(trackerQueryKeys.planAdvice(trackerKey), data);
     },
   });
@@ -185,7 +195,16 @@ export function PlanAdviceClient() {
     mutation.isPending || (job?.status === "running" && !runningExpired);
 
   const start = () => {
-    mutation.mutate(retryId ?? globalThis.crypto.randomUUID());
+    setShowContextPreview(true);
+    void contextQuery.refetch();
+  };
+
+  const confirmAnalysis = () => {
+    if (!contextQuery.data || mutation.isPending) return;
+    mutation.mutate({
+      commandId: retryId ?? globalThis.crypto.randomUUID(),
+      previewHash: contextQuery.data.previewHash,
+    });
   };
 
   const proposal = job?.proposal ?? null;
@@ -270,6 +289,88 @@ export function PlanAdviceClient() {
           </p>
         ) : null}
       </section>
+
+      {showContextPreview ? (
+        <section
+          className="surface-card plan-advice-context-preview"
+          aria-labelledby="analysis-context-title"
+        >
+          <h2 id="analysis-context-title">本次分析上下文</h2>
+          {contextQuery.isPending ? (
+            <p role="status">正在整理将要使用的记录…</p>
+          ) : contextQuery.data ? (
+            <>
+              <p>
+                日期范围：{contextQuery.data.range.from} 至{" "}
+                {contextQuery.data.range.through}；当前计划第{" "}
+                {contextQuery.data.plan.version} 版，共{" "}
+                {contextQuery.data.plan.taskCount} 项安排。
+              </p>
+              <ul>
+                <li>
+                  身体反馈 {contextQuery.data.feedback.count} 次，覆盖{" "}
+                  {contextQuery.data.feedback.days} 天
+                </li>
+                <li>
+                  已确认计划训练 {contextQuery.data.confirmedTrainingCount} 项
+                </li>
+                <li>
+                  Garmin 活动{" "}
+                  {contextQuery.data.externalTraining.garminActivities}{" "}
+                  条；训记训练{" "}
+                  {contextQuery.data.externalTraining.xunjiTrainings} 条
+                </li>
+                <li>
+                  睡眠记录 {contextQuery.data.recovery.sleepDays} 天；步数记录{" "}
+                  {contextQuery.data.recovery.stepsDays} 天
+                </li>
+                <li>
+                  可能重复 {contextQuery.data.externalTraining.overlapGroups}{" "}
+                  组；未确认关联{" "}
+                  {contextQuery.data.externalTraining.unconfirmed} 条
+                </li>
+              </ul>
+              {contextQuery.data.feedback.observations.length ? (
+                <div className="plan-advice-observations">
+                  <h3>你已保存的补充说明</h3>
+                  <ul>
+                    {contextQuery.data.feedback.observations.map(
+                      (observation, index) => (
+                        <li key={`${observation.localDate}-${index}`}>
+                          {observation.localDate}：{observation.text}
+                        </li>
+                      ),
+                    )}
+                  </ul>
+                </div>
+              ) : null}
+              <p className="integration-action-help">
+                确认后才会发送以上结构化内容并生成建议。外部记录不代表计划任务已经完成。
+              </p>
+              <div className="button-row">
+                <button
+                  className="primary-button"
+                  type="button"
+                  disabled={mutation.isPending}
+                  onClick={confirmAnalysis}
+                >
+                  {mutation.isPending ? "正在分析…" : "确认并生成建议"}
+                </button>
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={mutation.isPending}
+                  onClick={() => setShowContextPreview(false)}
+                >
+                  稍后
+                </button>
+              </div>
+            </>
+          ) : (
+            <p role="alert">暂时无法整理分析内容，请稍后再试。</p>
+          )}
+        </section>
+      ) : null}
 
       {query.isPending ? (
         <section className="surface-card page-section-loading" role="status">
@@ -528,7 +629,7 @@ export function PlanAdviceClient() {
                 className="secondary-button"
                 type="button"
                 disabled={mutation.isPending || unavailable}
-                onClick={() => mutation.mutate(globalThis.crypto.randomUUID())}
+                onClick={start}
               >
                 重新分析
               </button>
@@ -539,7 +640,7 @@ export function PlanAdviceClient() {
               className="secondary-button"
               type="button"
               disabled={mutation.isPending || unavailable}
-              onClick={() => mutation.mutate(globalThis.crypto.randomUUID())}
+              onClick={start}
             >
               重新分析
             </button>

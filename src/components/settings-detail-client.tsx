@@ -15,6 +15,7 @@ import { integrationQueryKeys } from "@/client/query-keys";
 import { DeepSeekIntegrationCard } from "./deepseek-integration-card";
 import { GarminIntegrationCard } from "./garmin-integration-card";
 import { GitHubMirrorCard } from "./github-mirror-card";
+import { HistorySyncCard } from "./history-sync-card";
 import { IntegrationCard } from "./integration-card";
 import { LocalDataCard } from "./local-data-card";
 import { ShellViewportDiagnosticsPanel } from "./shell-viewport-diagnostics-panel";
@@ -28,11 +29,18 @@ const xunjiDefinition = {
 } as const;
 
 export type SettingsDetail =
-  "garmin" | "xunji" | "deepseek" | "backup" | "storage" | "account";
+  | "garmin"
+  | "xunji"
+  | "history"
+  | "deepseek"
+  | "backup"
+  | "storage"
+  | "account";
 
 const detailTitles: Record<SettingsDetail, string> = {
   garmin: "Garmin",
   xunji: "训记",
+  history: "历史数据补录",
   deepseek: "DeepSeek",
   backup: "GitHub 数据备份",
   storage: "本机数据",
@@ -181,6 +189,8 @@ export function SettingsDetailClient({ detail }: { detail: SettingsDetail }) {
   let content: React.ReactNode;
   if (detail === "garmin") content = <GarminDetail />;
   else if (detail === "xunji") content = <XunjiDetail />;
+  else if (detail === "history")
+    content = <HistorySyncCard trackerKey={trackerKey} />;
   else if (detail === "deepseek") content = <DeepSeekDetail />;
   else if (detail === "backup") content = <BackupDetail />;
   else if (detail === "storage") content = <LocalDataCard />;

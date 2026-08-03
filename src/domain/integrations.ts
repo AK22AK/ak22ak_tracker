@@ -62,3 +62,79 @@ export const integrationCatchUpResultSchema = z.object({
 export type IntegrationCatchUpResult = z.infer<
   typeof integrationCatchUpResultSchema
 >;
+
+export const providerHistoryScopeSchema = z.enum([
+  "garmin_activity_history",
+  "garmin_wellness_history",
+  "xunji_training_history",
+]);
+
+export const providerHistoryDaysSchema = z.union([
+  z.literal(7),
+  z.literal(14),
+  z.literal(30),
+]);
+
+export const providerHistorySyncInputSchema = z
+  .object({ days: providerHistoryDaysSchema })
+  .strict();
+
+export const providerHistorySyncResultSchema = z
+  .object({
+    provider: z.enum(["garmin", "xunji"]),
+    scope: providerHistoryScopeSchema,
+    range: z
+      .object({
+        from: localDateSchema,
+        through: localDateSchema,
+        days: providerHistoryDaysSchema,
+      })
+      .strict(),
+    batch: z
+      .object({ from: localDateSchema, to: localDateSchema })
+      .strict()
+      .nullable(),
+    days: z.array(
+      z.discriminatedUnion("status", [
+        successfulSyncDaySchema,
+        failedSyncDaySchema,
+      ]),
+    ),
+    summary: z
+      .object({
+        succeeded: z.number().int().nonnegative(),
+        empty: z.number().int().nonnegative(),
+        failed: z.number().int().nonnegative(),
+        created: z.number().int().nonnegative(),
+        changed: z.number().int().nonnegative(),
+        unchanged: z.number().int().nonnegative(),
+      })
+      .strict(),
+    nextCursor: localDateSchema.nullable(),
+    complete: z.boolean(),
+  })
+  .strict();
+
+export type ProviderHistoryScope = z.infer<typeof providerHistoryScopeSchema>;
+export type ProviderHistoryDays = z.infer<typeof providerHistoryDaysSchema>;
+export type ProviderHistorySyncResult = z.infer<
+  typeof providerHistorySyncResultSchema
+>;
+
+export const integrationRecoveryResponseSchema = z.discriminatedUnion(
+  "status",
+  [
+    z
+      .object({
+        status: z.literal("skipped"),
+        reason: z.enum(["not_connected", "not_due", "in_progress"]),
+      })
+      .strict(),
+    z
+      .object({
+        status: z.literal("completed"),
+        sync: integrationCatchUpResultSchema,
+      })
+      .strict(),
+  ],
+);

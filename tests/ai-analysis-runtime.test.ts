@@ -161,6 +161,54 @@ function configured() {
 }
 
 describe("AI analysis runtime", () => {
+  it("previews the exact context and rejects a changed preview before creating a job", async () => {
+    const order: string[] = [];
+    const memory = memoryStore(order);
+    const context = prepared();
+    context.contextVersion = "2";
+    context.contextHash = "b".repeat(64);
+    context.modelContext.recentFeedback = [
+      {
+        localDate: "2026-07-24",
+        timing: "morning",
+        leftPain: 1,
+        rightPain: 2,
+        swelling: "none",
+        stiffness: false,
+        mechanicalSymptoms: false,
+        weightBearingIssue: false,
+        localizedBonePain: false,
+        nightOrRestPain: false,
+        safetyLevel: "green",
+        userObservation: "匿名观察",
+      },
+    ];
+    context.modelContext.observedTrainingEvidence = [];
+    context.modelContext.evidenceCoverage = [];
+    const runtime = createAiAnalysisRuntime({
+      store: memory.store,
+      prepareContext: async () => context,
+      readConfiguration: async () => ({ status: "not_configured" }),
+    });
+
+    const preview = await runtime.preview("knee-rehab");
+    expect(preview).toMatchObject({
+      previewHash: "b".repeat(64),
+      feedback: {
+        count: 1,
+        observations: [{ localDate: "2026-07-24", text: "匿名观察" }],
+      },
+    });
+    await expect(
+      runtime.request({
+        trackerKey: "knee-rehab",
+        commandId: jobId,
+        previewHash: "c".repeat(64),
+      }),
+    ).rejects.toThrow("analysis_context_changed");
+    expect(order).not.toContain("create-job");
+  });
+
   it("uses the tracker private credential resolver and marks an authentication failure", async () => {
     const memory = memoryStore([]);
     const readConfiguration = vi.fn(async () => configured());

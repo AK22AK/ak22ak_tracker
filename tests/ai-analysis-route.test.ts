@@ -9,6 +9,7 @@ const { getAuthorizedSession, load, request } = vi.hoisted(() => ({
 vi.mock("@/server/auth/session", () => ({ getAuthorizedSession }));
 vi.mock("@/server/integrations/ai/runtime", () => ({
   aiAnalysisRuntime: { load, request },
+  AiAnalysisPreviewChangedError: class AiAnalysisPreviewChangedError extends Error {},
 }));
 
 import { GET, POST } from "@/app/api/trackers/[trackerKey]/ai-analysis/route";
@@ -63,10 +64,11 @@ describe("AI analysis API", () => {
 
   it("passes only the authenticated tracker and validated command", async () => {
     const commandId = "019c1000-0000-7000-8000-000000000301";
+    const previewHash = "a".repeat(64);
     const response = await POST(
       new Request("https://anonymous.invalid/api/ai-analysis", {
         method: "POST",
-        body: JSON.stringify({ commandId }),
+        body: JSON.stringify({ commandId, previewHash }),
       }),
       { params: Promise.resolve({ trackerKey: "knee-rehab" }) },
     );
@@ -74,6 +76,7 @@ describe("AI analysis API", () => {
     expect(request).toHaveBeenCalledWith({
       trackerKey: "knee-rehab",
       commandId,
+      previewHash,
     });
   });
 });

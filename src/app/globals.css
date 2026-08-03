@@ -175,6 +175,27 @@ a {
   margin-top: 1.2rem;
 }
 
+.history-sync-controls select {
+  min-height: 44px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.history-sync-progress {
+  display: grid;
+  gap: 0.65rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history-sync-progress li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.4rem 0.75rem;
+}
+
 .integration-form label {
   font-size: 0.82rem;
   font-weight: 700;

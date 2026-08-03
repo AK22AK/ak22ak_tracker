@@ -38,15 +38,82 @@ export const aiAnalysisErrorCodeSchema = z.enum([
   "context_changed",
 ]);
 
+export const aiContextVersionSchema = z.enum(["1", "2"]);
+
 export const requestPlanAnalysisSchema = z
-  .object({ commandId: z.uuid() })
+  .object({
+    commandId: z.uuid(),
+    previewHash: z.string().regex(/^[0-9a-f]{64}$/),
+  })
+  .strict();
+
+const evidenceCoverageSummarySchema = z
+  .object({
+    records: z.number().int().nonnegative(),
+    empty: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+    unknown: z.number().int().nonnegative(),
+  })
+  .strict();
+
+export const aiAnalysisContextPreviewSchema = z
+  .object({
+    schemaVersion: z.literal(schemaVersion),
+    previewHash: z.string().regex(/^[0-9a-f]{64}$/),
+    range: z
+      .object({ from: localDateSchema, through: localDateSchema })
+      .strict(),
+    plan: z
+      .object({
+        version: z.number().int().positive(),
+        effectiveFrom: localDateSchema,
+        taskCount: z.number().int().nonnegative(),
+      })
+      .strict(),
+    feedback: z
+      .object({
+        count: z.number().int().nonnegative(),
+        days: z.number().int().nonnegative(),
+        observations: z
+          .array(
+            z
+              .object({ localDate: localDateSchema, text: z.string().max(500) })
+              .strict(),
+          )
+          .max(14),
+      })
+      .strict(),
+    confirmedTrainingCount: z.number().int().nonnegative(),
+    externalTraining: z
+      .object({
+        garminActivities: z.number().int().nonnegative(),
+        xunjiTrainings: z.number().int().nonnegative(),
+        unconfirmed: z.number().int().nonnegative(),
+        overlapGroups: z.number().int().nonnegative(),
+      })
+      .strict(),
+    recovery: z
+      .object({
+        sleepDays: z.number().int().nonnegative(),
+        stepsDays: z.number().int().nonnegative(),
+      })
+      .strict(),
+    coverage: z
+      .object({
+        garminActivity: evidenceCoverageSummarySchema,
+        garminWellness: evidenceCoverageSummarySchema,
+        xunjiTraining: evidenceCoverageSummarySchema,
+      })
+      .strict(),
+    safetyLevel: z.enum(["green", "yellow", "red"]),
+  })
   .strict();
 
 export const aiProposalAuditSchema = z
   .object({
     analysisJobId: z.uuid(),
     model: z.string().min(1).max(120),
-    contextVersion: z.literal("1"),
+    contextVersion: aiContextVersionSchema,
     contextHash: z.string().regex(/^[0-9a-f]{64}$/),
     contextFrom: localDateSchema,
     contextThrough: localDateSchema,
@@ -201,6 +268,9 @@ export const planVersionRollbackResultSchema = z
   .strict();
 
 export type AiConfigurationStatus = z.infer<typeof aiConfigurationStatusSchema>;
+export type AiAnalysisContextPreview = z.infer<
+  typeof aiAnalysisContextPreviewSchema
+>;
 export type AiAnalysisErrorCode = z.infer<typeof aiAnalysisErrorCodeSchema>;
 export type AiAnalysisJobDto = z.infer<typeof aiAnalysisJobDtoSchema>;
 export type AiAnalysisPageDto = z.infer<typeof aiAnalysisPageDtoSchema>;

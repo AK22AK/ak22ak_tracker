@@ -5,6 +5,10 @@ import { useEffect } from "react";
 
 import { integrationQueryKeys, trackerQueryKeys } from "@/client/query-keys";
 import {
+  integrationRecoveryResponseSchema,
+  integrationStatusSchema,
+} from "@/domain/integrations";
+import {
   garminActivityRecoveryResponseSchema,
   garminConnectionStatusSchema,
   garminWellnessRecoveryResponseSchema,
@@ -21,7 +25,9 @@ export function GarminRecovery({ trackerKey }: { trackerKey: string }) {
   useEffect(() => {
     let lastAttemptAt = Number.NEGATIVE_INFINITY;
     let inFlight = false;
-    let lifecycleBlocked = false;
+    let sessionBlocked = false;
+    let garminBlocked = false;
+    let xunjiBlocked = false;
     let disposed = false;
     let busyRetry: ReturnType<typeof setTimeout> | null = null;
     const baseUrl = `/api/trackers/${encodeURIComponent(trackerKey)}/integrations/garmin`;
@@ -30,7 +36,7 @@ export function GarminRecovery({ trackerKey }: { trackerKey: string }) {
       response: Response,
     ): Promise<ActivityOutcome> => {
       if (response.status === 401 || response.status === 403) {
-        lifecycleBlocked = true;
+        sessionBlocked = true;
         return "blocked";
       }
       if (response.status === 409) return "busy";
@@ -61,7 +67,7 @@ export function GarminRecovery({ trackerKey }: { trackerKey: string }) {
               day.status === "failed" && day.errorCode === "authentication",
           ));
       if (authenticationFailed) {
-        lifecycleBlocked = true;
+        garminBlocked = true;
         return "blocked";
       }
       if (parsed.data.status !== "completed") return "continue";
@@ -95,7 +101,7 @@ export function GarminRecovery({ trackerKey }: { trackerKey: string }) {
 
     const applyWellnessResponse = async (response: Response) => {
       if (response.status === 401 || response.status === 403) {
-        lifecycleBlocked = true;
+        sessionBlocked = true;
         return;
       }
       if (!response.ok) return;
@@ -117,7 +123,7 @@ export function GarminRecovery({ trackerKey }: { trackerKey: string }) {
               day.status === "failed" && day.errorCode === "authentication",
           ));
       if (authenticationFailed) {
-        lifecycleBlocked = true;
+        garminBlocked = true;
         queryClient.setQueryData(
           integrationQueryKeys.providerStatus(trackerKey, "garmin"),
           (current: unknown) => {
@@ -151,21 +157,102 @@ export function GarminRecovery({ trackerKey }: { trackerKey: string }) {
       ).catch(() => undefined);
     };
 
-    const runSequence = async (allowBusyRetry: boolean) => {
-      let activityOutcome: ActivityOutcome = "continue";
+    const recoverXunji = async () => {
+      if (xunjiBlocked || sessionBlocked) return;
       try {
-        activityOutcome = await applyActivityResponse(
-          await fetch(`${baseUrl}/recovery`, { method: "POST" }),
+        const response = await fetch(
+          `/api/trackers/${encodeURIComponent(trackerKey)}/integrations/xunji/recovery`,
+          { method: "POST" },
         );
+        if (response.status === 401 || response.status === 403) {
+          sessionBlocked = true;
+          return;
+        }
+        if (!response.ok) return;
+        const parsed = integrationRecoveryResponseSchema.safeParse(
+          await response.json(),
+        );
+        if (!parsed.success || disposed) return;
+        const recovery = parsed.data;
+        if (recovery.status !== "completed") return;
+        const authenticationFailed = recovery.sync.days.some(
+          (day) =>
+            day.status === "failed" && day.errorCode === "authentication",
+        );
+        if (authenticationFailed) xunjiBlocked = true;
+        queryClient.setQueryData(
+          integrationQueryKeys.providerStatus(trackerKey, "xunji"),
+          (current: unknown) => {
+            const status = integrationStatusSchema.safeParse(current);
+            if (!status.success) return current;
+            const failed = recovery.sync.days.find(
+              (day) => day.status === "failed",
+            );
+            return {
+              ...status.data,
+              sync: {
+                ...status.data.sync,
+                status: failed
+                  ? ("failed" as const)
+                  : recovery.sync.complete
+                    ? ("succeeded" as const)
+                    : ("running" as const),
+                lastSucceededDate:
+                  recovery.sync.lastSucceededDate ??
+                  status.data.sync.lastSucceededDate,
+                nextCursor: recovery.sync.nextCursor,
+                lastErrorCode: failed?.errorCode ?? null,
+              },
+            };
+          },
+        );
+        const affectedDates = recovery.sync.days
+          .filter((day) => day.status === "succeeded")
+          .map((day) => day.date);
+        const months = [
+          ...new Set(affectedDates.map((date) => date.slice(0, 7))),
+        ];
+        void Promise.all([
+          ...affectedDates.flatMap((date) => [
+            queryClient.invalidateQueries({
+              queryKey: trackerQueryKeys.today(trackerKey, date),
+              exact: true,
+            }),
+            queryClient.invalidateQueries({
+              queryKey: trackerQueryKeys.day(trackerKey, date),
+              exact: true,
+            }),
+          ]),
+          ...months.map((month) =>
+            queryClient.invalidateQueries({
+              queryKey: trackerQueryKeys.calendar(trackerKey, month),
+              exact: true,
+            }),
+          ),
+        ]).catch(() => undefined);
       } catch {
-        activityOutcome = "continue";
+        // Xunji recovery is isolated from the protected App Shell.
       }
-      if (activityOutcome === "blocked") return;
+    };
+
+    const runSequence = async (allowBusyRetry: boolean) => {
+      let activityOutcome: ActivityOutcome = garminBlocked
+        ? "blocked"
+        : "continue";
+      if (!garminBlocked) {
+        try {
+          activityOutcome = await applyActivityResponse(
+            await fetch(`${baseUrl}/recovery`, { method: "POST" }),
+          );
+        } catch {
+          activityOutcome = "continue";
+        }
+      }
       if (activityOutcome === "busy") {
         if (allowBusyRetry && busyRetry === null) {
           busyRetry = setTimeout(() => {
             busyRetry = null;
-            if (disposed || lifecycleBlocked || !navigator.onLine || inFlight) {
+            if (disposed || sessionBlocked || !navigator.onLine || inFlight) {
               return;
             }
             lastAttemptAt = Date.now();
@@ -175,23 +262,27 @@ export function GarminRecovery({ trackerKey }: { trackerKey: string }) {
             });
           }, busyRetryDelayMs);
         }
+        await recoverXunji();
         return;
       }
 
-      try {
-        await applyWellnessResponse(
-          await fetch(`${baseUrl}/wellness/recovery`, { method: "POST" }),
-        );
-      } catch {
-        // A temporary wellness failure is isolated from the protected App Shell.
+      if (!garminBlocked && activityOutcome !== "blocked") {
+        try {
+          await applyWellnessResponse(
+            await fetch(`${baseUrl}/wellness/recovery`, { method: "POST" }),
+          );
+        } catch {
+          // A temporary wellness failure is isolated from the protected App Shell.
+        }
       }
+      await recoverXunji();
     };
 
     const recover = () => {
       const currentTime = Date.now();
       if (
         !navigator.onLine ||
-        lifecycleBlocked ||
+        sessionBlocked ||
         inFlight ||
         currentTime - lastAttemptAt < recoveryThrottleMs
       ) {

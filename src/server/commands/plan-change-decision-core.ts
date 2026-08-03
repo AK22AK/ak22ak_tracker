@@ -28,7 +28,7 @@ export type PlanChangeDecisionRecord = {
   decision: "accepted" | "rejected";
   basePlanVersionId: string;
   timelineHeadPlanVersionId: string;
-  contextVersion: "1";
+  contextVersion: "1" | "2";
   contextHash: string;
   contextRevision: number;
   safetyLevel: "green" | "yellow" | "red";
@@ -46,7 +46,7 @@ export type PlanChangeProposalRecord = {
   analysisJobId: string;
   model: string;
   status: PlanChangeProposal["status"];
-  contextVersion: "1";
+  contextVersion: "1" | "2";
   contextHash: string;
   contextRevision: number;
   contextFrom: string;

@@ -38,6 +38,7 @@ import {
   type CreateEvaluationSessionCommand,
 } from "@/domain/evaluation";
 import {
+  aiAnalysisContextPreviewSchema,
   aiAnalysisPageDtoSchema,
   planChangeDecisionCommandSchema,
   planChangeDecisionResultSchema,
@@ -206,7 +207,23 @@ export async function fetchPlanAdvice(
   );
 }
 
-export async function requestPlanAdvice(trackerKey: string, commandId: string) {
+export async function fetchPlanAdviceContext(
+  trackerKey: string,
+  signal?: AbortSignal,
+) {
+  return aiAnalysisContextPreviewSchema.parse(
+    await getJson(
+      `/api/trackers/${encodeURIComponent(trackerKey)}/ai-analysis/context-preview`,
+      signal,
+    ),
+  );
+}
+
+export async function requestPlanAdvice(
+  trackerKey: string,
+  commandId: string,
+  previewHash: string,
+) {
   const response = await fetch(
     `/api/trackers/${encodeURIComponent(trackerKey)}/ai-analysis`,
     {
@@ -215,7 +232,9 @@ export async function requestPlanAdvice(trackerKey: string, commandId: string) {
         Accept: "application/json",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(requestPlanAnalysisSchema.parse({ commandId })),
+      body: JSON.stringify(
+        requestPlanAnalysisSchema.parse({ commandId, previewHash }),
+      ),
     },
   );
   if (!response.ok) throw new Error(`request_failed_${response.status}`);

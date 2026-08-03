@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
 
 import { buildRecoveryEvidence } from "@/domain/ai-recovery";
 import { localDateInTimeZone } from "@/domain/planning-time";
@@ -9,7 +9,9 @@ import { kneeCheckInEventPayloadSchema } from "@/modules/knee-rehab/check-in";
 import { getDatabase } from "@/server/db/client";
 import {
   events,
+  externalRecordLinks,
   externalRecords,
+  integrationDateSyncState,
   planVersions,
   taskInstances,
   trackers,
@@ -23,6 +25,7 @@ import type {
   PlanAdjustmentSafetyLevel,
   PlanAdjustmentTraining,
 } from "./contracts";
+import { projectObservedTrainingEvidence } from "./external-evidence";
 
 type Database = ReturnType<typeof getDatabase>;
 
@@ -66,7 +69,7 @@ export type PreparedAiAnalysisContext = {
   basePlan: ReturnType<typeof planVersionSchema.parse>;
   timelineHeadPlan: ReturnType<typeof planVersionSchema.parse>;
   modelContext: PlanAdjustmentContext;
-  contextVersion: "1";
+  contextVersion: "1" | "2";
   contextHash: string;
   contextRevision: number;
   contextFrom: string;
@@ -97,80 +100,140 @@ export async function prepareAiAnalysisContext({
 
   const contextThrough = localDateInTimeZone(now, tracker.planningTimeZone);
   const contextFrom = shiftDate(contextThrough, -13);
-  const [baseRow, headRow, feedbackRows, trainingRows, wellnessRows] =
-    await Promise.all([
-      database
-        .select({ id: planVersions.id, document: planVersions.document })
-        .from(planVersions)
-        .where(
-          and(
-            eq(planVersions.trackerId, tracker.id),
-            lte(planVersions.effectiveFrom, contextThrough),
-          ),
-        )
-        .orderBy(desc(planVersions.effectiveFrom), desc(planVersions.version))
-        .limit(1),
-      database
-        .select({ id: planVersions.id, document: planVersions.document })
-        .from(planVersions)
-        .where(eq(planVersions.trackerId, tracker.id))
-        .orderBy(desc(planVersions.version))
-        .limit(1),
-      database
-        .select({
-          localDate: events.localDate,
-          occurredAt: events.occurredAt,
-          document: events.document,
-        })
-        .from(events)
-        .where(
-          and(
-            eq(events.trackerId, tracker.id),
-            eq(events.kind, "symptom_check_in"),
-            gte(events.localDate, contextFrom),
-            lte(events.localDate, contextThrough),
-          ),
-        )
-        .orderBy(asc(events.occurredAt)),
-      database
-        .select({
-          taskDefinitionId: taskInstances.taskDefinitionId,
-          localDate: taskInstances.scheduledOn,
-          actual: taskInstances.actualData,
-          planDocument: planVersions.document,
-        })
-        .from(taskInstances)
-        .innerJoin(
-          planVersions,
-          eq(taskInstances.planVersionId, planVersions.id),
-        )
-        .where(
-          and(
-            eq(taskInstances.trackerId, tracker.id),
-            eq(taskInstances.status, "completed"),
-            eq(taskInstances.confirmedByUser, true),
-            gte(taskInstances.scheduledOn, contextFrom),
-            lte(taskInstances.scheduledOn, contextThrough),
-          ),
-        )
-        .orderBy(asc(taskInstances.scheduledOn)),
-      database
-        .select({
-          localDate: externalRecords.localDate,
-          document: externalRecords.document,
-        })
-        .from(externalRecords)
-        .where(
-          and(
-            eq(externalRecords.trackerId, tracker.id),
-            eq(externalRecords.provider, "garmin"),
-            eq(externalRecords.kind, "daily_wellness"),
-            gte(externalRecords.localDate, contextFrom),
-            lte(externalRecords.localDate, contextThrough),
-          ),
-        )
-        .orderBy(asc(externalRecords.localDate)),
-    ]);
+  const [
+    baseRow,
+    headRow,
+    feedbackRows,
+    trainingRows,
+    wellnessRows,
+    externalTrainingRows,
+    coverageRows,
+  ] = await Promise.all([
+    database
+      .select({ id: planVersions.id, document: planVersions.document })
+      .from(planVersions)
+      .where(
+        and(
+          eq(planVersions.trackerId, tracker.id),
+          lte(planVersions.effectiveFrom, contextThrough),
+        ),
+      )
+      .orderBy(desc(planVersions.effectiveFrom), desc(planVersions.version))
+      .limit(1),
+    database
+      .select({ id: planVersions.id, document: planVersions.document })
+      .from(planVersions)
+      .where(eq(planVersions.trackerId, tracker.id))
+      .orderBy(desc(planVersions.version))
+      .limit(1),
+    database
+      .select({
+        localDate: events.localDate,
+        occurredAt: events.occurredAt,
+        document: events.document,
+      })
+      .from(events)
+      .where(
+        and(
+          eq(events.trackerId, tracker.id),
+          eq(events.kind, "symptom_check_in"),
+          gte(events.localDate, contextFrom),
+          lte(events.localDate, contextThrough),
+        ),
+      )
+      .orderBy(asc(events.occurredAt)),
+    database
+      .select({
+        taskDefinitionId: taskInstances.taskDefinitionId,
+        localDate: taskInstances.scheduledOn,
+        actual: taskInstances.actualData,
+        planDocument: planVersions.document,
+      })
+      .from(taskInstances)
+      .innerJoin(planVersions, eq(taskInstances.planVersionId, planVersions.id))
+      .where(
+        and(
+          eq(taskInstances.trackerId, tracker.id),
+          eq(taskInstances.status, "completed"),
+          eq(taskInstances.confirmedByUser, true),
+          gte(taskInstances.scheduledOn, contextFrom),
+          lte(taskInstances.scheduledOn, contextThrough),
+        ),
+      )
+      .orderBy(asc(taskInstances.scheduledOn)),
+    database
+      .select({
+        localDate: externalRecords.localDate,
+        document: externalRecords.document,
+      })
+      .from(externalRecords)
+      .where(
+        and(
+          eq(externalRecords.trackerId, tracker.id),
+          eq(externalRecords.provider, "garmin"),
+          eq(externalRecords.kind, "daily_wellness"),
+          gte(externalRecords.localDate, contextFrom),
+          lte(externalRecords.localDate, contextThrough),
+        ),
+      )
+      .orderBy(asc(externalRecords.localDate)),
+    database
+      .select({
+        id: externalRecords.id,
+        provider: externalRecords.provider,
+        kind: externalRecords.kind,
+        localDate: externalRecords.localDate,
+        occurredAt: externalRecords.occurredAt,
+        sourceVersion: externalRecords.sourceVersion,
+        document: externalRecords.document,
+        linkStatus: externalRecordLinks.status,
+        linkSourceVersion: externalRecordLinks.sourceVersion,
+        linkNeedsReview: externalRecordLinks.needsReview,
+        taskDefinitionId: taskInstances.taskDefinitionId,
+      })
+      .from(externalRecords)
+      .leftJoin(
+        externalRecordLinks,
+        eq(externalRecordLinks.externalRecordId, externalRecords.id),
+      )
+      .leftJoin(
+        taskInstances,
+        eq(externalRecordLinks.taskInstanceId, taskInstances.id),
+      )
+      .where(
+        and(
+          eq(externalRecords.trackerId, tracker.id),
+          inArray(externalRecords.kind, ["activity", "strength_training"]),
+          gte(externalRecords.localDate, contextFrom),
+          lte(externalRecords.localDate, contextThrough),
+        ),
+      )
+      .orderBy(asc(externalRecords.occurredAt)),
+    database
+      .select({
+        provider: integrationDateSyncState.provider,
+        localDate: integrationDateSyncState.localDate,
+        status: integrationDateSyncState.status,
+        recordCount: integrationDateSyncState.recordCount,
+        updatedAt: integrationDateSyncState.updatedAt,
+      })
+      .from(integrationDateSyncState)
+      .where(
+        and(
+          eq(integrationDateSyncState.trackerId, tracker.id),
+          inArray(integrationDateSyncState.provider, [
+            "garmin",
+            "garmin_wellness",
+            "xunji",
+            "garmin_activity_history",
+            "garmin_wellness_history",
+            "xunji_training_history",
+          ]),
+          gte(integrationDateSyncState.localDate, contextFrom),
+          lte(integrationDateSyncState.localDate, contextThrough),
+        ),
+      ),
+  ]);
   const base = baseRow[0];
   const head = headRow[0];
   if (!base || !head) throw new AiAnalysisPlanNotFoundError();
@@ -185,11 +248,18 @@ export async function prepareAiAnalysisContext({
     notes: parsedPlan.notes,
   };
 
+  let observationCharacters = 0;
   const recentFeedback = feedbackRows.flatMap((row) => {
     const parsed = kneeCheckInEventPayloadSchema.safeParse(
       row.document.payload,
     );
     if (!parsed.success) return [];
+    const note = parsed.data.note.trim();
+    const available = Math.max(0, 2_000 - observationCharacters);
+    const userObservation = note
+      ? note.slice(0, Math.min(500, available))
+      : null;
+    observationCharacters += userObservation?.length ?? 0;
     return [
       {
         localDate: row.localDate,
@@ -203,6 +273,7 @@ export async function prepareAiAnalysisContext({
         localizedBonePain: parsed.data.localizedBonePain,
         nightOrRestPain: parsed.data.nightOrRestPain,
         safetyLevel: parsed.data.safetyLevel,
+        userObservation,
       },
     ];
   });
@@ -243,6 +314,67 @@ export async function prepareAiAnalysisContext({
       ];
     }),
   });
+  const observedTrainingEvidence =
+    projectObservedTrainingEvidence(externalTrainingRows);
+  const coverageKind = (provider: string) => {
+    if (provider === "garmin" || provider === "garmin_activity_history") {
+      return "garminActivity" as const;
+    }
+    if (
+      provider === "garmin_wellness" ||
+      provider === "garmin_wellness_history"
+    ) {
+      return "garminWellness" as const;
+    }
+    return "xunjiTraining" as const;
+  };
+  const coverage = new Map<
+    string,
+    {
+      localDate: string;
+      garminActivity: "records" | "empty" | "failed" | "unknown";
+      garminWellness: "records" | "empty" | "failed" | "unknown";
+      xunjiTraining: "records" | "empty" | "failed" | "unknown";
+      updated: Partial<
+        Record<"garminActivity" | "garminWellness" | "xunjiTraining", number>
+      >;
+    }
+  >();
+  for (
+    let date = contextFrom;
+    date <= contextThrough;
+    date = shiftDate(date, 1)
+  ) {
+    coverage.set(date, {
+      localDate: date,
+      garminActivity: "unknown",
+      garminWellness: "unknown",
+      xunjiTraining: "unknown",
+      updated: {},
+    });
+  }
+  for (const row of coverageRows) {
+    const item = coverage.get(row.localDate);
+    if (!item) continue;
+    const kind = coverageKind(row.provider);
+    const updated = row.updatedAt.valueOf();
+    if ((item.updated[kind] ?? Number.NEGATIVE_INFINITY) > updated) continue;
+    item.updated[kind] = updated;
+    item[kind] =
+      row.status === "failed"
+        ? "failed"
+        : row.status === "succeeded"
+          ? row.recordCount > 0
+            ? "records"
+            : "empty"
+          : "unknown";
+  }
+  const evidenceCoverage = [...coverage.values()].map((item) => ({
+    localDate: item.localDate,
+    garminActivity: item.garminActivity,
+    garminWellness: item.garminWellness,
+    xunjiTraining: item.xunjiTraining,
+  }));
   const safetyLevel = mostSevere(recentFeedback);
   const modelContext: PlanAdjustmentContext = {
     currentPlan,
@@ -251,6 +383,8 @@ export async function prepareAiAnalysisContext({
     range: { from: contextFrom, through: contextThrough },
     recentFeedback,
     confirmedTraining,
+    observedTrainingEvidence,
+    evidenceCoverage,
     recoveryEvidence,
     safetyLevel,
   };
@@ -262,7 +396,7 @@ export async function prepareAiAnalysisContext({
     basePlan: parsedPlan,
     timelineHeadPlan: parsedTimelineHead,
     modelContext,
-    contextVersion: "1",
+    contextVersion: "2",
     contextHash: contentHash(modelContext),
     contextRevision: tracker.aiContextRevision,
     contextFrom,

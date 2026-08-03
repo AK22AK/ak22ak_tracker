@@ -7,6 +7,7 @@ import {
   AiAnalysisTrackerNotFoundError,
 } from "@/server/integrations/ai/context";
 import { aiAnalysisRuntime } from "@/server/integrations/ai/runtime";
+import { AiAnalysisPreviewChangedError } from "@/server/integrations/ai/runtime";
 
 const jobIdSchema = z.uuid();
 
@@ -15,6 +16,9 @@ function knownError(error: unknown) {
     return Response.json({ error: error.message }, { status: 404 });
   }
   if (error instanceof AiAnalysisPlanNotFoundError) {
+    return Response.json({ error: error.message }, { status: 409 });
+  }
+  if (error instanceof AiAnalysisPreviewChangedError) {
     return Response.json({ error: error.message }, { status: 409 });
   }
   if (error instanceof ZodError) {
@@ -56,6 +60,7 @@ export async function POST(
       await aiAnalysisRuntime.request({
         trackerKey,
         commandId: input.commandId,
+        previewHash: input.previewHash,
       }),
       { headers: { "Cache-Control": "private, no-store" } },
     );

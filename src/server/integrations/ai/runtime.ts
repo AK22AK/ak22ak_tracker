@@ -2,6 +2,7 @@ import "server-only";
 
 import {
   aiAnalysisJobDtoSchema,
+  aiAnalysisContextPreviewSchema,
   aiAnalysisPageDtoSchema,
   type AiConfigurationStatus,
   type AiAnalysisErrorCode,
@@ -320,6 +321,70 @@ export function createAiAnalysisRuntime({
   }) => Promise<void>;
   now?: () => Date;
 } = {}) {
+  async function preview(trackerKey: string) {
+    const context = await prepareContext(trackerKey, now());
+    const evidence = context.modelContext.observedTrainingEvidence ?? [];
+    const coverage = context.modelContext.evidenceCoverage ?? [];
+    const coverageSummary = (
+      key: "garminActivity" | "garminWellness" | "xunjiTraining",
+    ) => ({
+      records: coverage.filter((item) => item[key] === "records").length,
+      empty: coverage.filter((item) => item[key] === "empty").length,
+      failed: coverage.filter((item) => item[key] === "failed").length,
+      unknown: coverage.filter((item) => item[key] === "unknown").length,
+    });
+    return aiAnalysisContextPreviewSchema.parse({
+      schemaVersion,
+      previewHash: context.contextHash,
+      range: { from: context.contextFrom, through: context.contextThrough },
+      plan: {
+        version: context.basePlan.version,
+        effectiveFrom: context.basePlan.effectiveFrom,
+        taskCount: context.basePlan.tasks.length,
+      },
+      feedback: {
+        count: context.modelContext.recentFeedback.length,
+        days: new Set(
+          context.modelContext.recentFeedback.map((item) => item.localDate),
+        ).size,
+        observations: context.modelContext.recentFeedback.flatMap((item) =>
+          item.userObservation
+            ? [{ localDate: item.localDate, text: item.userObservation }]
+            : [],
+        ),
+      },
+      confirmedTrainingCount: context.modelContext.confirmedTraining.length,
+      externalTraining: {
+        garminActivities: evidence.filter((item) => item.provider === "garmin")
+          .length,
+        xunjiTrainings: evidence.filter((item) => item.provider === "xunji")
+          .length,
+        unconfirmed: evidence.filter(
+          (item) => item.relation.status === "observed_unconfirmed",
+        ).length,
+        overlapGroups: new Set(
+          evidence.flatMap((item) =>
+            item.overlap.group ? [item.overlap.group] : [],
+          ),
+        ).size,
+      },
+      recovery: {
+        sleepDays: context.modelContext.recoveryEvidence.filter(
+          (item) => item.sleepStatus === "available",
+        ).length,
+        stepsDays: context.modelContext.recoveryEvidence.filter(
+          (item) => item.stepsStatus === "available",
+        ).length,
+      },
+      coverage: {
+        garminActivity: coverageSummary("garminActivity"),
+        garminWellness: coverageSummary("garminWellness"),
+        xunjiTraining: coverageSummary("xunjiTraining"),
+      },
+      safetyLevel: context.safetyLevel,
+    });
+  }
+
   async function load(trackerKey: string, jobId?: string) {
     const [configuration, found] = await Promise.all([
       readConfiguration(trackerKey),
@@ -342,10 +407,20 @@ export function createAiAnalysisRuntime({
     );
   }
 
-  async function request(input: { trackerKey: string; commandId: string }) {
+  async function request(input: {
+    trackerKey: string;
+    commandId: string;
+    previewHash?: string;
+  }) {
     const requestedAt = now();
     const configuration = await readConfiguration(input.trackerKey);
     const context = await prepareContext(input.trackerKey, requestedAt);
+    if (
+      input.previewHash !== undefined &&
+      input.previewHash !== context.contextHash
+    ) {
+      throw new AiAnalysisPreviewChangedError();
+    }
     const job = await store.createJob({
       ...context,
       id: input.commandId,
@@ -458,14 +533,28 @@ export function createAiAnalysisRuntime({
     return load(input.trackerKey, job.id);
   }
 
-  return { load, request };
+  return { load, preview, request };
+}
+
+export class AiAnalysisPreviewChangedError extends Error {
+  constructor() {
+    super("analysis_context_changed");
+    this.name = "AiAnalysisPreviewChangedError";
+  }
 }
 
 export const aiAnalysisRuntime = {
   load(trackerKey: string, jobId?: string) {
     return createAiAnalysisRuntime().load(trackerKey, jobId);
   },
-  request(input: { trackerKey: string; commandId: string }) {
+  preview(trackerKey: string) {
+    return createAiAnalysisRuntime().preview(trackerKey);
+  },
+  request(input: {
+    trackerKey: string;
+    commandId: string;
+    previewHash: string;
+  }) {
     return createAiAnalysisRuntime().request(input);
   },
 };

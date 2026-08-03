@@ -71,6 +71,8 @@ function completedSync(date: string) {
   };
 }
 
+const xunjiNotDue = { status: "skipped", reason: "not_due" } as const;
+
 function renderRecovery(queryClient = new QueryClient()) {
   return render(
     <QueryClientProvider client={queryClient}>
@@ -111,10 +113,11 @@ describe("P5a-2b coordinated Garmin foreground recovery", () => {
 
     renderRecovery();
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expect(calls).toEqual([
       "/api/trackers/knee-rehab/integrations/garmin/recovery",
       "/api/trackers/knee-rehab/integrations/garmin/wellness/recovery",
+      "/api/trackers/knee-rehab/integrations/xunji/recovery",
     ]);
   });
 
@@ -161,12 +164,13 @@ describe("P5a-2b coordinated Garmin foreground recovery", () => {
           reason: "not_due",
           progress: wellnessProgress,
         }),
-      );
+      )
+      .mockResolvedValueOnce(Response.json(xunjiNotDue));
     vi.stubGlobal("fetch", fetchMock);
 
     renderRecovery();
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expect(fetchMock.mock.calls[1]?.[0]).toBe(
       "/api/trackers/knee-rehab/integrations/garmin/wellness/recovery",
     );
@@ -198,7 +202,9 @@ describe("P5a-2b coordinated Garmin foreground recovery", () => {
           reason: "not_due",
           progress: wellnessProgress,
         }),
-      );
+      )
+      .mockResolvedValueOnce(Response.json(xunjiNotDue))
+      .mockResolvedValueOnce(Response.json(xunjiNotDue));
     vi.stubGlobal("fetch", fetchMock);
 
     renderRecovery();
@@ -207,24 +213,26 @@ describe("P5a-2b coordinated Garmin foreground recovery", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000);
     });
     expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
       "/api/trackers/knee-rehab/integrations/garmin/recovery",
+      "/api/trackers/knee-rehab/integrations/xunji/recovery",
       "/api/trackers/knee-rehab/integrations/garmin/recovery",
       "/api/trackers/knee-rehab/integrations/garmin/wellness/recovery",
+      "/api/trackers/knee-rehab/integrations/xunji/recovery",
     ]);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(120_000);
     });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 
-  it("stops the App Shell lifecycle after the activity credential needs refresh", async () => {
+  it("stops Garmin after its credential needs refresh while Xunji can still recover", async () => {
     let now = Date.parse("2026-07-24T03:00:00.000Z");
     vi.spyOn(Date, "now").mockImplementation(() => now);
     vi.spyOn(window.navigator, "onLine", "get").mockReturnValue(true);
@@ -243,11 +251,11 @@ describe("P5a-2b coordinated Garmin foreground recovery", () => {
 
     renderRecovery();
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     now += 120_000;
     window.dispatchEvent(new Event("online"));
     await Promise.resolve();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("updates both exact caches in sequence without clearing an editing draft", async () => {
@@ -269,7 +277,8 @@ describe("P5a-2b coordinated Garmin foreground recovery", () => {
           sync: completedSync(wellnessDate),
           progress: wellnessProgress,
         }),
-      );
+      )
+      .mockResolvedValueOnce(Response.json(xunjiNotDue));
     vi.stubGlobal("fetch", fetchMock);
     const queryClient = new QueryClient();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
@@ -279,7 +288,7 @@ describe("P5a-2b coordinated Garmin foreground recovery", () => {
       target: { value: "继续保留" },
     });
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expect(
       queryClient.getQueryData(
         integrationQueryKeys.providerStatus("knee-rehab", "garmin"),
@@ -337,17 +346,18 @@ describe("P5a-2b coordinated Garmin foreground recovery", () => {
     online = true;
     window.dispatchEvent(new Event("online"));
     window.dispatchEvent(new Event("online"));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expect(calls).toEqual([
       "/api/trackers/knee-rehab/integrations/garmin/recovery",
       "/api/trackers/knee-rehab/integrations/garmin/wellness/recovery",
+      "/api/trackers/knee-rehab/integrations/xunji/recovery",
     ]);
 
     window.dispatchEvent(new Event("focus"));
     document.dispatchEvent(new Event("visibilitychange"));
     window.dispatchEvent(new PopStateEvent("popstate"));
     await Promise.resolve();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("lets a winning page run both scopes and gives a busy page one later chance", async () => {
@@ -370,6 +380,9 @@ describe("P5a-2b coordinated Garmin foreground recovery", () => {
           progress: wellnessProgress,
         });
       }
+      if (url.endsWith("/xunji/recovery")) {
+        return Response.json(xunjiNotDue);
+      }
       activityAttempt += 1;
       if (activityAttempt === 1) return firstActivity;
       return Response.json({
@@ -386,9 +399,10 @@ describe("P5a-2b coordinated Garmin foreground recovery", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    expect(calls).toEqual([
+    expect(calls.slice(0, 3)).toEqual([
       "/api/trackers/knee-rehab/integrations/garmin/recovery",
       "/api/trackers/knee-rehab/integrations/garmin/recovery",
+      "/api/trackers/knee-rehab/integrations/xunji/recovery",
     ]);
 
     await act(async () => {
@@ -402,16 +416,20 @@ describe("P5a-2b coordinated Garmin foreground recovery", () => {
       await firstActivity;
       await Promise.resolve();
     });
-    expect(calls[2]).toBe(
+    expect(calls[3]).toBe(
       "/api/trackers/knee-rehab/integrations/garmin/wellness/recovery",
+    );
+    expect(calls[4]).toBe(
+      "/api/trackers/knee-rehab/integrations/xunji/recovery",
     );
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000);
     });
-    expect(calls.slice(3)).toEqual([
+    expect(calls.slice(5)).toEqual([
       "/api/trackers/knee-rehab/integrations/garmin/recovery",
       "/api/trackers/knee-rehab/integrations/garmin/wellness/recovery",
+      "/api/trackers/knee-rehab/integrations/xunji/recovery",
     ]);
   });
 });

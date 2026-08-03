@@ -269,6 +269,9 @@ export const garminDailyRecoveryCronResponseSchema = z.discriminatedUnion(
           "in_progress",
         ]),
       })
+      .extend({
+        wellness: z.lazy(() => garminDailyRecoveryCronScopeSchema).optional(),
+      })
       .strict(),
     z
       .object({
@@ -288,9 +291,47 @@ export const garminDailyRecoveryCronResponseSchema = z.discriminatedUnion(
           })
           .strict(),
       })
+      .extend({
+        wellness: z.lazy(() => garminDailyRecoveryCronScopeSchema).optional(),
+      })
       .strict(),
   ],
 );
+
+const garminDailyRecoveryCronScopeSchema = z.discriminatedUnion("status", [
+  z
+    .object({
+      status: z.literal("skipped"),
+      reason: z.enum([
+        "not_connected",
+        "needs_validation",
+        "needs_refresh",
+        "invalid",
+        "not_due",
+        "in_progress",
+      ]),
+    })
+    .strict(),
+  z
+    .object({
+      status: z.literal("completed"),
+      sync: z
+        .object({
+          batch: z
+            .object({ from: localDateSchema, to: localDateSchema })
+            .strict()
+            .nullable(),
+          targetDate: localDateSchema,
+          summary: garminDailyRecoverySummarySchema,
+          nextCursor: localDateSchema.nullable(),
+          complete: z.boolean(),
+          lastSucceededDate: localDateSchema.nullable(),
+          errorCode: garminProviderErrorCodeSchema.nullable(),
+        })
+        .strict(),
+    })
+    .strict(),
+]);
 
 export type GarminDailyRecoveryCronResponse = z.infer<
   typeof garminDailyRecoveryCronResponseSchema

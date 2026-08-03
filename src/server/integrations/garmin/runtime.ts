@@ -27,6 +27,7 @@ import {
   type AutomaticProviderRecoveryClaimStore,
 } from "@/server/integrations/core/automatic-provider-recovery";
 import { createNeonProviderDateSyncStore } from "@/server/integrations/core/neon-date-sync-store";
+import { createNeonProviderHistoryStore } from "@/server/integrations/core/neon-history-sync-store";
 import {
   syncProviderCatchUpBatch,
   type ProviderCatchUpStore,
@@ -35,6 +36,11 @@ import {
   syncProviderDate,
   type ProviderDateSyncStore,
 } from "@/server/integrations/core/sync-provider-date";
+import {
+  syncProviderHistoryBatch,
+  type ProviderHistoryDays,
+  type ProviderHistoryStore,
+} from "@/server/integrations/core/sync-provider-history";
 import { getIntegrationEncryptionConfig } from "@/server/integrations/credentials/config";
 import {
   claimIntegrationCredentialOperation,
@@ -213,6 +219,7 @@ export function createGarminRuntime({
   client,
   createDateSyncStore,
   createCatchUpStore,
+  createHistoryStore,
   automaticRecoveryStore,
   now = () => new Date(),
   assertEncryptionConfigured = () => void getIntegrationEncryptionConfig(),
@@ -221,13 +228,16 @@ export function createGarminRuntime({
   client: GarminClient<GarminCredential>;
   createDateSyncStore: (
     trackerKey: string,
-    stateProvider?: "garmin" | "garmin_wellness",
+    stateProvider?: string,
   ) => ProviderDateSyncStore;
   createCatchUpStore: () => ProviderCatchUpStore;
+  createHistoryStore?: () => ProviderHistoryStore;
   automaticRecoveryStore: AutomaticProviderRecoveryClaimStore;
   now?: () => Date;
   assertEncryptionConfigured?: () => void;
 }) {
+  const historyStore =
+    createHistoryStore ?? (() => createNeonProviderHistoryStore());
   const automaticRecoveryMinimumIntervalMs = 30 * 60_000;
   const automaticRecoveryLeaseMs = 2 * 60_000;
   const providerOperationLeaseMs = 2 * 60_000;
@@ -449,7 +459,7 @@ export function createGarminRuntime({
 
   async function syncActivityHistoryForTracker(
     tracker: Tracker,
-    batchSize: 3 | 5,
+    batchSize: 1 | 2 | 3 | 5,
     operation: GarminOperation,
   ) {
     const requestedAt = now();
@@ -471,6 +481,7 @@ export function createGarminRuntime({
   async function syncWellnessHistoryForTracker(
     tracker: Tracker,
     operation: GarminOperation,
+    batchSize: 1 | 2 | 3 | 5 = 5,
   ) {
     const requestedAt = now();
     const today = localDateInTimeZone(requestedAt, tracker.planningTimeZone);
@@ -481,11 +492,74 @@ export function createGarminRuntime({
       startedOn: tracker.startedOn,
       today,
       now: requestedAt,
-      batchSize: 5,
+      batchSize,
       overlapDays: 2,
       store: createCatchUpStore(),
       syncDate: (date) =>
         syncWellnessDate({ tracker, date, requestedAt: now(), operation }),
+    });
+  }
+
+  async function syncBoundedHistoryForTracker(
+    tracker: Tracker,
+    input: {
+      scope: "garmin_activity_history" | "garmin_wellness_history";
+      days: ProviderHistoryDays;
+    },
+    operation: GarminOperation,
+  ) {
+    const requestedAt = now();
+    const today = localDateInTimeZone(requestedAt, tracker.planningTimeZone);
+    return syncProviderHistoryBatch({
+      trackerId: tracker.id,
+      provider: "garmin",
+      scope: input.scope,
+      days: input.days,
+      today,
+      now: requestedAt,
+      batchSize: 3,
+      store: historyStore(),
+      syncDate: (date) =>
+        input.scope === "garmin_activity_history"
+          ? syncProviderDate({
+              trackerId: tracker.id,
+              provider: "garmin",
+              date,
+              now: requestedAt,
+              store: createDateSyncStore(tracker.key, input.scope),
+              readSource: async () =>
+                normalizeGarminActivities({
+                  activities: await readActivities({
+                    tracker,
+                    date,
+                    requestedAt,
+                    markCredentialFailure: false,
+                    operation,
+                  }),
+                  localDate: date,
+                  planningTimeZone: tracker.planningTimeZone,
+                  fetchedAt: requestedAt,
+                }),
+            })
+          : syncProviderDate({
+              trackerId: tracker.id,
+              provider: "garmin",
+              date,
+              now: requestedAt,
+              store: createDateSyncStore(tracker.key, input.scope),
+              readSource: async () =>
+                normalizeGarminWellness({
+                  wellness: await readWellness({
+                    tracker,
+                    date,
+                    requestedAt,
+                    operation,
+                  }),
+                  localDate: date,
+                  planningTimeZone: tracker.planningTimeZone,
+                  fetchedAt: requestedAt,
+                }),
+            }),
     });
   }
 
@@ -614,7 +688,10 @@ export function createGarminRuntime({
       );
     },
 
-    async recoverWellnessHistory(input: { trackerKey: string }) {
+    async recoverWellnessHistory(input: {
+      trackerKey: string;
+      profile?: GarminAutomaticRecoveryProfile;
+    }) {
       const connection = connectionStatus(
         await store.getStatus(input.trackerKey),
       );
@@ -636,7 +713,12 @@ export function createGarminRuntime({
             minimumIntervalMs: automaticRecoveryMinimumIntervalMs,
             leaseMs: automaticRecoveryLeaseMs,
             store: automaticRecoveryStore,
-            recover: () => syncWellnessHistoryForTracker(tracker, operation),
+            recover: () =>
+              syncWellnessHistoryForTracker(
+                tracker,
+                operation,
+                input.profile === "daily_cron" ? 1 : 5,
+              ),
           }),
         );
       } catch (error) {
@@ -671,6 +753,17 @@ export function createGarminRuntime({
       );
     },
 
+    async syncBoundedHistory(input: {
+      trackerKey: string;
+      scope: "garmin_activity_history" | "garmin_wellness_history";
+      days: ProviderHistoryDays;
+    }) {
+      const tracker = await store.requireTracker(input.trackerKey);
+      return withGarminOperation(tracker, (operation) =>
+        syncBoundedHistoryForTracker(tracker, input, operation),
+      );
+    },
+
     async recoverActivityHistory(input: {
       trackerKey: string;
       profile?: GarminAutomaticRecoveryProfile;
@@ -699,7 +792,7 @@ export function createGarminRuntime({
             recover: () =>
               syncActivityHistoryForTracker(
                 tracker,
-                input.profile === "daily_cron" ? 3 : 5,
+                input.profile === "daily_cron" ? 2 : 5,
                 operation,
               ),
           }),
@@ -744,6 +837,8 @@ export function createDefaultGarminRuntime(database?: Database) {
       }),
     createCatchUpStore: () =>
       createNeonProviderCatchUpStore(database ?? getDatabase()),
+    createHistoryStore: () =>
+      createNeonProviderHistoryStore(database ?? getDatabase()),
     automaticRecoveryStore: createNeonAutomaticProviderRecoveryClaimStore(
       database ?? getDatabase(),
     ),

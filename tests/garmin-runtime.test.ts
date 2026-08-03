@@ -392,7 +392,7 @@ describe("P3b-2a Garmin token-only runtime", () => {
     );
   });
 
-  it("uses the same automatic claim with a three-day daily Cron profile", async () => {
+  it("bounds the activity part of the coordinated daily Cron to two days", async () => {
     const { runtime, client, automaticRecoveryStore } = fixture();
     await runtime.importCredential({ trackerKey: "knee-rehab", credential });
     await runtime.previewActivities({
@@ -413,13 +413,57 @@ describe("P3b-2a Garmin token-only runtime", () => {
     expect(result).toMatchObject({
       status: "completed",
       sync: {
-        batch: { from: "2026-07-18", to: "2026-07-20" },
-        nextCursor: "2026-07-21",
+        batch: { from: "2026-07-18", to: "2026-07-19" },
+        nextCursor: "2026-07-20",
         complete: false,
-        summary: { succeeded: 3, failed: 0 },
+        summary: { succeeded: 2, failed: 0 },
       },
     });
-    expect(client.fetchActivitiesForDate).toHaveBeenCalledTimes(3);
+    expect(client.fetchActivitiesForDate).toHaveBeenCalledTimes(2);
+    expect(automaticRecoveryStore.claim).toHaveBeenCalledOnce();
+  });
+
+  it("bounds the wellness part of the coordinated daily Cron to one day", async () => {
+    const { runtime, client, automaticRecoveryStore } = fixture();
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+    await runtime.previewActivities({
+      trackerKey: "knee-rehab",
+      date: "2026-07-24",
+    });
+    vi.mocked(client.fetchWellnessForDate).mockClear();
+    vi.mocked(client.fetchWellnessForDate).mockResolvedValue({
+      wellness: {
+        localDate: "2026-07-18",
+        steps: { status: "missing", totalSteps: null, stepGoal: null },
+        sleep: {
+          status: "missing",
+          sleepStart: null,
+          sleepEnd: null,
+          totalSleepSeconds: null,
+          deepSleepSeconds: null,
+          lightSleepSeconds: null,
+          remSleepSeconds: null,
+          awakeSleepSeconds: null,
+          sleepScore: null,
+        },
+      },
+      refreshedCredential: credential,
+    });
+
+    const result = await runtime.recoverWellnessHistory({
+      trackerKey: "knee-rehab",
+      profile: "daily_cron",
+    });
+
+    expect(result).toMatchObject({
+      status: "completed",
+      sync: {
+        batch: { from: "2026-07-18", to: "2026-07-18" },
+        nextCursor: "2026-07-19",
+        summary: { succeeded: 1, failed: 0 },
+      },
+    });
+    expect(client.fetchWellnessForDate).toHaveBeenCalledOnce();
     expect(automaticRecoveryStore.claim).toHaveBeenCalledOnce();
   });
 

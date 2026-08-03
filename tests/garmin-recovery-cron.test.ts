@@ -153,6 +153,43 @@ describe("P3b-2e Garmin daily recovery Cron", () => {
     });
   });
 
+  it("coordinates one bounded activity batch followed by one wellness batch", async () => {
+    const calls: string[] = [];
+    const handler = createGarminRecoveryCronHandler({
+      readSecret: () => "anonymous-cron-secret",
+      createRuntime: () => ({
+        recoverActivityHistory: vi.fn(async () => {
+          calls.push("activity");
+          return completedRecovery;
+        }),
+        recoverWellnessHistory: vi.fn(async () => {
+          calls.push("wellness");
+          return {
+            status: "skipped" as const,
+            reason: "not_due" as const,
+            progress: {
+              provider: "garmin" as const,
+              kind: "daily_wellness" as const,
+              sync: {
+                status: "succeeded" as const,
+                lastAttemptAt: "2026-07-24T03:00:00.000Z",
+                lastSucceededDate: "2026-07-24",
+                nextCursor: null,
+                lastErrorCode: null,
+              },
+            },
+          };
+        }),
+      }),
+    });
+
+    const response = await handler(request("Bearer anonymous-cron-secret"));
+    const body = await response.json();
+
+    expect(calls).toEqual(["activity", "wellness"]);
+    expect(body.wellness).toEqual({ status: "skipped", reason: "not_due" });
+  });
+
   it.each([
     ["not connected", "not_connected"],
     ["credential refresh required", "needs_refresh"],

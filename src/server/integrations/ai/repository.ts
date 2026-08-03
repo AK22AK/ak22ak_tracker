@@ -42,7 +42,7 @@ export type AiAnalysisJobRecord = {
   provider: string;
   model: string;
   attemptCount: number;
-  contextVersion: "1";
+  contextVersion: "1" | "2";
   contextHash: string;
   contextRevision: number;
   contextFrom: string;
@@ -149,8 +149,8 @@ function rowToJob(row: {
     model: row.job.model,
     attemptCount: row.job.attemptCount,
     contextVersion:
-      row.job.contextVersion === "1"
-        ? "1"
+      row.job.contextVersion === "1" || row.job.contextVersion === "2"
+        ? row.job.contextVersion
         : (() => {
             throw new Error("ai_analysis_context_version_invalid");
           })(),

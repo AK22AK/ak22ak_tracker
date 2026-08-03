@@ -829,6 +829,7 @@ for (const width of [320, 375, 390, 430]) {
       "/settings",
       "/settings/garmin",
       "/settings/xunji",
+      "/settings/history",
       "/settings/deepseek",
       "/settings/backup",
       "/settings/storage",
@@ -1249,6 +1250,9 @@ for (const width of [320, 375, 390, 430]) {
     await page.goto("/settings");
     await expect(page.getByRole("link", { name: /Garmin/ })).toBeVisible();
     await expect(page.getByRole("link", { name: /训记/ })).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: /历史数据补录/ }),
+    ).toBeVisible();
     await expect(page.getByRole("link", { name: /DeepSeek/ })).toBeVisible();
     await expect(
       page.getByRole("link", { name: /GitHub 数据备份/ }),
@@ -1296,6 +1300,47 @@ for (const width of [320, 375, 390, 430]) {
       ),
     ).toBe(true);
 
+    await page.getByRole("link", { name: /历史数据补录/ }).click();
+    await expect(page.getByLabel("补录范围")).toHaveValue("14");
+    const historyLayout = await page.evaluate(() => {
+      const card = [
+        ...document.querySelectorAll<HTMLElement>(".history-sync-card"),
+      ].find((candidate) => candidate.getBoundingClientRect().width > 0);
+      const controls = card
+        ? [...card.querySelectorAll<HTMLElement>("select, button")]
+        : [];
+      const rect = card?.getBoundingClientRect();
+      return {
+        clientWidth: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        cardLeft: rect?.left ?? -1,
+        cardRight: rect?.right ?? Number.POSITIVE_INFINITY,
+        controls: controls.map((control) => {
+          const controlRect = control.getBoundingClientRect();
+          return {
+            height: controlRect.height,
+            left: controlRect.left,
+            right: controlRect.right,
+          };
+        }),
+      };
+    });
+    expect(historyLayout.scrollWidth).toBeLessThanOrEqual(
+      historyLayout.clientWidth,
+    );
+    expect(historyLayout.cardLeft).toBeGreaterThanOrEqual(0);
+    expect(historyLayout.cardRight).toBeLessThanOrEqual(
+      historyLayout.clientWidth,
+    );
+    expect(
+      historyLayout.controls.every(
+        ({ height, left, right }) =>
+          height >= 44 && left >= 0 && right <= historyLayout.clientWidth,
+      ),
+      JSON.stringify(historyLayout.controls),
+    ).toBe(true);
+
+    await page.goto("/settings");
     await page.getByRole("link", { name: /Garmin/ }).click();
     await expect(
       page
@@ -1348,7 +1393,7 @@ test("settings detail return restores the cached settings list", async ({
 
   await page.getByRole("link", { name: "返回" }).click();
   await expect(page.getByRole("heading", { name: "设置" })).toBeVisible();
-  await expect(page.locator(".settings-row")).toHaveCount(6);
+  await expect(page.locator(".settings-row")).toHaveCount(7);
   await expectActiveTab(page, "/settings", "/settings");
 });
 
@@ -1362,7 +1407,7 @@ test("direct settings detail return restores the root settings list", async ({
 
   await page.getByRole("link", { name: "返回" }).click();
   await expect(page.getByRole("heading", { name: "设置" })).toBeVisible();
-  await expect(page.locator(".settings-row")).toHaveCount(6);
+  await expect(page.locator(".settings-row")).toHaveCount(7);
   await expectActiveTab(page, "/settings", "/settings");
 });
 
@@ -1379,7 +1424,7 @@ test("settings detail return keeps browser back and forward aligned", async ({
   ).toBeVisible();
 
   await page.getByRole("link", { name: "返回" }).click();
-  await expect(page.locator(".settings-row")).toHaveCount(6);
+  await expect(page.locator(".settings-row")).toHaveCount(7);
   await expectActiveTab(page, "/settings", "/settings");
 
   await page.goBack();
@@ -1391,7 +1436,7 @@ test("settings detail return keeps browser back and forward aligned", async ({
   await expectActiveTab(page, "/settings", "/settings/garmin");
 
   await page.goForward();
-  await expect(page.locator(".settings-row")).toHaveCount(6);
+  await expect(page.locator(".settings-row")).toHaveCount(7);
   await expectActiveTab(page, "/settings", "/settings");
 });
 
@@ -1418,7 +1463,7 @@ test("direct settings detail survives reload and returns from another root tab",
 
   await page.getByRole("link", { name: /设置/ }).click();
   await expect(page.getByRole("heading", { name: "设置" })).toBeVisible();
-  await expect(page.locator(".settings-row")).toHaveCount(6);
+  await expect(page.locator(".settings-row")).toHaveCount(7);
   await expectActiveTab(page, "/settings", "/settings");
 });
 
