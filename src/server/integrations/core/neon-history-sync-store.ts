@@ -16,7 +16,7 @@ import type {
 
 type Database = ReturnType<typeof getDatabase>;
 
-function cursor(value: unknown) {
+export function parseProviderHistoryCursor(value: unknown) {
   if (
     typeof value !== "object" ||
     value === null ||
@@ -72,7 +72,7 @@ export function createNeonProviderHistoryStore(
             ),
           ),
       ]);
-      const parsed = cursor(syncRows[0]?.cursor);
+      const parsed = parseProviderHistoryCursor(syncRows[0]?.cursor);
       if (!parsed) return null;
       return {
         ...parsed,

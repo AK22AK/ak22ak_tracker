@@ -11,6 +11,7 @@ import {
 } from "@/server/db/schema";
 import { createNeonProviderDateSyncStore } from "@/server/integrations/core/neon-date-sync-store";
 import { createNeonProviderHistoryStore } from "@/server/integrations/core/neon-history-sync-store";
+import { getProviderHistoryOverview } from "@/server/integrations/core/history-sync-overview";
 import { syncProviderDate } from "@/server/integrations/core/sync-provider-date";
 import { syncProviderHistoryBatch } from "@/server/integrations/core/sync-provider-history";
 
@@ -194,5 +195,24 @@ integration("P5b provider-neutral bounded history persistence", () => {
         },
       ]),
     );
+
+    const overview = await getProviderHistoryOverview(trackerKey, database);
+    expect(overview).toMatchObject({
+      range: { from: "2026-07-28", through: "2026-08-03", days: 7 },
+      scopes: expect.arrayContaining([
+        expect.objectContaining({
+          scope: "xunji_training_history",
+          nextCursor: "2026-07-30",
+          summary: {
+            processed: 2,
+            records: 0,
+            empty: 2,
+            failed: 1,
+            unknown: 4,
+          },
+        }),
+      ]),
+      recordDates: [],
+    });
   });
 });

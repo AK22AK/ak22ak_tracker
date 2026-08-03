@@ -4,6 +4,7 @@ import {
   syncProviderHistoryBatch,
   type ProviderHistoryStore,
 } from "@/server/integrations/core/sync-provider-history";
+import { projectProviderHistoryOverview } from "@/server/integrations/core/history-sync-overview";
 
 const trackerId = "019c0000-0000-7000-8000-000000000001";
 
@@ -43,6 +44,170 @@ function success(date: string, recordCount = 1) {
 }
 
 describe("provider-neutral bounded history sync", () => {
+  it("projects the latest cross-month range, honest daily counts and record-only dates", () => {
+    const updatedAt = new Date("2026-08-03T08:00:00.000Z");
+    const missingWellness = {
+      localDate: "2026-07-30",
+      steps: { status: "missing", totalSteps: null, stepGoal: null },
+      sleep: {
+        status: "missing",
+        sleepStart: null,
+        sleepEnd: null,
+        totalSleepSeconds: null,
+        deepSleepSeconds: null,
+        lightSleepSeconds: null,
+        remSleepSeconds: null,
+        awakeSleepSeconds: null,
+        sleepScore: null,
+      },
+    };
+    const result = projectProviderHistoryOverview({
+      syncRows: [
+        {
+          provider: "garmin_activity_history",
+          status: "succeeded",
+          cursor: {
+            kind: "bounded_date_range_v1",
+            rangeFrom: "2026-07-21",
+            rangeThrough: "2026-08-03",
+            nextDate: null,
+          },
+          lastErrorCode: null,
+          updatedAt,
+        },
+        {
+          provider: "garmin_wellness_history",
+          status: "failed",
+          cursor: {
+            kind: "bounded_date_range_v1",
+            rangeFrom: "2026-07-21",
+            rangeThrough: "2026-08-03",
+            nextDate: "2026-07-23",
+          },
+          lastErrorCode: "anonymous_internal_error",
+          updatedAt,
+        },
+        {
+          provider: "xunji_training_history",
+          status: "running",
+          cursor: {
+            kind: "bounded_date_range_v1",
+            rangeFrom: "2026-07-28",
+            rangeThrough: "2026-08-03",
+            nextDate: "2026-07-30",
+          },
+          lastErrorCode: null,
+          updatedAt: new Date("2026-08-03T07:59:00.000Z"),
+        },
+      ],
+      dateStates: [
+        {
+          provider: "garmin_activity_history",
+          localDate: "2026-07-21",
+          status: "succeeded",
+          recordCount: 0,
+        },
+        {
+          provider: "garmin_activity_history",
+          localDate: "2026-07-22",
+          status: "succeeded",
+          recordCount: 2,
+        },
+        {
+          provider: "garmin_wellness_history",
+          localDate: "2026-07-21",
+          status: "succeeded",
+          recordCount: 1,
+        },
+        {
+          provider: "garmin_wellness_history",
+          localDate: "2026-07-23",
+          status: "failed",
+          recordCount: 0,
+        },
+      ],
+      records: [
+        {
+          provider: "garmin",
+          kind: "activity",
+          localDate: "2026-07-22",
+          document: { payload: {} },
+        },
+        {
+          provider: "garmin",
+          kind: "daily_wellness",
+          localDate: "2026-07-30",
+          document: { payload: missingWellness },
+        },
+        {
+          provider: "garmin",
+          kind: "daily_wellness",
+          localDate: "2026-07-21",
+          document: {
+            payload: {
+              ...missingWellness,
+              localDate: "2026-07-21",
+              steps: { status: "available", totalSteps: 0, stepGoal: null },
+            },
+          },
+        },
+        {
+          provider: "xunji",
+          kind: "strength_training",
+          localDate: "2026-08-02",
+          document: { payload: {} },
+        },
+      ],
+      connectedProviders: ["garmin", "xunji"],
+    });
+
+    expect(result.range).toEqual({
+      from: "2026-07-21",
+      through: "2026-08-03",
+      days: 14,
+    });
+    expect(result.scopes).toEqual([
+      expect.objectContaining({
+        scope: "garmin_activity_history",
+        summary: {
+          processed: 2,
+          records: 1,
+          empty: 1,
+          failed: 0,
+          unknown: 12,
+        },
+      }),
+      expect.objectContaining({
+        scope: "garmin_wellness_history",
+        nextCursor: "2026-07-23",
+        lastErrorCode: "provider_unavailable",
+        summary: {
+          processed: 1,
+          records: 1,
+          empty: 0,
+          failed: 1,
+          unknown: 12,
+        },
+      }),
+      expect.objectContaining({
+        scope: "xunji_training_history",
+        status: "idle",
+        summary: {
+          processed: 0,
+          records: 0,
+          empty: 0,
+          failed: 0,
+          unknown: 14,
+        },
+      }),
+    ]);
+    expect(result.recordDates).toEqual([
+      { date: "2026-08-02", sources: ["xunji_training"] },
+      { date: "2026-07-22", sources: ["garmin_activity"] },
+      { date: "2026-07-21", sources: ["garmin_wellness"] },
+    ]);
+  });
+
   it("derives the exact 14-day range on the server and persists zero-record days", async () => {
     const progress = store();
     const syncDate = vi.fn(async (date: string) => success(date, 0));

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { localDateSchema } from "./schemas";
+import { localDateSchema, schemaVersion } from "./schemas";
 
 export const integrationStatusSchema = z.object({
   provider: z.string().min(1),
@@ -119,6 +119,70 @@ export type ProviderHistoryScope = z.infer<typeof providerHistoryScopeSchema>;
 export type ProviderHistoryDays = z.infer<typeof providerHistoryDaysSchema>;
 export type ProviderHistorySyncResult = z.infer<
   typeof providerHistorySyncResultSchema
+>;
+
+export const providerHistoryRecordSourceSchema = z.enum([
+  "garmin_activity",
+  "garmin_wellness",
+  "xunji_training",
+]);
+
+export const providerHistoryErrorCodeSchema = z.enum([
+  "authentication",
+  "invalid_token_bundle",
+  "unsupported_client_version",
+  "rate_limited",
+  "timeout",
+  "invalid_response",
+  "provider_unavailable",
+]);
+
+const providerHistoryScopeOverviewSchema = z
+  .object({
+    scope: providerHistoryScopeSchema,
+    connected: z.boolean(),
+    status: z.enum(["idle", "running", "succeeded", "failed"]),
+    nextCursor: localDateSchema.nullable(),
+    lastErrorCode: providerHistoryErrorCodeSchema.nullable(),
+    updatedAt: z.string().datetime().nullable(),
+    summary: z
+      .object({
+        processed: z.number().int().nonnegative(),
+        records: z.number().int().nonnegative(),
+        empty: z.number().int().nonnegative(),
+        failed: z.number().int().nonnegative(),
+        unknown: z.number().int().nonnegative(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const providerHistoryOverviewSchema = z
+  .object({
+    schemaVersion: z.literal(schemaVersion),
+    range: z
+      .object({
+        from: localDateSchema,
+        through: localDateSchema,
+        days: providerHistoryDaysSchema,
+      })
+      .strict()
+      .nullable(),
+    updatedAt: z.string().datetime().nullable(),
+    scopes: z.array(providerHistoryScopeOverviewSchema).length(3),
+    recordDates: z.array(
+      z
+        .object({
+          date: localDateSchema,
+          sources: z.array(providerHistoryRecordSourceSchema).min(1).max(3),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+export type ProviderHistoryOverview = z.infer<
+  typeof providerHistoryOverviewSchema
 >;
 
 export const integrationRecoveryResponseSchema = z.discriminatedUnion(

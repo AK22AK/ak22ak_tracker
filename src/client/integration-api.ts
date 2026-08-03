@@ -3,7 +3,10 @@ import {
   garminConnectionStatusSchema,
   garminWellnessProgressSchema,
 } from "@/domain/garmin";
-import { integrationStatusSchema } from "@/domain/integrations";
+import {
+  integrationStatusSchema,
+  providerHistoryOverviewSchema,
+} from "@/domain/integrations";
 import { deepSeekConnectionStatusSchema } from "@/domain/deepseek";
 
 async function getJson(url: string, signal?: AbortSignal) {
@@ -65,6 +68,18 @@ export async function fetchDeepSeekConnectionStatus(
   return deepSeekConnectionStatusSchema.parse(
     await getJson(
       `/api/trackers/${encodeURIComponent(trackerKey)}/integrations/deepseek/credential`,
+      signal,
+    ),
+  );
+}
+
+export async function fetchProviderHistoryOverview(
+  trackerKey: string,
+  signal?: AbortSignal,
+) {
+  return providerHistoryOverviewSchema.parse(
+    await getJson(
+      `/api/trackers/${encodeURIComponent(trackerKey)}/integrations/history-sync`,
       signal,
     ),
   );

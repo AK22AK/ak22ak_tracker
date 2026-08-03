@@ -15,6 +15,11 @@ const nextLocalDate = (() => {
   date.setUTCDate(date.getUTCDate() + 1);
   return date.toISOString().slice(0, 10);
 })();
+const historyRangeFrom = (() => {
+  const date = new Date(`${localDate}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() - 13);
+  return date.toISOString().slice(0, 10);
+})();
 
 const taskId = "019c0000-0000-7000-8000-000000000002";
 
@@ -167,6 +172,65 @@ const garminWellnessProgress = {
     nextCursor: null,
     lastErrorCode: null,
   },
+};
+
+const providerHistoryOverview = {
+  schemaVersion: "1.0.0",
+  range: { from: historyRangeFrom, through: localDate, days: 14 },
+  updatedAt: `${localDate}T08:00:00.000Z`,
+  scopes: [
+    {
+      scope: "garmin_activity_history",
+      connected: true,
+      status: "succeeded",
+      nextCursor: null,
+      lastErrorCode: null,
+      updatedAt: `${localDate}T08:00:00.000Z`,
+      summary: {
+        processed: 14,
+        records: 1,
+        empty: 13,
+        failed: 0,
+        unknown: 0,
+      },
+    },
+    {
+      scope: "garmin_wellness_history",
+      connected: true,
+      status: "running",
+      nextCursor: localDate,
+      lastErrorCode: null,
+      updatedAt: `${localDate}T08:00:00.000Z`,
+      summary: {
+        processed: 13,
+        records: 1,
+        empty: 12,
+        failed: 0,
+        unknown: 1,
+      },
+    },
+    {
+      scope: "xunji_training_history",
+      connected: false,
+      status: "idle",
+      nextCursor: null,
+      lastErrorCode: null,
+      updatedAt: null,
+      summary: {
+        processed: 0,
+        records: 0,
+        empty: 0,
+        failed: 0,
+        unknown: 14,
+      },
+    },
+  ],
+  recordDates: [
+    {
+      date: localDate,
+      sources: ["garmin_activity", "garmin_wellness"],
+    },
+  ],
 };
 
 const deepSeekStatus = {
@@ -546,6 +610,8 @@ async function mockPrivateReads(
     } else if (url.pathname.endsWith(`/days/${localDate}`)) {
       counters.day += 1;
       body = dayAggregate;
+    } else if (url.pathname.endsWith("/integrations/history-sync")) {
+      body = providerHistoryOverview;
     } else if (url.pathname.endsWith("/integrations/xunji/credential")) {
       counters.integration += 1;
       body = integrationStatus;
@@ -1415,12 +1481,24 @@ for (const width of [320, 375, 390, 430]) {
 
     await page.getByRole("link", { name: /历史数据补录/ }).click();
     await expect(page.getByLabel("补录范围")).toHaveValue("14");
+    const visibleHistoryCard = page.locator(".history-sync-card:visible");
+    await expect(
+      visibleHistoryCard.getByText(`${historyRangeFrom} 至 ${localDate}`),
+    ).toBeVisible();
+    const recordLink = visibleHistoryCard.getByRole("link", {
+      name: new RegExp(`${localDate}.*Garmin 活动.*睡眠与步数`),
+    });
+    await expect(recordLink).toBeVisible();
     const historyLayout = await page.evaluate(() => {
       const card = [
         ...document.querySelectorAll<HTMLElement>(".history-sync-card"),
       ].find((candidate) => candidate.getBoundingClientRect().width > 0);
       const controls = card
-        ? [...card.querySelectorAll<HTMLElement>("select, button")]
+        ? [
+            ...card.querySelectorAll<HTMLElement>(
+              "select, button, .history-sync-record-dates a",
+            ),
+          ]
         : [];
       const rect = card?.getBoundingClientRect();
       return {
@@ -1452,6 +1530,12 @@ for (const width of [320, 375, 390, 430]) {
       ),
       JSON.stringify(historyLayout.controls),
     ).toBe(true);
+
+    await recordLink.click();
+    await expect(page).toHaveURL(`/calendar?date=${localDate}`);
+    await expect(
+      page.getByRole("region", { name: "外部活动与训练记录" }),
+    ).toBeVisible();
 
     await page.goto("/settings");
     await page.getByRole("link", { name: /Garmin/ }).click();
