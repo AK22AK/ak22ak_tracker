@@ -17,6 +17,7 @@ import { GarminIntegrationCard } from "./garmin-integration-card";
 import { GitHubMirrorCard } from "./github-mirror-card";
 import { IntegrationCard } from "./integration-card";
 import { LocalDataCard } from "./local-data-card";
+import { ShellViewportDiagnosticsPanel } from "./shell-viewport-diagnostics-panel";
 import { SignOutButton } from "./sign-out-button";
 
 const trackerKey = "knee-rehab";
@@ -190,6 +191,7 @@ export function SettingsDetailClient({ detail }: { detail: SettingsDetail }) {
         <h2>退出登录</h2>
         <p>退出会清除这台设备上的私人缓存与未同步记录。</p>
         <SignOutButton />
+        <ShellViewportDiagnosticsPanel />
       </section>
     );
   }

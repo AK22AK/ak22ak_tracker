@@ -4561,6 +4561,29 @@ body:has(.protected-app-shell) {
   font-weight: 720;
 }
 
+.shell-diagnostics-panel {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.shell-diagnostics-panel > p {
+  color: var(--color-muted);
+  line-height: 1.5rem;
+}
+
+.shell-diagnostics-actions {
+  display: grid;
+  gap: 0.625rem;
+}
+
+.shell-diagnostics-actions .secondary-button,
+.shell-diagnostics-actions .text-button {
+  width: 100%;
+}
+
 @keyframes settings-skeleton-pulse {
   to {
     background-position: -320% 0;
