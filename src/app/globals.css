@@ -3467,6 +3467,10 @@ html[data-ak-shell-geometry-ready="false"]
   min-height: 100%;
 }
 
+.root-tab-route-content {
+  display: contents;
+}
+
 .protected-app-shell .bottom-nav {
   position: static;
   right: auto;

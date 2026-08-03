@@ -7,6 +7,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  isValidElement,
   type MouseEvent,
   useRef,
   useState,
@@ -174,6 +175,19 @@ function navigationTab(pathname: string): RootTab {
   return "today";
 }
 
+function declaredRootTab(children: React.ReactNode): RootTab | null {
+  if (!isValidElement(children)) return null;
+  const declared = (children.props as { "data-root-tab-content"?: unknown })[
+    "data-root-tab-content"
+  ];
+  return declared === "today" ||
+    declared === "calendar" ||
+    declared === "trends" ||
+    declared === "settings"
+    ? declared
+    : null;
+}
+
 function internalNonRootHref(event: MouseEvent<HTMLDivElement>) {
   if (
     event.button !== 0 ||
@@ -234,9 +248,14 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { commands } = useOfflineCommands();
-  const [initialTab] = useState<RootTab | null>(() => exactRootTab(pathname));
+  // App Router can briefly publish a root pathname with children from an older
+  // transition. Bind streamed route children only to the root page that
+  // declared them, never to whichever pathname happened to commit first.
+  const [initialTab] = useState<RootTab | null>(
+    () => declaredRootTab(children) ?? exactRootTab(pathname),
+  );
   const [activeTab, setActiveTab] = useState<RootTab>(
-    initialTab ?? navigationTab(pathname),
+    exactRootTab(pathname) ?? initialTab ?? navigationTab(pathname),
   );
   const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<RootTab>>(
     () => new Set(initialTab ? [initialTab] : []),

@@ -260,6 +260,28 @@ describe("protected app shell navigation (P0-05)", () => {
     expect(screen.queryByRole("main", { name: "账号设置" })).toBeNull();
   });
 
+  it("does not bind stale Calendar route children to the Settings pathname", async () => {
+    navigation.pathname = "/settings";
+    window.history.replaceState(null, "", "/settings");
+    render(
+      <ProtectedAppShell>
+        <div data-root-tab-content="calendar">
+          <main aria-label="迟到的日历路由内容">迟到的日历路由内容</main>
+        </div>
+      </ProtectedAppShell>,
+    );
+
+    expect(
+      await screen.findByRole("main", { name: "设置缓存内容" }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("main", { name: "迟到的日历路由内容" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("link", { name: /设置/ }).getAttribute("aria-current"),
+    ).toBe("page");
+  });
+
   it("renders all four product tabs as operable links", () => {
     render(
       <ProtectedAppShell>

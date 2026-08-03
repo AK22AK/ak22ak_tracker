@@ -93,6 +93,9 @@ P0b 已在建立页面 Query 前定义经过鉴权的聚合 DTO。今日 DTO 同
 - 共享 Layout 永远保留底部导航。
 - 四个根 Tab 使用 History API 写入浏览器历史，不为每次切换请求动态 RSC；直接 URL
   和非根子页面仍由 App Router 与服务端鉴权处理。
+- 根页 Server Component 在 children 上声明明确的根 Tab 身份。共享壳以该身份绑定初始
+  children；若 pathname 与 children 在并发 transition 中短暂错位，pathname 只决定当前
+  选中项，目标面板使用对应客户端组件，不能把迟到内容永久装入错误 Tab。
 - 已访问的 Tab 立即重新显示保留的 DOM 与 Query Cache，不用全页过渡框隐藏缓存内容。
 - 未加载页面先挂载稳定的目标页面壳，再由各内容区独立加载。
 - 每个 Tab 保留自己的滚动位置和临时状态；退出登录时清空全部用户状态。

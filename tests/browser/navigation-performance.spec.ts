@@ -1867,6 +1867,15 @@ test("detail escape preserves a cached calendar query through back and forward",
     page.getByRole("button", { name: new RegExp(`^${localDate}，已选中`) }),
   ).toBeVisible();
   await expectActiveTab(page, "/calendar", "/calendar", `?date=${localDate}`);
+
+  await page.getByRole("link", { name: /设置/ }).click();
+  await expect(
+    page.locator('[data-tab-panel="settings"] .settings-row'),
+  ).toHaveCount(7);
+  await expect(
+    page.locator('[data-tab-panel="settings"] .calendar-shell'),
+  ).toHaveCount(0);
+  await expectActiveTab(page, "/settings", "/settings");
 });
 
 test("direct settings detail survives reload and returns from another root tab", async ({

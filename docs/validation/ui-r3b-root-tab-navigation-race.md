@@ -10,6 +10,10 @@ Tab Host。详情导航稳定后路径通常正确；但在详情 pathname/child
 因此可能覆盖最后一次点击，或把 `/settings/garmin` 一类详情 URL 误存成设置根 Tab 的回退地址，
 造成 URL、`aria-current` 与可见面板不一致。
 
+生产长 history 链还暴露第二个提交窗口：App Router 重建共享壳时，根 pathname 与另一条根
+transition 的 children 可能来自不同提交。旧壳仅按 pathname 选择 `initialTab`，因此会把迟到的
+日历 children 永久绑定进设置面板；此后 URL 和 `aria-current` 都是设置，内容却仍是日历。
+
 纯粹冻结详情网络响应不会稳定触发旧缺陷，因为 Next 会丢弃明显过期的未提交响应。确定性 RED
 进一步固定“详情 URL/路由状态已前进、共享壳仍是上一帧”的提交窗口；旧实现返回设置时同时
 存在 14 个 `.settings-row`，证明持久 Host 与迟到 children 已经分叉。
@@ -25,6 +29,9 @@ Tab Host。详情导航稳定后路径通常正确；但在详情 pathname/child
    目标 URL 都命中最新代次时才清除意图。
 4. 根 Tab 之间继续走既有快速 History 路径；设置根 URL 不接收详情 URL。日历日期 query、
    持久 DOM、草稿、滚动和 back/forward 行为保持不变。
+5. 今日、日历、趋势和设置四个根 Server Component 在顶层 children 上声明稳定 Tab 身份。
+   壳以声明身份绑定流式 children；pathname 只决定当前根选中项。两者错位时目标面板挂载自己的
+   客户端组件，迟到 children 只保留在其真实 Tab，不再污染当前面板。
 
 ## RED / GREEN 门禁
 
@@ -38,5 +45,8 @@ Tab Host。详情导航稳定后路径通常正确；但在详情 pathname/child
 - DeepSeek 详情加载失败时同样覆盖根 Tab 逃逸；既有详情返回、browser back/forward、日历
   query 与持久 Tab 测试继续通过；浏览器 history 恢复根 URL 时，即使 Next children 暂时仍是
   详情，根壳也以浏览器位置恢复对应持久 Tab。
+- 组件门禁显式注入“设置 pathname + 日历声明 children”。旧实现 RED 为设置面板直接显示迟到
+  日历且没有设置客户端；修复后设置客户端唯一可见。浏览器门禁在详情→日历→back→forward
+  后再次进入设置，必须恢复唯一 7 行列表且设置面板内不得存在日历壳。
 
 本返修不改变 DB、Schema、Provider、计划、安全、离线命令或 P5b 领域语义。
