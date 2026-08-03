@@ -214,7 +214,7 @@ export function GarminIntegrationCard({
       ]).catch(() => undefined);
       setMessage(
         result.sync.recordCount
-          ? `已同步 ${result.sync.recordCount} 条活动，其中新增 ${result.sync.created} 条、更新 ${result.sync.changed} 条。`
+          ? `已同步 ${result.sync.recordCount} 条活动：新增 ${result.sync.created} 条、更新 ${result.sync.changed} 条、未变化 ${result.sync.unchanged} 条。`
           : "这一天没有活动记录。",
       );
     } catch (error) {
@@ -357,10 +357,10 @@ export function GarminIntegrationCard({
       ]).catch(() => undefined);
       setMessage(
         result.sync.changed > 0
-          ? "睡眠与步数已更新。"
+          ? `睡眠与步数已更新：新增 ${result.sync.created} 项、更新 ${result.sync.changed} 项、未变化 ${result.sync.unchanged} 项。`
           : result.sync.created > 0
-            ? "睡眠与步数已保存。"
-            : "睡眠与步数已是最新记录。",
+            ? `睡眠与步数已保存：新增 ${result.sync.created} 项、更新 ${result.sync.changed} 项、未变化 ${result.sync.unchanged} 项。`
+            : `睡眠与步数已是最新记录：新增 ${result.sync.created} 项、更新 ${result.sync.changed} 项、未变化 ${result.sync.unchanged} 项。`,
       );
     } catch (error) {
       setMessage(
@@ -480,6 +480,23 @@ export function GarminIntegrationCard({
             persistedWellnessProgress?.sync.nextCursor
           ? "继续同步恢复数据"
           : "同步恢复数据";
+  const credentialForm = (
+    <form onSubmit={importCredential} className="integration-form">
+      <label htmlFor="garmin-token-file">
+        {status.state === "not_connected" ? "Token 文件" : "替换 Token 文件"}
+      </label>
+      <input
+        ref={fileInputRef}
+        id="garmin-token-file"
+        type="file"
+        accept="application/json,.json"
+        disabled={busy !== null}
+      />
+      <button type="submit" disabled={busy !== null}>
+        {busy === "credential" ? "正在保存…" : "导入并加密保存"}
+      </button>
+    </form>
+  );
 
   return (
     <section className="feedback-card integration-card">
@@ -499,24 +516,10 @@ export function GarminIntegrationCard({
         </span>
       </div>
       <p className="integration-description">
-        从本机生成并导入 Token；网页不会接收 Garmin 密码。
+        {status.state === "connected"
+          ? "按日期同步活动、睡眠与步数；网页不会接收 Garmin 密码。"
+          : "从本机生成并导入 Token；网页不会接收 Garmin 密码。"}
       </p>
-
-      <form onSubmit={importCredential} className="integration-form">
-        <label htmlFor="garmin-token-file">
-          {status.state === "not_connected" ? "Token 文件" : "替换 Token 文件"}
-        </label>
-        <input
-          ref={fileInputRef}
-          id="garmin-token-file"
-          type="file"
-          accept="application/json,.json"
-          disabled={busy !== null}
-        />
-        <button type="submit" disabled={busy !== null}>
-          {busy === "credential" ? "正在保存…" : "导入并加密保存"}
-        </button>
-      </form>
 
       <div className="integration-actions garmin-preview-actions">
         <label htmlFor="garmin-sync-date">同步日期</label>
@@ -536,6 +539,9 @@ export function GarminIntegrationCard({
           {busy === "sync" ? "正在同步…" : "同步这一天"}
         </button>
       </div>
+      <p className="integration-action-help">
+        只同步所选日期；完成后会说明新增、更新或当天没有活动记录。
+      </p>
       <div className="integration-actions garmin-catch-up-actions">
         <button
           type="button"
@@ -545,12 +551,15 @@ export function GarminIntegrationCard({
           {catchUpButtonLabel}
         </button>
         <p>
-          最近成功日期：
+          最近成功处理日期：
           {catchUpResult?.lastSucceededDate ??
             status.sync?.lastSucceededDate ??
             "暂无"}
         </p>
       </div>
+      <p className="integration-action-help">
+        每次只追赶一批；范围和下一步会在完成后显示。不代表当天一定读取到记录。
+      </p>
       <div className="integration-subsection">
         <div>
           <p className="eyebrow">恢复参考</p>
@@ -579,6 +588,7 @@ export function GarminIntegrationCard({
             {busy === "wellness" ? "正在同步…" : "同步睡眠与步数"}
           </button>
         </div>
+        <p className="integration-action-help">只同步所选日期的睡眠与步数。</p>
         <div className="integration-actions garmin-catch-up-actions">
           <button
             type="button"
@@ -588,12 +598,15 @@ export function GarminIntegrationCard({
             {wellnessCatchUpButtonLabel}
           </button>
           <p>
-            最近成功日期：
+            最近成功处理日期：
             {wellnessCatchUpResult?.lastSucceededDate ??
               persistedWellnessProgress?.sync.lastSucceededDate ??
               "暂无"}
           </p>
         </div>
+        <p className="integration-action-help">
+          每次只追赶一批；范围和下一步会在完成后显示。不代表当天一定读取到记录。
+        </p>
         {wellnessCatchUpResult?.batch ? (
           <div className="integration-progress" aria-label="恢复数据同步进度">
             <p>
@@ -618,11 +631,29 @@ export function GarminIntegrationCard({
           </p>
         ) : null}
       </div>
+      {status.state === "connected" ? (
+        <details
+          className="integration-maintenance"
+          role="group"
+          aria-label="连接维护"
+        >
+          <summary>连接维护</summary>
+          <p>需要更新授权时，再替换本机生成的 Token 文件。</p>
+          {credentialForm}
+        </details>
+      ) : (
+        <section className="integration-maintenance" aria-label="连接维护">
+          {credentialForm}
+        </section>
+      )}
       {catchUpResult?.batch ? (
         <div className="integration-progress" aria-label="活动同步进度">
           <p>
             本批范围：{catchUpResult.batch.from} 至 {catchUpResult.batch.to}；
-            已处理至 {catchUpResult.batch.to}。
+            已处理至 {catchUpResult.batch.to}，新增{" "}
+            {catchUpResult.summary.created}
+            条、更新 {catchUpResult.summary.changed} 条、未变化{" "}
+            {catchUpResult.summary.unchanged} 条。
           </p>
           {catchUpFailure ? (
             <p>失败日期：{catchUpFailure.date}。处理后可从这一天重试。</p>

@@ -164,6 +164,7 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
   const [standaloneFeedbackEntry] = useState(pathname === "/feedback");
   const [initialChildren] = useState<React.ReactNode>(() => children);
   const shellRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const activeTabRef = useRef(activeTab);
   const scrollPositionsRef = useRef<Record<RootTab, number>>({
     today: 0,
@@ -175,7 +176,8 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
   const activateTab = useCallback(
     (tab: RootTab, url: string, previousTabUrl?: string) => {
       const currentTab = activeTabRef.current;
-      scrollPositionsRef.current[currentTab] = window.scrollY;
+      scrollPositionsRef.current[currentTab] =
+        contentRef.current?.scrollTop ?? 0;
       if (previousTabUrl !== undefined) {
         tabUrlsRef.current[currentTab] = previousTabUrl;
       }
@@ -190,8 +192,11 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
       setActiveTab(tab);
       window.requestAnimationFrame(() => {
         const target = scrollPositionsRef.current[tab];
-        if (Math.abs(window.scrollY - target) > 1) {
-          window.scrollTo({ top: target, behavior: "auto" });
+        if (
+          contentRef.current &&
+          Math.abs(contentRef.current.scrollTop - target) > 1
+        ) {
+          contentRef.current.scrollTo({ top: target, behavior: "auto" });
         }
       });
     },
@@ -268,20 +273,26 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
       data-app-shell-ready="false"
     >
       <PwaUpdatePrompt pendingCommandCount={commands.length} />
-      <div hidden={!showTabHost} data-tab-host="persistent">
-        {([...renderedTabs] as RootTab[]).map((tab) => (
-          <Activity key={tab} mode={activeTab === tab ? "visible" : "hidden"}>
-            <div data-tab-panel={tab}>
-              <TabContent
-                tab={tab}
-                initialTab={initialTab}
-                initialChildren={initialChildren}
-              />
-            </div>
-          </Activity>
-        ))}
+      <div
+        ref={contentRef}
+        className="protected-app-content"
+        data-app-shell-content
+      >
+        <div hidden={!showTabHost} data-tab-host="persistent">
+          {([...renderedTabs] as RootTab[]).map((tab) => (
+            <Activity key={tab} mode={activeTab === tab ? "visible" : "hidden"}>
+              <div data-tab-panel={tab}>
+                <TabContent
+                  tab={tab}
+                  initialTab={initialTab}
+                  initialChildren={initialChildren}
+                />
+              </div>
+            </Activity>
+          ))}
+        </div>
+        {showTabHost ? null : children}
       </div>
-      {showTabHost ? null : children}
       <BottomNav activePath={activePath} onNavigate={navigate} />
     </div>
   );

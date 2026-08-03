@@ -292,6 +292,7 @@ export function TodayClient() {
       today={todayLabel(localDate)}
       localDate={localDate}
       planVersion={aggregate.plan?.version ?? null}
+      planStartsToday={aggregate.plan?.effectiveFrom === aggregate.targetDate}
       initialDashboard={aggregate.day}
       execution={aggregate.execution}
       readOnlyOffline={readOnlyOffline}

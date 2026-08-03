@@ -574,6 +574,7 @@ export function DashboardShell({
   today,
   localDate,
   planVersion,
+  planStartsToday,
   initialDashboard,
   execution,
   onRefresh,
@@ -588,6 +589,7 @@ export function DashboardShell({
   today: string;
   localDate: string;
   planVersion: number | null;
+  planStartsToday: boolean;
   initialDashboard: TodayDashboard;
   execution: ExecutionContextToday;
   onRefresh: () => Promise<unknown>;
@@ -618,6 +620,8 @@ export function DashboardShell({
   ).length;
   const notStarted = initialDashboard.state === "not_started";
   const missing = initialDashboard.state === "missing";
+  const baselineDay =
+    planStartsToday && !missing && !notStarted && tasks.length === 0;
   const latestSafety = initialDashboard.feedbacks.at(-1)?.safetyLevel ?? null;
   const currentSafety = latestSafety;
   const externalRecords = initialDashboard.externalTrainingRecords;
@@ -641,7 +645,9 @@ export function DashboardShell({
     : notStarted
       ? `计划将于 ${formatStartDate(initialDashboard.startDate)}开始`
       : tasks.length === 0
-        ? "今天没有安排训练"
+        ? baselineDay
+          ? "第 1 周从今天开始"
+          : "今天没有安排训练"
         : remainingCount > 0
           ? `今天还剩 ${remainingCount} 项`
           : "今天的任务已处理";
@@ -833,7 +839,9 @@ export function DashboardShell({
         ) : null}
         {!missing && !notStarted && tasks.length === 0 ? (
           <p className="empty-state-copy">
-            按计划恢复即可；如果有突发反应，仍可以随时提交反馈。
+            {baselineDay
+              ? "今天是恢复/基线日；可先记录一次基线反馈。"
+              : "按计划恢复即可；如果有突发反应，仍可以随时提交反馈。"}
           </p>
         ) : null}
         {tasks.length > 0 ? (

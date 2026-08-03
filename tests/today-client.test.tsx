@@ -238,6 +238,52 @@ describe("today background refresh", () => {
     expect(screen.queryByText(/全部已同步|待同步 0/)).toBeNull();
   });
 
+  it("identifies a task-free effective start as a baseline day without relabeling later rest days", async () => {
+    const firstDay = aggregate("planned", 0);
+    firstDay.plan!.effectiveFrom = firstDay.targetDate;
+    firstDay.day.tasks = [];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(firstDay)));
+
+    const { unmount } = render(
+      <QueryClientProvider
+        client={
+          new QueryClient({
+            defaultOptions: { queries: { retry: false } },
+          })
+        }
+      >
+        <TodayClient />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("第 1 周从今天开始")).toBeTruthy();
+    expect(
+      screen.getByText("今天是恢复/基线日；可先记录一次基线反馈。"),
+    ).toBeTruthy();
+    unmount();
+
+    const laterRestDay = aggregate("planned", 0);
+    laterRestDay.day.tasks = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse(laterRestDay)),
+    );
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({
+            defaultOptions: { queries: { retry: false } },
+          })
+        }
+      >
+        <TodayClient />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("今天没有安排训练")).toBeTruthy();
+    expect(screen.queryByText("第 1 周从今天开始")).toBeNull();
+  });
+
   it("prefetches calendar and settings reads once Today is ready and the browser is idle", async () => {
     let idleCallback: (() => void) | null = null;
     vi.stubGlobal(

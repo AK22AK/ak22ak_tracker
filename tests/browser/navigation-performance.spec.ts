@@ -564,6 +564,14 @@ async function expectMobileLayoutIntegrity(page: Page) {
     const viewportWidth = document.documentElement.clientWidth;
     const viewportHeight = window.innerHeight;
     const isVisible = (element: HTMLElement) => {
+      const closedDetails = element.closest<HTMLDetailsElement>("details");
+      if (
+        closedDetails &&
+        !closedDetails.open &&
+        element.tagName.toLowerCase() !== "summary"
+      ) {
+        return false;
+      }
       const style = window.getComputedStyle(element);
       const rect = element.getBoundingClientRect();
       return (
@@ -833,6 +841,73 @@ for (const width of [320, 375, 390, 430]) {
     }
   });
 }
+
+test("integration details keep enabled and disabled actions visually distinct", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockPrivateReads(page, 0);
+  await page.goto("/settings/garmin");
+  await expect(page.locator(".integration-card")).toBeVisible();
+
+  const garmin = await page.evaluate(() => {
+    const card = document.querySelector<HTMLElement>(".integration-card");
+    const enabled = document
+      .getElementById("garmin-sync-date")
+      ?.parentElement?.querySelector<HTMLButtonElement>("button");
+    const maintenance = document.querySelector<HTMLDetailsElement>(
+      ".integration-maintenance",
+    );
+    const summary = maintenance?.querySelector<HTMLElement>("summary");
+    if (!card || !enabled || !maintenance || !summary) return null;
+    return {
+      syncBeforeMaintenance: Boolean(
+        enabled.compareDocumentPosition(maintenance) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+      maintenanceOpen: maintenance.open,
+      summaryHeight: summary.getBoundingClientRect().height,
+      enabled: {
+        background: getComputedStyle(enabled).backgroundColor,
+        border: getComputedStyle(enabled).borderColor,
+        color: getComputedStyle(enabled).color,
+        cursor: getComputedStyle(enabled).cursor,
+      },
+    };
+  });
+  expect(garmin).not.toBeNull();
+  expect(garmin?.syncBeforeMaintenance).toBe(true);
+  expect(garmin?.maintenanceOpen).toBe(false);
+  expect(garmin?.summaryHeight).toBeGreaterThanOrEqual(44);
+  expect(garmin?.enabled.cursor).toBe("pointer");
+
+  for (const path of ["/settings/xunji", "/settings/deepseek"]) {
+    await page.goto(path);
+    await expect(page.locator(".integration-card")).toBeVisible();
+    const disabled = await page.evaluate(() => {
+      const button = [
+        ...document.querySelectorAll<HTMLButtonElement>(
+          ".integration-card button",
+        ),
+      ].find((candidate) => candidate.disabled);
+      if (!button) return null;
+      const style = getComputedStyle(button);
+      return {
+        background: style.backgroundColor,
+        border: style.borderColor,
+        color: style.color,
+        cursor: style.cursor,
+        disabled: button.disabled,
+      };
+    });
+    expect(disabled).not.toBeNull();
+    expect(disabled?.disabled).toBe(true);
+    expect(disabled?.cursor).toBe("not-allowed");
+    expect(disabled?.background).not.toBe(garmin?.enabled.background);
+    expect(disabled?.border).not.toBe(garmin?.enabled.border);
+    expect(disabled?.color).not.toBe(garmin?.enabled.color);
+  }
+});
 
 for (const width of [320, 375, 390, 430]) {
   test(`manual evaluation decision confirmation fits a ${width}px mobile viewport`, async ({
@@ -1231,6 +1306,9 @@ for (const width of [320, 375, 390, 430]) {
     await expect(garminSettings.locator("#garmin-token-file")).toHaveCount(1);
     await expect(
       garminSettings.getByRole("button", { name: "导入并加密保存" }),
+    ).not.toBeVisible();
+    await expect(
+      garminSettings.getByRole("group", { name: "连接维护" }),
     ).toBeVisible();
 
     await page.goto("/");
@@ -1383,8 +1461,12 @@ test("warm Calendar and Settings list remains visible without aggregate refetch"
     page.locator('[data-tab-panel="calendar"] .calendar-task'),
   ).toBeVisible();
   await page.evaluate(() => {
-    document.body.style.minHeight = "3000px";
-    window.scrollTo(0, 320);
+    document
+      .querySelector<HTMLElement>('[data-tab-panel="calendar"] main')
+      ?.style.setProperty("min-height", "3000px", "important");
+    document
+      .querySelector<HTMLElement>("[data-app-shell-content]")
+      ?.scrollTo({ top: 320, behavior: "auto" });
   });
   const requestsAfterCalendar = { ...counters };
 
@@ -1397,7 +1479,14 @@ test("warm Calendar and Settings list remains visible without aggregate refetch"
   await expect(
     page.locator('[data-tab-panel="settings"] .settings-row'),
   ).toHaveCount(6);
-  await page.evaluate(() => window.scrollTo(0, 640));
+  await page.evaluate(() => {
+    document
+      .querySelector<HTMLElement>('[data-tab-panel="settings"] main')
+      ?.style.setProperty("min-height", "3000px", "important");
+    document
+      .querySelector<HTMLElement>("[data-app-shell-content]")
+      ?.scrollTo({ top: 640, behavior: "auto" });
+  });
 
   const calendarReturn = await measureTabClick(
     page,
@@ -1405,7 +1494,15 @@ test("warm Calendar and Settings list remains visible without aggregate refetch"
     '[data-tab-panel="calendar"] .calendar-task',
   );
   expect(calendarReturn).toBeLessThan(100);
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(320);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.querySelector<HTMLElement>("[data-app-shell-content]")
+            ?.scrollTop,
+      ),
+    )
+    .toBe(320);
   expect(counters).toEqual(requestsAfterCalendar);
   await expect(page.getByText(/正在切换/)).toHaveCount(0);
 
@@ -1418,7 +1515,15 @@ test("warm Calendar and Settings list remains visible without aggregate refetch"
   await expect(
     page.locator('[data-tab-panel="settings"] .settings-row'),
   ).toHaveCount(6);
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(640);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          document.querySelector<HTMLElement>("[data-app-shell-content]")
+            ?.scrollTop,
+      ),
+    )
+    .toBe(640);
 });
 
 test("persistent tabs keep DOM, active state and browser history URLs aligned", async ({

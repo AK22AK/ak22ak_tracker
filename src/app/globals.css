@@ -949,6 +949,52 @@ h2 {
   opacity: 0.6;
 }
 
+.integration-card .integration-form button,
+.integration-card .integration-actions button {
+  border: 1px solid var(--green);
+  background: var(--green);
+  color: white;
+  cursor: pointer;
+}
+
+.integration-card .integration-form button:disabled,
+.integration-card .integration-actions button:disabled {
+  border-color: #c4cec6;
+  background: #eef2ef;
+  color: #68736c;
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.integration-action-help {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.integration-maintenance {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.integration-maintenance summary {
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  color: var(--ink);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.integration-maintenance > p {
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
 .safety-message {
   padding: 0.75rem;
   border-radius: 0.75rem;
@@ -3224,6 +3270,60 @@ summary:focus-visible {
 .bottom-nav a[aria-current="page"] {
   background: var(--color-brand-soft);
   color: var(--color-brand);
+}
+
+/* UI-R3b: keep the navigation inside the dynamic-viewport shell instead of
+   relying on WebKit's unstable fixed-bottom compositor anchor on iOS 26. */
+html:has(.protected-app-shell),
+body:has(.protected-app-shell) {
+  height: 100%;
+  overflow: hidden;
+}
+
+.protected-app-shell {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 100svh;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--color-page);
+}
+
+.protected-app-content {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.protected-app-content > [data-tab-host] {
+  min-height: 100%;
+}
+
+.protected-app-shell .bottom-nav {
+  position: static;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  z-index: auto;
+  grid-row: 2;
+  align-self: stretch;
+}
+
+.protected-app-content .app-shell {
+  min-height: 100%;
+  padding-bottom: 1.5rem;
+}
+
+.protected-app-content .feedback-flow-page {
+  min-height: 100%;
+  padding-bottom: 1.5rem;
+}
+
+.protected-app-shell .pwa-update-banner {
+  position: absolute;
 }
 
 .empty-tab-state h2 {

@@ -62,6 +62,26 @@ function renderCard(
 }
 
 describe("Garmin token-only settings flow", () => {
+  it("keeps connected-day sync first and defers token replacement to maintenance", () => {
+    renderCard({ ...disconnected, state: "connected" });
+
+    const activitySync = screen.getByRole("button", { name: "同步这一天" });
+    const wellnessSync = screen.getByRole("button", { name: "同步睡眠与步数" });
+    const maintenance = screen.getByRole("group", { name: "连接维护" });
+
+    expect(
+      activitySync.compareDocumentPosition(maintenance) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      wellnessSync.compareDocumentPosition(maintenance) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect((maintenance as HTMLDetailsElement).open).toBe(false);
+    expect(screen.getAllByText("最近成功处理日期：暂无")).toHaveLength(2);
+    expect(screen.getAllByText(/不代表当天一定读取到记录/)).toHaveLength(2);
+  });
+
   it("restores the persisted wellness cursor after the settings page reloads", () => {
     renderCard(
       { ...disconnected, state: "connected" },
@@ -81,7 +101,7 @@ describe("Garmin token-only settings flow", () => {
     expect(
       screen.getByRole("button", { name: "继续同步恢复数据" }),
     ).toBeTruthy();
-    expect(screen.getByText("最近成功日期：2026-07-25")).toBeTruthy();
+    expect(screen.getByText("最近成功处理日期：2026-07-25")).toBeTruthy();
     expect(screen.getByText("下一次从 2026-07-26 继续。")).toBeTruthy();
   });
 
@@ -403,7 +423,9 @@ describe("Garmin token-only settings flow", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "同步睡眠与步数" }));
 
-    await screen.findByText("睡眠与步数已保存。");
+    await screen.findByText(
+      "睡眠与步数已保存：新增 1 项、更新 0 项、未变化 0 项。",
+    );
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/trackers/anonymous-tracker/integrations/garmin/wellness",
       expect.objectContaining({
