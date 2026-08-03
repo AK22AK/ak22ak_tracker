@@ -66,6 +66,7 @@ function dayAggregate(date: string, title: string) {
 }
 
 function renderCalendar(initialDate = "2026-07-19") {
+  window.history.replaceState(null, "", `/calendar?date=${initialDate}`);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -110,7 +111,9 @@ describe("calendar instant interaction (P0-04/P0-06)", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     renderCalendar();
-    const todayButton = screen.getByRole("button", { name: /^2026-07-19/ });
+    const todayButton = await screen.findByRole("button", {
+      name: /^2026-07-19/,
+    });
     expect(todayButton.getAttribute("aria-current")).toBe("date");
     expect(todayButton.getAttribute("aria-pressed")).toBe("true");
 
@@ -137,7 +140,7 @@ describe("calendar instant interaction (P0-04/P0-06)", () => {
     expect(await screen.findByText("Newest day")).toBeTruthy();
   });
 
-  it("returns from another date to today with URL, selection and focus restored", () => {
+  it("returns from another date to today with URL, selection and focus restored", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn((input: RequestInfo | URL) => {
@@ -155,6 +158,7 @@ describe("calendar instant interaction (P0-04/P0-06)", () => {
     );
 
     renderCalendar();
+    await screen.findByRole("button", { name: /^2026-07-19/ });
     fireEvent.click(screen.getByRole("button", { name: /^2026-07-20/ }));
 
     const returnToToday = screen.getByRole("button", { name: "回到今天" });
@@ -251,6 +255,7 @@ describe("calendar instant interaction (P0-04/P0-06)", () => {
     );
 
     renderCalendar();
+    await screen.findByRole("button", { name: /^2026-07-19/ });
     fireEvent.click(screen.getByRole("button", { name: /^2026-07-20/ }));
     fireEvent.click(screen.getByRole("button", { name: /^2026-07-21/ }));
 
@@ -288,6 +293,7 @@ describe("calendar instant interaction (P0-04/P0-06)", () => {
     );
 
     renderCalendar();
+    await screen.findByRole("button", { name: /^2026-07-19/ });
     fireEvent.click(screen.getByRole("button", { name: /^2026-07-20/ }));
     await waitFor(() => expect(signals.has("2026-07-20")).toBe(true));
     fireEvent.click(screen.getByRole("button", { name: /^2026-07-21/ }));
@@ -295,7 +301,7 @@ describe("calendar instant interaction (P0-04/P0-06)", () => {
     await waitFor(() => expect(signals.get("2026-07-20")?.aborted).toBe(true));
   });
 
-  it("preserves the selected day when changing month and clamps to the last valid day", () => {
+  it("preserves the selected day when changing month and clamps to the last valid day", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn((input: RequestInfo | URL) => {
@@ -314,6 +320,7 @@ describe("calendar instant interaction (P0-04/P0-06)", () => {
     );
 
     renderCalendar("2026-08-31");
+    await screen.findByRole("button", { name: /^2026-08-31/ });
     fireEvent.click(screen.getByRole("button", { name: "下个月" }));
 
     expect(window.location.search).toBe("?date=2026-09-30");

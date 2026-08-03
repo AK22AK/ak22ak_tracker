@@ -7,12 +7,10 @@ export default async function CalendarPage({
 }) {
   const requestedDate = (await searchParams).date;
   return (
-    <div className="root-tab-route-content" data-root-tab-content="calendar">
-      <CalendarClient
-        initialDate={
-          typeof requestedDate === "string" ? requestedDate : undefined
-        }
-      />
-    </div>
+    <CalendarClient
+      initialDate={
+        typeof requestedDate === "string" ? requestedDate : undefined
+      }
+    />
   );
 }

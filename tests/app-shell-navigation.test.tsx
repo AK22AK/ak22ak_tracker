@@ -35,6 +35,9 @@ vi.mock("@/components/settings-client", () => ({
     <main aria-label="设置缓存内容">
       设置缓存内容
       <input aria-label="设置草稿" />
+      <Link href="/settings/garmin" onClick={(event) => event.preventDefault()}>
+        打开 Garmin 详情
+      </Link>
     </main>
   ),
 }));
@@ -47,6 +50,14 @@ vi.mock("next/navigation", () => ({
   usePathname: () => navigation.pathname,
   useRouter: () => ({ push: navigation.push }),
 }));
+
+function OpaqueCalendarRouteChildren() {
+  return (
+    <div data-root-tab-content="calendar">
+      <main aria-label="迟到的日历路由内容">迟到的日历路由内容</main>
+    </div>
+  );
+}
 
 describe("protected app shell navigation (P0-05)", () => {
   afterEach(() => {
@@ -159,14 +170,7 @@ describe("protected app shell navigation (P0-05)", () => {
     window.history.replaceState(null, "", "/settings");
     const view = render(
       <ProtectedAppShell>
-        <main aria-label="设置缓存内容">
-          <Link
-            href="/settings/garmin"
-            onClick={(event) => event.preventDefault()}
-          >
-            打开 Garmin 详情
-          </Link>
-        </main>
+        <main aria-label="设置路由 children">设置路由 children</main>
       </ProtectedAppShell>,
     );
 
@@ -265,11 +269,7 @@ describe("protected app shell navigation (P0-05)", () => {
     window.history.replaceState(null, "", "/settings");
     render(
       <ProtectedAppShell>
-        <div data-route-segment-wrapper="true">
-          <div data-root-tab-content="calendar">
-            <main aria-label="迟到的日历路由内容">迟到的日历路由内容</main>
-          </div>
-        </div>
+        <OpaqueCalendarRouteChildren />
       </ProtectedAppShell>,
     );
 

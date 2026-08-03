@@ -122,9 +122,9 @@ AK Tracker 的界面气质定义为：**安静、可信、有个人温度的康�
 - **最后一次导航意图获胜**：从详情逃逸到根 Tab 时，根壳以单调导航代次同步 URL、选中态和
   可见面板；未提交详情由 History 直接压过，已提交详情只用一次 App Router 导航建立正确历史
   tree。更早 transition 迟到的 pathname、children 或 URL 不得重新盖住根 Tab，也不得把详情
-  URL 记成设置根页的回退地址。每个根页的 Server Component 还必须在 route children 树中声明
-  自己的 Tab 身份；共享壳穿过 Flight/segment 包装读取声明，只把 children 绑定到声明的 Tab，
-  不能根据可能先提交的 pathname 猜测内容归属。根 Tab 之间继续保留持久 Host 的快速切换。
+  URL 记成设置根页的回退地址。四个根面板只由持久 Host 内对应的客户端组件渲染；App Router
+  children 仅用于非根详情，不能再作为任一根面板的初始内容。这样 pathname 与 Flight children
+  即使交叉提交，也没有把旧内容绑定到新 Tab 的入口。根 Tab 之间继续保留持久 Host 的快速切换。
 
 ## 从 Apple 设计原则选择性吸收
 

@@ -7,7 +7,6 @@ import {
   Suspense,
   useCallback,
   useEffect,
-  isValidElement,
   type MouseEvent,
   useRef,
   useState,
@@ -175,30 +174,6 @@ function navigationTab(pathname: string): RootTab {
   return "today";
 }
 
-function declaredRootTab(children: React.ReactNode, depth = 0): RootTab | null {
-  if (depth > 12) return null;
-  const nodes = Array.isArray(children) ? children : [children];
-  for (const node of nodes) {
-    if (!isValidElement(node)) continue;
-    const props = node.props as {
-      children?: React.ReactNode;
-      "data-root-tab-content"?: unknown;
-    };
-    const declared = props["data-root-tab-content"];
-    if (
-      declared === "today" ||
-      declared === "calendar" ||
-      declared === "trends" ||
-      declared === "settings"
-    ) {
-      return declared;
-    }
-    const nested = declaredRootTab(props.children, depth + 1);
-    if (nested) return nested;
-  }
-  return null;
-}
-
 function internalNonRootHref(event: MouseEvent<HTMLDivElement>) {
   if (
     event.button !== 0 ||
@@ -220,16 +195,7 @@ function internalNonRootHref(event: MouseEvent<HTMLDivElement>) {
   return `${url.pathname}${url.search}`;
 }
 
-function TabContent({
-  tab,
-  initialTab,
-  initialChildren,
-}: {
-  tab: RootTab;
-  initialTab: RootTab | null;
-  initialChildren: React.ReactNode;
-}) {
-  if (tab === initialTab) return initialChildren;
+function TabContent({ tab }: { tab: RootTab }) {
   if (tab === "today") return <TodayClient />;
   if (tab === "calendar") {
     return (
@@ -259,14 +225,9 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { commands } = useOfflineCommands();
-  // App Router can briefly publish a root pathname with children from an older
-  // transition. Bind streamed route children only to the root page that
-  // declared them, never to whichever pathname happened to commit first.
-  const [initialTab] = useState<RootTab | null>(
-    () => declaredRootTab(children) ?? exactRootTab(pathname),
-  );
+  const [initialTab] = useState<RootTab | null>(() => exactRootTab(pathname));
   const [activeTab, setActiveTab] = useState<RootTab>(
-    exactRootTab(pathname) ?? initialTab ?? navigationTab(pathname),
+    initialTab ?? navigationTab(pathname),
   );
   const [visitedTabs, setVisitedTabs] = useState<ReadonlySet<RootTab>>(
     () => new Set(initialTab ? [initialTab] : []),
@@ -282,7 +243,6 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
     () => pathname,
   );
   const [standaloneFeedbackEntry] = useState(pathname === "/feedback");
-  const [initialChildren] = useState<React.ReactNode>(() => children);
   const shellRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const activeTabRef = useRef(activeTab);
@@ -499,11 +459,7 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
                 mode={activeTab === tab ? "visible" : "hidden"}
               >
                 <div data-tab-panel={tab}>
-                  <TabContent
-                    tab={tab}
-                    initialTab={initialTab}
-                    initialChildren={initialChildren}
-                  />
+                  <TabContent tab={tab} />
                 </div>
               </Activity>
             ))}
