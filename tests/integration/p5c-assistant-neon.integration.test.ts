@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { schemaVersion } from "@/domain/schemas";
 import { getDatabase } from "@/server/db/client";
 import {
+  assistantMemories,
   githubSyncOutbox,
   planVersions,
   rehabProfiles,
@@ -55,7 +56,7 @@ integration("P5c rehabilitation assistant Neon persistence", () => {
         tasks: [],
       },
     });
-  });
+  }, 45_000);
 
   afterAll(async () => {
     if (!testDatabaseUrl) return;
@@ -64,7 +65,7 @@ integration("P5c rehabilitation assistant Neon persistence", () => {
       .delete(githubSyncOutbox)
       .where(inArray(githubSyncOutbox.aggregateId, [jobId]));
     await database.delete(trackers).where(eq(trackers.id, trackerId));
-  });
+  }, 45_000);
 
   it("versions profiles, persists safe memory, and binds v3 advice to one source turn", async () => {
     const database = getDatabase();
@@ -240,6 +241,34 @@ integration("P5c rehabilitation assistant Neon persistence", () => {
       (item) => item.status === "active",
     );
     expect(memory).toBeDefined();
+
+    const [revisionBeforeManualUpdate] = await database
+      .select({ value: trackers.aiContextRevision })
+      .from(trackers)
+      .where(eq(trackers.id, trackerId));
+    await database
+      .update(trackers)
+      .set({ aiContextRevision: 2_147_483_647 })
+      .where(eq(trackers.id, trackerId));
+    await expect(
+      assistant.updateMemory({
+        trackerId,
+        memoryId: memory!.id,
+        category: "equipment",
+        content: "This update must roll back",
+        now: new Date(now.valueOf() + 4_000),
+      }),
+    ).rejects.toBeDefined();
+    const [memoryAfterFailedRevision] = await database
+      .select({ content: assistantMemories.content })
+      .from(assistantMemories)
+      .where(eq(assistantMemories.id, memory!.id));
+    expect(memoryAfterFailedRevision.content).toBe(memory!.content);
+    await database
+      .update(trackers)
+      .set({ aiContextRevision: revisionBeforeManualUpdate.value })
+      .where(eq(trackers.id, trackerId));
+
     await assistant.updateMemory({
       trackerId,
       memoryId: memory!.id,
@@ -254,5 +283,43 @@ integration("P5c rehabilitation assistant Neon persistence", () => {
       sourceAssistantTurnId: turnId,
     });
     expect(changed.contextHash).not.toBe(context.contextHash);
+
+    const [revisionAfterManualUpdate] = await database
+      .select({ value: trackers.aiContextRevision })
+      .from(trackers)
+      .where(eq(trackers.id, trackerId));
+    expect(revisionAfterManualUpdate.value).toBe(
+      revisionBeforeManualUpdate.value + 1,
+    );
+    await database
+      .update(trackers)
+      .set({ aiContextRevision: 2_147_483_647 })
+      .where(eq(trackers.id, trackerId));
+    await expect(
+      assistant.deleteMemory({
+        trackerId,
+        memoryId: memory!.id,
+        now: new Date(now.valueOf() + 5_000),
+      }),
+    ).rejects.toBeDefined();
+    const [memoryAfterFailedDelete] = await database
+      .select({ status: assistantMemories.status })
+      .from(assistantMemories)
+      .where(eq(assistantMemories.id, memory!.id));
+    expect(memoryAfterFailedDelete.status).toBe("active");
+    await database
+      .update(trackers)
+      .set({ aiContextRevision: revisionAfterManualUpdate.value })
+      .where(eq(trackers.id, trackerId));
+    await assistant.deleteMemory({
+      trackerId,
+      memoryId: memory!.id,
+      now: new Date(now.valueOf() + 6_000),
+    });
+    const [revisionAfterDelete] = await database
+      .select({ value: trackers.aiContextRevision })
+      .from(trackers)
+      .where(eq(trackers.id, trackerId));
+    expect(revisionAfterDelete.value).toBe(revisionAfterManualUpdate.value + 1);
   }, 45_000);
 });

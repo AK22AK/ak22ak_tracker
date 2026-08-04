@@ -33,13 +33,6 @@ export class AssistantTrackerNotFoundError extends Error {
   }
 }
 
-export class AssistantTurnNotFoundError extends Error {
-  constructor() {
-    super("assistant_turn_not_found");
-    this.name = "AssistantTurnNotFoundError";
-  }
-}
-
 export class AssistantCommandConflictError extends Error {
   constructor() {
     super("assistant_command_conflict");
@@ -341,29 +334,6 @@ export function createNeonAssistantStore(database = getDatabase()) {
         );
     },
 
-    async markFeedbackConfirmed(input: {
-      trackerId: string;
-      turnId: string;
-      feedbackId: string;
-      updatedAt: Date;
-    }) {
-      const result = await database
-        .update(assistantTurns)
-        .set({
-          confirmedFeedbackId: input.feedbackId,
-          updatedAt: input.updatedAt,
-        })
-        .where(
-          and(
-            eq(assistantTurns.id, input.turnId),
-            eq(assistantTurns.trackerId, input.trackerId),
-            eq(assistantTurns.status, "succeeded"),
-          ),
-        )
-        .returning({ id: assistantTurns.id });
-      if (result.length !== 1) throw new AssistantTurnNotFoundError();
-    },
-
     async saveActiveProfile(input: {
       trackerId: string;
       document: RehabProfileDocument;
@@ -417,25 +387,37 @@ export function createNeonAssistantStore(database = getDatabase()) {
       now: Date;
     }) {
       const category = assistantMemoryCategorySchema.parse(input.category);
-      const [updated] = await database
-        .update(assistantMemories)
-        .set({ category, content: input.content, updatedAt: input.now })
-        .where(
-          and(
-            eq(assistantMemories.id, input.memoryId),
-            eq(assistantMemories.trackerId, input.trackerId),
-            eq(assistantMemories.status, "active"),
+      const [updatedRows] = await database.batch([
+        database
+          .update(assistantMemories)
+          .set({ category, content: input.content, updatedAt: input.now })
+          .where(
+            and(
+              eq(assistantMemories.id, input.memoryId),
+              eq(assistantMemories.trackerId, input.trackerId),
+              eq(assistantMemories.status, "active"),
+            ),
+          )
+          .returning({ id: assistantMemories.id }),
+        database
+          .update(trackers)
+          .set({
+            aiContextRevision: sql`${trackers.aiContextRevision} + 1`,
+            updatedAt: input.now,
+          })
+          .where(
+            and(
+              eq(trackers.id, input.trackerId),
+              sql`exists (
+                select 1 from ${assistantMemories}
+                where ${assistantMemories.id} = ${input.memoryId}::uuid
+                  and ${assistantMemories.trackerId} = ${input.trackerId}::uuid
+                  and ${assistantMemories.status} = 'active'
+              )`,
+            ),
           ),
-        )
-        .returning({ id: assistantMemories.id });
-      if (!updated) throw new Error("memory_not_found");
-      await database
-        .update(trackers)
-        .set({
-          aiContextRevision: sql`${trackers.aiContextRevision} + 1`,
-          updatedAt: input.now,
-        })
-        .where(eq(trackers.id, input.trackerId));
+      ]);
+      if (!updatedRows[0]) throw new Error("memory_not_found");
     },
 
     async deleteMemory(input: {
@@ -443,25 +425,37 @@ export function createNeonAssistantStore(database = getDatabase()) {
       memoryId: string;
       now: Date;
     }) {
-      const [updated] = await database
-        .update(assistantMemories)
-        .set({ status: "deleted", updatedAt: input.now })
-        .where(
-          and(
-            eq(assistantMemories.id, input.memoryId),
-            eq(assistantMemories.trackerId, input.trackerId),
-            eq(assistantMemories.status, "active"),
+      const [updatedRows] = await database.batch([
+        database
+          .update(assistantMemories)
+          .set({ status: "deleted", updatedAt: input.now })
+          .where(
+            and(
+              eq(assistantMemories.id, input.memoryId),
+              eq(assistantMemories.trackerId, input.trackerId),
+              eq(assistantMemories.status, "active"),
+            ),
+          )
+          .returning({ id: assistantMemories.id }),
+        database
+          .update(trackers)
+          .set({
+            aiContextRevision: sql`${trackers.aiContextRevision} + 1`,
+            updatedAt: input.now,
+          })
+          .where(
+            and(
+              eq(trackers.id, input.trackerId),
+              sql`exists (
+                select 1 from ${assistantMemories}
+                where ${assistantMemories.id} = ${input.memoryId}::uuid
+                  and ${assistantMemories.trackerId} = ${input.trackerId}::uuid
+                  and ${assistantMemories.status} = 'deleted'
+              )`,
+            ),
           ),
-        )
-        .returning({ id: assistantMemories.id });
-      if (!updated) throw new Error("memory_not_found");
-      await database
-        .update(trackers)
-        .set({
-          aiContextRevision: sql`${trackers.aiContextRevision} + 1`,
-          updatedAt: input.now,
-        })
-        .where(eq(trackers.id, input.trackerId));
+      ]);
+      if (!updatedRows[0]) throw new Error("memory_not_found");
     },
   };
 }

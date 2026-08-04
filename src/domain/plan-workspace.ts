@@ -7,7 +7,7 @@ export const planWorkspaceSchema = z
     schemaVersion: z.literal(schemaVersion),
     trackerKey: trackerKeySchema,
     localDate: localDateSchema,
-    currentWeek: z.number().int().positive().nullable(),
+    calendarWeek: z.number().int().positive().nullable(),
     plan: z
       .object({
         id: z.uuid(),

@@ -1,24 +1,30 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { getAuthorizedSession, getAssistantStore, executeAppendEventCommand } =
-  vi.hoisted(() => ({
-    getAuthorizedSession: vi.fn(),
-    getAssistantStore: vi.fn(),
-    executeAppendEventCommand: vi.fn(),
-  }));
+const {
+  getAuthorizedSession,
+  getAssistantStore,
+  executeAssistantFeedbackCommand,
+} = vi.hoisted(() => ({
+  getAuthorizedSession: vi.fn(),
+  getAssistantStore: vi.fn(),
+  executeAssistantFeedbackCommand: vi.fn(),
+}));
 
 vi.mock("@/server/auth/session", () => ({ getAuthorizedSession }));
 vi.mock("@/server/integrations/assistant/repository", () => ({
   getAssistantStore,
 }));
-vi.mock("@/server/commands/event-command-core", async (importOriginal) => ({
-  ...(await importOriginal<
-    typeof import("@/server/commands/event-command-core")
-  >()),
-  executeAppendEventCommand,
-}));
-vi.mock("@/server/commands/event-command", () => ({
-  createNeonEventCommandStore: vi.fn(),
+vi.mock(
+  "@/server/commands/assistant-feedback-core",
+  async (importOriginal) => ({
+    ...(await importOriginal<
+      typeof import("@/server/commands/assistant-feedback-core")
+    >()),
+    executeAssistantFeedbackCommand,
+  }),
+);
+vi.mock("@/server/commands/assistant-feedback", () => ({
+  createNeonAssistantFeedbackCommandStore: vi.fn(),
 }));
 
 import { PUT } from "@/app/api/trackers/[trackerKey]/assistant/turns/[turnId]/feedback/route";
@@ -29,7 +35,7 @@ const commandId = "019c0000-0000-7000-8000-000000000052";
 describe("assistant feedback confirmation route", () => {
   beforeEach(() => {
     getAuthorizedSession.mockResolvedValue({ user: { id: "1" } });
-    executeAppendEventCommand.mockReset();
+    executeAssistantFeedbackCommand.mockReset();
     getAssistantStore.mockReturnValue({
       requireTracker: vi.fn(async () => ({
         id: "019c0000-0000-7000-8000-000000000053",
@@ -75,6 +81,6 @@ describe("assistant feedback confirmation route", () => {
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: "future_date_not_allowed" });
-    expect(executeAppendEventCommand).not.toHaveBeenCalled();
+    expect(executeAssistantFeedbackCommand).not.toHaveBeenCalled();
   });
 });

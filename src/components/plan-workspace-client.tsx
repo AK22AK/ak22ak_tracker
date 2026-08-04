@@ -1,12 +1,23 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 
 import { trackerQueryKeys } from "@/client/query-keys";
 import { fetchPlanWorkspace } from "@/client/tracker-api";
 
 const trackerKey = "knee-rehab";
+const CompactRehabAssistant = dynamic(
+  () =>
+    import("@/components/rehab-assistant-client").then(
+      ({ RehabAssistantClient }) => RehabAssistantClient,
+    ),
+  {
+    ssr: false,
+    loading: () => <p role="status">正在打开对话…</p>,
+  },
+);
 
 function shortDate(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -53,10 +64,12 @@ export function PlanWorkspaceClient() {
             <div>
               <p className="eyebrow">当前计划</p>
               <h2>
-                {data.currentWeek ? `第 ${data.currentWeek} 周` : "尚未开始"}
+                {data.calendarWeek
+                  ? `起算后第 ${data.calendarWeek} 个日历周`
+                  : "尚未开始"}
               </h2>
+              {data.calendarWeek ? <p>日历周不等于有效训练阶段。</p> : null}
             </div>
-            {data.plan ? <span>版本 {data.plan.version}</span> : null}
           </div>
           <div>
             <strong>当前目标</strong>
@@ -86,9 +99,7 @@ export function PlanWorkspaceClient() {
         <p className="eyebrow">康复助手</p>
         <h2>说说最近的训练和身体感受</h2>
         <p>助手会结合当前计划和近期记录回答，不会自动修改计划。</p>
-        <Link className="primary-button" href="/plan/conversation">
-          和康复助手聊聊
-        </Link>
+        <CompactRehabAssistant compact />
       </section>
 
       {data?.pendingAdviceCount ? (

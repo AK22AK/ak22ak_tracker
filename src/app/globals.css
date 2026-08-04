@@ -4831,6 +4831,7 @@ html[data-ak-shell-geometry-ready="false"]
 .plan-workspace-page,
 .assistant-conversation-page,
 .assistant-conversation,
+.plan-assistant-compact,
 .plan-workspace-summary,
 .plan-assistant-entry,
 .assistant-turn,
@@ -4918,6 +4919,7 @@ html[data-ak-shell-geometry-ready="false"]
 }
 
 .plan-workspace-summary > a,
+.plan-assistant-compact > a,
 .settings-detail-header > a {
   display: inline-flex;
   width: fit-content;
@@ -4973,6 +4975,12 @@ html[data-ak-shell-geometry-ready="false"]
   background: color-mix(in srgb, var(--color-surface) 94%, transparent);
   box-shadow: var(--shadow-floating);
   backdrop-filter: blur(12px);
+}
+
+.plan-assistant-compact .assistant-composer {
+  position: static;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 .assistant-composer textarea,

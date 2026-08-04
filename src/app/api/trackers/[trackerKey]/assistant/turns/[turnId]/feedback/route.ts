@@ -1,5 +1,3 @@
-import { isDeepStrictEqual } from "node:util";
-
 import { ZodError } from "zod";
 
 import { saveAssistantFeedbackCommandSchema } from "@/domain/rehab-assistant";
@@ -11,11 +9,12 @@ import {
   kneeCheckInInputSchema,
 } from "@/modules/knee-rehab/check-in";
 import { getAuthorizedSession } from "@/server/auth/session";
-import { createNeonEventCommandStore } from "@/server/commands/event-command";
 import {
-  executeAppendEventCommand,
-  EventCommandConflictError,
-} from "@/server/commands/event-command-core";
+  AssistantFeedbackCommandConflictError,
+  AssistantFeedbackUnavailableError,
+  executeAssistantFeedbackCommand,
+} from "@/server/commands/assistant-feedback-core";
+import { createNeonAssistantFeedbackCommandStore } from "@/server/commands/assistant-feedback";
 import { getAssistantStore } from "@/server/integrations/assistant/repository";
 import { scheduleGitHubMirrorAfterResponse } from "@/server/mirror/after-response";
 import { getEffectiveTrackerSafetyPolicy } from "@/server/safety-policy/repository";
@@ -71,31 +70,21 @@ export async function PUT(
     );
     const policyReference = safetyPolicyReference(policy);
     const safetyLevel = evaluateKneeCheckIn(checkIn, policy.rules);
-    const result = await executeAppendEventCommand(
-      createNeonEventCommandStore(),
+    const result = await executeAssistantFeedbackCommand(
+      createNeonAssistantFeedbackCommandStore(),
       {
         commandId: input.commandId,
         trackerKey,
-        kind: "symptom_check_in",
+        turnId,
         payload: { ...checkIn, safetyLevel, safetyPolicy: policyReference },
         occurredAt: input.occurredAt,
         occurredTimeZone: input.occurredTimeZone,
         occurredUtcOffsetMinutes: input.occurredUtcOffsetMinutes,
-        payloadMatches: (existingPayload) => {
-          const parsed = kneeCheckInInputSchema.safeParse(existingPayload);
-          return parsed.success && isDeepStrictEqual(parsed.data, checkIn);
-        },
       },
     );
     const canonical = auditedKneeCheckInEventPayloadSchema.parse(
       result.event.payload,
     );
-    await assistantStore.markFeedbackConfirmed({
-      trackerId: tracker.id,
-      turnId,
-      feedbackId: result.event.id,
-      updatedAt: new Date(),
-    });
     scheduleGitHubMirrorAfterResponse();
     return Response.json({
       id: result.event.id,
@@ -107,7 +96,10 @@ export async function PUT(
     if (error instanceof ZodError) {
       return Response.json({ error: "invalid_request" }, { status: 400 });
     }
-    if (error instanceof EventCommandConflictError) {
+    if (error instanceof AssistantFeedbackCommandConflictError) {
+      return Response.json({ error: error.message }, { status: 409 });
+    }
+    if (error instanceof AssistantFeedbackUnavailableError) {
       return Response.json({ error: error.message }, { status: 409 });
     }
     return Response.json({ error: "feedback_unavailable" }, { status: 503 });

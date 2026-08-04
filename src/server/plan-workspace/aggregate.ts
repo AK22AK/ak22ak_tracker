@@ -131,7 +131,7 @@ export async function getPlanWorkspace({
     schemaVersion: "1.0.0",
     trackerKey,
     localDate,
-    currentWeek:
+    calendarWeek:
       localDate < context.tracker.startedOn
         ? null
         : Math.floor(daysBetween(context.tracker.startedOn, localDate) / 7) + 1,

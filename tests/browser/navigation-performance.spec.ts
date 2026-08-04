@@ -444,7 +444,7 @@ const planWorkspace = {
   schemaVersion: "1.0.0",
   trackerKey: "knee-rehab",
   localDate,
-  currentWeek: 5,
+  calendarWeek: 5,
   plan: todayAggregate.plan,
   goals: ["Anonymous rehabilitation goal"],
   nextTraining: {
@@ -1234,6 +1234,14 @@ for (const width of [320, 375, 390, 430]) {
     ]) {
       await page.goto(path);
       await expect(page.getByRole("main")).toBeVisible();
+      if (path === "/plan") {
+        await expect(page.getByLabel("训练、身体感受或计划问题")).toBeVisible();
+        await expect(
+          page.getByRole("link", { name: "打开完整对话" }),
+        ).toBeVisible();
+        await expect(page.getByText("起算后第 5 个日历周")).toBeVisible();
+        await expect(page.getByText("版本 1", { exact: true })).toHaveCount(0);
+      }
       await expectMobileLayoutIntegrity(page);
     }
   });
