@@ -32,7 +32,7 @@ export type AiAnalysisJobAuditSource = {
   provider: string;
   model: string;
   attemptCount: number;
-  contextVersion: "1" | "2";
+  contextVersion: "1" | "2" | "3";
   contextHash: string;
   contextRevision: number;
   contextFrom: string;
@@ -63,7 +63,7 @@ export type PlanChangeProposalAuditSource = {
   trackerKey: string;
   analysisJobId: string;
   model: string;
-  contextVersion: "1" | "2";
+  contextVersion: "1" | "2" | "3";
   contextHash: string;
   contextRevision: number;
   contextFrom: string;

@@ -228,6 +228,9 @@ describe("today background refresh", () => {
     expect(screen.queryByRole("button", { name: "退出" })).toBeNull();
     expect(screen.getByRole("link", { name: "添加反馈" })).toBeTruthy();
     expect(
+      screen.getByRole("link", { name: "告诉康复助手" }).getAttribute("href"),
+    ).toBe("/plan/conversation?date=2026-07-19");
+    expect(
       within(screen.getByLabelText("今日计划")).getByRole("button", {
         name: "调整今天",
       }),

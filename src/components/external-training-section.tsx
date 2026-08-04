@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 
 import { saveExternalRecordAssociation } from "@/client/tracker-api";
 import {
@@ -193,12 +194,14 @@ function ExternalTrainingCard({
   tasks,
   onUpdated,
   readOnly,
+  assistantLink,
 }: {
   trackerKey: string;
   record: ExternalTrainingRecord;
   tasks: DashboardTask[];
   onUpdated: (recordId: string, association: ExternalRecordAssociation) => void;
   readOnly: boolean;
+  assistantLink: boolean;
 }) {
   const [selectedTaskId, setSelectedTaskId] = useState(
     record.association?.taskId ??
@@ -324,6 +327,14 @@ function ExternalTrainingCard({
           确认后，这条记录会显示在所选任务下；任务状态不会自动改变。
         </p>
         {message && <p role="status">{message}</p>}
+        {assistantLink ? (
+          <Link
+            className="text-button external-assistant-link"
+            href={`/plan/conversation?date=${encodeURIComponent(record.localDate)}&activity=${encodeURIComponent(record.id)}`}
+          >
+            告诉康复助手
+          </Link>
+        ) : null}
       </div>
     </article>
   );
@@ -336,6 +347,7 @@ export function ExternalTrainingSection({
   heading = "当天活动与训练记录",
   onUpdated,
   readOnly = false,
+  assistantLinks = false,
 }: {
   trackerKey: string;
   records: ExternalTrainingRecord[];
@@ -343,6 +355,7 @@ export function ExternalTrainingSection({
   heading?: string;
   onUpdated: (recordId: string, association: ExternalRecordAssociation) => void;
   readOnly?: boolean;
+  assistantLinks?: boolean;
 }) {
   if (records.length === 0) return null;
   return (
@@ -362,6 +375,7 @@ export function ExternalTrainingSection({
           tasks={tasks}
           onUpdated={onUpdated}
           readOnly={readOnly}
+          assistantLink={assistantLinks}
         />
       ))}
     </section>

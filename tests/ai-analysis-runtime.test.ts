@@ -63,6 +63,7 @@ function memoryStore(order: string[]) {
         planningTimeZone: input.modelContext.planningTimeZone,
         basePlanVersionId: input.basePlanVersionId,
         timelineHeadPlanVersionId: input.timelineHeadPlanVersionId,
+        sourceAssistantTurnId: input.sourceAssistantTurnId ?? null,
         status: "pending",
         provider: input.provider,
         model: input.model,
@@ -472,6 +473,46 @@ describe("AI analysis runtime", () => {
     const result = await runtime.load("knee-rehab", jobId);
     expect(result.job?.proposal?.status).toBe("expired");
     expect(order).toContain("expire-proposal");
+  });
+
+  it("rebuilds a sourced suggestion with the same assistant turn", async () => {
+    const sourceAssistantTurnId = "019c1000-0000-7000-8000-000000000299";
+    const memory = memoryStore([]);
+    const context = {
+      ...prepared(),
+      sourceAssistantTurnId,
+      contextVersion: "3" as const,
+    };
+    const prepareContext = vi.fn(async () => context);
+    const runtime = createAiAnalysisRuntime({
+      store: memory.store,
+      prepareContext,
+      readConfiguration: configured,
+      createAdvisor: () => ({
+        proposeAdjustment: async () => ({
+          summary: "No change",
+          safetyLevel: "green",
+          operations: [],
+          model: "anonymous-model",
+          responseHash: "d".repeat(64),
+        }),
+      }),
+      now: () => new Date("2026-07-24T08:00:00.000Z"),
+    });
+
+    await runtime.request({
+      trackerKey: "knee-rehab",
+      commandId: jobId,
+      sourceAssistantTurnId,
+    });
+    const loaded = await runtime.load("knee-rehab", jobId);
+
+    expect(loaded.job?.proposal?.status).toBe("proposed");
+    expect(prepareContext).toHaveBeenLastCalledWith(
+      "knee-rehab",
+      new Date("2026-07-24T08:00:00.000Z"),
+      sourceAssistantTurnId,
+    );
   });
 
   it("expires a suggestion when new feedback changes the recent context", async () => {

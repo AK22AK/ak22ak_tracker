@@ -38,11 +38,12 @@ export type AiAnalysisJobRecord = {
   planningTimeZone: string;
   basePlanVersionId: string;
   timelineHeadPlanVersionId: string;
+  sourceAssistantTurnId?: string | null;
   status: "pending" | "running" | "succeeded" | "failed";
   provider: string;
   model: string;
   attemptCount: number;
-  contextVersion: "1" | "2";
+  contextVersion: "1" | "2" | "3";
   contextHash: string;
   contextRevision: number;
   contextFrom: string;
@@ -144,12 +145,15 @@ function rowToJob(row: {
     planningTimeZone: row.planningTimeZone,
     basePlanVersionId: row.job.basePlanVersionId,
     timelineHeadPlanVersionId: row.job.timelineHeadPlanVersionId,
+    sourceAssistantTurnId: row.job.sourceAssistantTurnId,
     status: aiAnalysisJobStatusSchema.parse(row.job.status),
     provider: row.job.provider,
     model: row.job.model,
     attemptCount: row.job.attemptCount,
     contextVersion:
-      row.job.contextVersion === "1" || row.job.contextVersion === "2"
+      row.job.contextVersion === "1" ||
+      row.job.contextVersion === "2" ||
+      row.job.contextVersion === "3"
         ? row.job.contextVersion
         : (() => {
             throw new Error("ai_analysis_context_version_invalid");
@@ -294,6 +298,7 @@ export function createNeonAiAnalysisStore(
         planningTimeZone: input.modelContext.planningTimeZone,
         basePlanVersionId: input.basePlanVersionId,
         timelineHeadPlanVersionId: input.timelineHeadPlanVersionId,
+        sourceAssistantTurnId: input.sourceAssistantTurnId ?? null,
         status: "pending",
         provider: input.provider,
         model: input.model,
@@ -322,6 +327,7 @@ export function createNeonAiAnalysisStore(
             trackerId: input.trackerId,
             basePlanVersionId: input.basePlanVersionId,
             timelineHeadPlanVersionId: input.timelineHeadPlanVersionId,
+            sourceAssistantTurnId: input.sourceAssistantTurnId ?? null,
             status: "pending",
             provider: input.provider,
             model: input.model,

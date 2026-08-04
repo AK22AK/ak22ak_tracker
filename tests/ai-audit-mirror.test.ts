@@ -30,7 +30,7 @@ describe("AI audit mirror contracts", () => {
       provider: "anonymous-provider",
       model: "anonymous-model",
       attemptCount: 1,
-      contextVersion: "1",
+      contextVersion: "3",
       contextHash: "a".repeat(64),
       contextRevision: 3,
       contextFrom: "2026-07-11",
@@ -51,7 +51,7 @@ describe("AI audit mirror contracts", () => {
       id: jobId,
       proposalId,
       context: {
-        version: "1",
+        version: "3",
         hash: "a".repeat(64),
         range: { from: "2026-07-11", through: "2026-07-24" },
       },
@@ -66,6 +66,9 @@ describe("AI audit mirror contracts", () => {
       "apiKey",
       "feedbackNote",
       "trainingSummary",
+      "sourceConversation",
+      "rehabProfile",
+      "assistantMemories",
     ]) {
       expect(serialized).not.toContain(forbidden);
     }
@@ -75,7 +78,7 @@ describe("AI audit mirror contracts", () => {
     const document = createPlanChangeProposalAuditDocument({
       analysisJobId: jobId,
       model: "anonymous-model",
-      contextVersion: "1",
+      contextVersion: "3",
       contextHash: "a".repeat(64),
       contextFrom: "2026-07-11",
       contextThrough: "2026-07-24",

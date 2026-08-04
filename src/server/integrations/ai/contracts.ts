@@ -2,6 +2,7 @@ import "server-only";
 
 import type { AiRecoveryEvidence } from "@/domain/ai-recovery";
 import type { PlanChangeOperation, PlanVersion } from "@/domain/schemas";
+import type { RehabProfileDocument } from "@/domain/rehab-assistant";
 
 export type PlanAdjustmentSafetyLevel = "green" | "yellow" | "red";
 
@@ -98,6 +99,24 @@ export interface PlanAdjustmentContext {
   observedTrainingEvidence?: PlanAdjustmentObservedTraining[];
   evidenceCoverage?: PlanAdjustmentEvidenceCoverage[];
   recoveryEvidence: AiRecoveryEvidence[];
+  rehabProfile?: {
+    version: number;
+    document: RehabProfileDocument;
+  } | null;
+  assistantMemories?: Array<{
+    category:
+      | "goal"
+      | "preference"
+      | "schedule"
+      | "equipment"
+      | "routine"
+      | "stable_constraint";
+    content: string;
+  }>;
+  sourceConversation?: {
+    userMessage: string;
+    assistantReply: string;
+  } | null;
   safetyLevel: PlanAdjustmentSafetyLevel;
 }
 

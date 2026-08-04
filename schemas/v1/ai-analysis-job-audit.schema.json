@@ -81,7 +81,7 @@
       "properties": {
         "version": {
           "type": "string",
-          "enum": ["1", "2"]
+          "enum": ["1", "2", "3"]
         },
         "hash": {
           "type": "string",

@@ -38,12 +38,13 @@ export const aiAnalysisErrorCodeSchema = z.enum([
   "context_changed",
 ]);
 
-export const aiContextVersionSchema = z.enum(["1", "2"]);
+export const aiContextVersionSchema = z.enum(["1", "2", "3"]);
 
 export const requestPlanAnalysisSchema = z
   .object({
     commandId: z.uuid(),
     previewHash: z.string().regex(/^[0-9a-f]{64}$/),
+    sourceAssistantTurnId: z.uuid().optional(),
   })
   .strict();
 
@@ -96,6 +97,13 @@ export const aiAnalysisContextPreviewSchema = z
       .object({
         sleepDays: z.number().int().nonnegative(),
         stepsDays: z.number().int().nonnegative(),
+      })
+      .strict(),
+    assistantContext: z
+      .object({
+        rehabProfileVersion: z.number().int().positive().nullable(),
+        memoryCount: z.number().int().nonnegative(),
+        sourceConversationIncluded: z.boolean(),
       })
       .strict(),
     coverage: z

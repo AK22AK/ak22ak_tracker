@@ -936,9 +936,17 @@ export function DashboardShell({
         <p className="feedback-supporting-copy">
           可提交训练前后、次日反应或突发情况；每天至少记录一次。
         </p>
-        <Link className="primary-button" href="/feedback" scroll={false}>
-          {feedbackCount > 0 ? "再次反馈" : "添加反馈"}
-        </Link>
+        <div className="button-row">
+          <Link className="primary-button" href="/feedback" scroll={false}>
+            {feedbackCount > 0 ? "再次反馈" : "添加反馈"}
+          </Link>
+          <Link
+            className="secondary-button"
+            href={`/plan/conversation?date=${encodeURIComponent(localDate)}`}
+          >
+            告诉康复助手
+          </Link>
+        </div>
       </SurfaceCard>
 
       {initialDashboard.recoveryReference ? (

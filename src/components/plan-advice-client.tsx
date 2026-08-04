@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { integrationQueryKeys, trackerQueryKeys } from "@/client/query-keys";
@@ -66,6 +67,8 @@ function operationLabel(operation: PlanChangeOperation) {
 
 export function PlanAdviceClient() {
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const sourceTurnId = searchParams.get("turn");
   const [decisionIntent, setDecisionIntent] = useState<
     "accepted" | "rejected" | null
   >(null);
@@ -82,14 +85,20 @@ export function PlanAdviceClient() {
     refetchOnMount: "always",
   });
   const contextQuery = useQuery({
-    queryKey: trackerQueryKeys.planAdviceContext(trackerKey),
-    queryFn: ({ signal }) => fetchPlanAdviceContext(trackerKey, signal),
+    queryKey: trackerQueryKeys.planAdviceContext(trackerKey, sourceTurnId),
+    queryFn: ({ signal }) =>
+      fetchPlanAdviceContext(trackerKey, sourceTurnId, signal),
     enabled: false,
     staleTime: 0,
   });
   const mutation = useMutation({
     mutationFn: (input: { commandId: string; previewHash: string }) =>
-      requestPlanAdvice(trackerKey, input.commandId, input.previewHash),
+      requestPlanAdvice(
+        trackerKey,
+        input.commandId,
+        input.previewHash,
+        sourceTurnId,
+      ),
     onSuccess: (data) => {
       setShowContextPreview(false);
       queryClient.setQueryData(trackerQueryKeys.planAdvice(trackerKey), data);
@@ -258,8 +267,8 @@ export function PlanAdviceClient() {
           <p className="eyebrow">基于近期记录</p>
           <h1>训练调整建议</h1>
         </div>
-        <Link className="text-button" href="/trends">
-          返回趋势
+        <Link className="text-button" href="/plan">
+          返回计划
         </Link>
       </header>
 
@@ -324,6 +333,17 @@ export function PlanAdviceClient() {
                   睡眠记录 {contextQuery.data.recovery.sleepDays} 天；步数记录{" "}
                   {contextQuery.data.recovery.stepsDays} 天
                 </li>
+                <li>
+                  康复档案
+                  {contextQuery.data.assistantContext.rehabProfileVersion
+                    ? `第 ${contextQuery.data.assistantContext.rehabProfileVersion} 版`
+                    : "未建立"}
+                  ；有效记忆 {contextQuery.data.assistantContext.memoryCount} 条
+                </li>
+                {contextQuery.data.assistantContext
+                  .sourceConversationIncluded ? (
+                  <li>包含发起本次调整的康复助手对话</li>
+                ) : null}
                 <li>
                   可能重复 {contextQuery.data.externalTraining.overlapGroups}{" "}
                   组；未确认关联{" "}

@@ -13,6 +13,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PlanAdviceClient } from "@/components/plan-advice-client";
 import { schemaVersion } from "@/domain/schemas";
 
+const navigation = vi.hoisted(() => ({ sourceTurnId: null as string | null }));
+vi.mock("next/navigation", () => ({
+  useSearchParams: () =>
+    new URLSearchParams(
+      navigation.sourceTurnId ? `turn=${navigation.sourceTurnId}` : "",
+    ),
+}));
+
 function response(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -87,6 +95,11 @@ function contextPreview() {
       overlapGroups: 1,
     },
     recovery: { sleepDays: 5, stepsDays: 6 },
+    assistantContext: {
+      rehabProfileVersion: 2,
+      memoryCount: 3,
+      sourceConversationIncluded: navigation.sourceTurnId !== null,
+    },
     coverage: {
       garminActivity: { records: 2, empty: 3, failed: 1, unknown: 8 },
       garminWellness: { records: 5, empty: 1, failed: 0, unknown: 8 },
@@ -113,6 +126,45 @@ describe("plan advice UI", () => {
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    navigation.sourceTurnId = null;
+  });
+
+  it("binds an assistant-requested adjustment preview and generation to the source turn", async () => {
+    navigation.sourceTurnId = "019c1000-0000-7000-8000-000000000299";
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response(page()))
+      .mockResolvedValueOnce(response(contextPreview()))
+      .mockResolvedValueOnce(response(page()));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(
+      "019c1000-0000-7000-8000-000000000298",
+    );
+
+    renderClient();
+    const start = await screen.findByRole("button", {
+      name: "查看本次分析内容",
+    });
+    await waitFor(() =>
+      expect((start as HTMLButtonElement).disabled).toBe(false),
+    );
+    fireEvent.click(start);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain(
+      "sourceTurnId=019c1000-0000-7000-8000-000000000299",
+    );
+    expect(
+      await screen.findByText("包含发起本次调整的康复助手对话"),
+    ).toBeTruthy();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "确认并生成建议" }),
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body)),
+    ).toMatchObject({
+      sourceAssistantTurnId: "019c1000-0000-7000-8000-000000000299",
+    });
   });
 
   it("only starts analysis after an explicit click and shows decision-ready diffs", async () => {

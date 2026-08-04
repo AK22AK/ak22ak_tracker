@@ -427,12 +427,43 @@ const planAdviceContextPreview = {
     overlapGroups: 1,
   },
   recovery: { sleepDays: 5, stepsDays: 6 },
+  assistantContext: {
+    rehabProfileVersion: 2,
+    memoryCount: 3,
+    sourceConversationIncluded: false,
+  },
   coverage: {
     garminActivity: { records: 2, empty: 3, failed: 1, unknown: 8 },
     garminWellness: { records: 5, empty: 1, failed: 0, unknown: 8 },
     xunjiTraining: { records: 1, empty: 4, failed: 0, unknown: 9 },
   },
   safetyLevel: "green",
+};
+
+const planWorkspace = {
+  schemaVersion: "1.0.0",
+  trackerKey: "knee-rehab",
+  localDate,
+  currentWeek: 5,
+  plan: todayAggregate.plan,
+  goals: ["Anonymous rehabilitation goal"],
+  nextTraining: {
+    localDate: nextLocalDate,
+    taskCount: 1,
+    titles: ["Anonymous next training"],
+  },
+  pendingAdviceCount: 0,
+  profileVersion: 2,
+  activeMemoryCount: 3,
+};
+
+const assistantConversation = {
+  schemaVersion: "1.0.0",
+  conversationId: null,
+  turns: [],
+  memories: [],
+  profile: null,
+  nextCursor: null,
 };
 
 const rollbackAdvice = {
@@ -643,6 +674,10 @@ async function mockPrivateReads(
         typeof options.today === "function"
           ? options.today()
           : (options.today ?? todayAggregate);
+    } else if (url.pathname.endsWith("/plan-workspace")) {
+      body = planWorkspace;
+    } else if (url.pathname.endsWith("/assistant")) {
+      body = assistantConversation;
     } else if (url.pathname.endsWith("/calendar")) {
       counters.month += 1;
       body = calendarAggregate;
@@ -747,7 +782,11 @@ async function expectMobileLayoutIntegrity(page: Page) {
         const errors = [] as string[];
         if (!inViewportHorizontally(rect))
           errors.push("control-overflows-viewport");
-        if (rect.height < 44) errors.push("control-under-44px");
+        if (rect.height < 44) {
+          errors.push(
+            `control-under-44px:${control.tagName.toLowerCase()}:${control.className}:${control.textContent?.trim().slice(0, 40)}`,
+          );
+        }
         if (
           cardRect &&
           (rect.left < cardRect.left - 0.5 ||
@@ -965,7 +1004,7 @@ for (const width of [320, 375, 390, 430]) {
 
     for (const path of [
       "/calendar",
-      "/trends",
+      "/plan",
       "/settings",
       "/settings/garmin",
       "/settings/xunji",
@@ -1056,7 +1095,7 @@ for (const width of [320, 375, 390, 430]) {
   }) => {
     await page.setViewportSize({ width, height: 844 });
     await mockPrivateReads(page, 0, planAdvice, evaluationDecisionAggregate);
-    await page.goto("/trends/evaluation");
+    await page.goto("/plan/evaluation");
 
     await page.getByLabel("这一周").selectOption("effective");
     await page.getByLabel("下一步").selectOption("maintain");
@@ -1102,7 +1141,7 @@ for (const width of [320, 375, 390, 430]) {
   test(`trend summaries remain accessible at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });
     await mockPrivateReads(page, 0);
-    await page.goto("/trends");
+    await page.goto("/plan/review");
 
     await expect(
       page.getByRole("heading", { name: "完成 1/2（50%）" }),
@@ -1152,7 +1191,7 @@ for (const width of [320, 375, 390, 430]) {
       evaluationAggregate,
       emptyTrendsAggregate,
     );
-    await page.goto("/trends");
+    await page.goto("/plan/review");
 
     await expect(
       page.getByRole("heading", { name: "还没有可回顾的趋势" }),
@@ -1177,6 +1216,26 @@ for (const width of [320, 375, 390, 430]) {
     }));
     expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth);
     expect(layout.dayHeight).toBeGreaterThanOrEqual(44);
+  });
+}
+
+for (const width of [320, 375, 390, 430]) {
+  test(`plan workspace and assistant details fit at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await mockPrivateReads(page, 0);
+
+    for (const path of [
+      "/plan",
+      "/plan/conversation",
+      "/plan/profile",
+      "/plan/memories",
+    ]) {
+      await page.goto(path);
+      await expect(page.getByRole("main")).toBeVisible();
+      await expectMobileLayoutIntegrity(page);
+    }
   });
 }
 
@@ -1232,7 +1291,7 @@ for (const width of [320, 375, 390, 430]) {
       ).toBe(true);
     };
 
-    await page.goto("/trends/advice");
+    await page.goto("/plan/advice");
     const prepare = page.getByRole("button", {
       name: "查看本次分析内容",
     });
@@ -1264,7 +1323,7 @@ for (const width of [320, 375, 390, 430]) {
   }) => {
     await page.setViewportSize({ width, height: 844 });
     await mockPrivateReads(page, 0, rollbackAdvice);
-    await page.goto("/trends/advice");
+    await page.goto("/plan/advice");
 
     const rollback = page.getByRole("button", {
       name: "撤销这次计划更新",
@@ -1365,7 +1424,7 @@ for (const width of [320, 375, 390, 430]) {
   }) => {
     await page.setViewportSize({ width, height: 844 });
     const counters = await mockPrivateReads(page, 0);
-    await page.goto("/trends/evaluation");
+    await page.goto("/plan/evaluation");
 
     await page.getByLabel("左侧反应").selectOption("mild");
     await page.getByLabel("右侧反应").selectOption("moderate");
@@ -1419,7 +1478,7 @@ for (const width of [320, 375, 390, 430]) {
   }) => {
     await page.setViewportSize({ width, height: 844 });
     await mockPrivateReads(page, 0);
-    await page.goto("/trends/advice");
+    await page.goto("/plan/advice");
 
     await expect(
       page.getByRole("heading", { name: "训练调整建议" }),
@@ -1745,9 +1804,9 @@ const pendingSettingsEscapes = [
     width: 390,
     detailPath: "/settings/deepseek",
     detailName: /DeepSeek/,
-    rootHref: "/trends",
-    rootName: /趋势/,
-    rootSelector: '[data-tab-panel="trends"] .trends-page',
+    rootHref: "/plan",
+    rootName: /计划/,
+    rootSelector: '[data-tab-panel="plan"] .plan-workspace-page',
     settleDelayMs: 60,
   },
   {
@@ -2043,9 +2102,9 @@ test("persistent tabs keep DOM, active state and browser history URLs aligned", 
   ).toBeVisible();
   await expectActiveTab(page, "/calendar", "/calendar", `?date=${localDate}`);
 
-  await page.getByRole("link", { name: /趋势/ }).click();
-  await expect(page.getByRole("main", { name: "趋势页面" })).toBeVisible();
-  await expectActiveTab(page, "/trends", "/trends");
+  await page.getByRole("link", { name: /计划/ }).click();
+  await expect(page.getByRole("main", { name: "计划页面" })).toBeVisible();
+  await expectActiveTab(page, "/plan", "/plan");
   await page.getByRole("link", { name: /今日/ }).click();
   await expect(
     page
@@ -2055,16 +2114,16 @@ test("persistent tabs keep DOM, active state and browser history URLs aligned", 
   await expectActiveTab(page, "/", "/");
 
   await page.goBack();
-  await expect(page.getByRole("main", { name: "趋势页面" })).toBeVisible();
-  await expectActiveTab(page, "/trends", "/trends");
+  await expect(page.getByRole("main", { name: "计划页面" })).toBeVisible();
+  await expectActiveTab(page, "/plan", "/plan");
   await page.goBack();
   await expect(
     page.locator('[data-tab-panel="calendar"] .calendar-shell'),
   ).toBeVisible();
   await expectActiveTab(page, "/calendar", "/calendar", `?date=${localDate}`);
   await page.goForward();
-  await expect(page.getByRole("main", { name: "趋势页面" })).toBeVisible();
-  await expectActiveTab(page, "/trends", "/trends");
+  await expect(page.getByRole("main", { name: "计划页面" })).toBeVisible();
+  await expectActiveTab(page, "/plan", "/plan");
   await page.goForward();
   await expect(
     page

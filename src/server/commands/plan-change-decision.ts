@@ -39,8 +39,8 @@ function proposalStatus(value: string) {
   throw new Error("plan_change_proposal_status_invalid");
 }
 
-function contextVersion(value: string | null): "1" | "2" {
-  if (value === "1" || value === "2") return value;
+function contextVersion(value: string | null): "1" | "2" | "3" {
+  if (value === "1" || value === "2" || value === "3") return value;
   throw new Error("plan_change_context_version_invalid");
 }
 

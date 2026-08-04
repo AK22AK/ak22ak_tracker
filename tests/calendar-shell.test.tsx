@@ -133,6 +133,38 @@ describe("calendar visual semantics", () => {
     expect(screen.getByText(dashboard.tasks[0].title)).toBeTruthy();
   });
 
+  it("offers a date-associated assistant entry for today or history but never for a future date", () => {
+    const view = renderCalendarShell("2026-07-18");
+    expect(
+      screen.getByRole("link", { name: "补充这一天" }).getAttribute("href"),
+    ).toBe("/plan/conversation?date=2026-07-18");
+    expect(
+      screen.getByRole("link", { name: "补充这项训练" }).getAttribute("href"),
+    ).toContain(`task=${dashboard.tasks[0].id}`);
+
+    view.rerender(
+      <CalendarShell
+        month="2026-07"
+        today="2026-07-19"
+        selectedDate="2026-07-20"
+        days={[]}
+        monthLoading={false}
+        monthError={false}
+        dashboard={dashboard}
+        detailLoading={false}
+        detailError={false}
+        onRetryDetail={vi.fn()}
+        onRetryMonth={vi.fn()}
+        onSelectDate={vi.fn()}
+        onSelectMonth={vi.fn()}
+        onExternalTrainingUpdated={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("link", { name: "补充这一天" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "补充这项训练" })).toBeNull();
+    expect(screen.getByText("未来日期不能补充反馈")).toBeTruthy();
+  });
+
   it("keeps the calendar available and offers a focused retry when day details fail", () => {
     const onRetryDetail = vi.fn();
     renderCalendarShell("2026-07-18", {
@@ -201,6 +233,9 @@ describe("calendar visual semantics", () => {
       screen.getByRole("region", { name: "外部活动与训练记录" }),
     ).toBeTruthy();
     expect(screen.getByText("步行")).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "告诉康复助手" }).getAttribute("href"),
+    ).toContain("activity=019c0000-0000-7000-8000-000000000003");
   });
 
   it("keeps normal plan metadata and empty sources out of the day detail", () => {

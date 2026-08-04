@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import Link from "next/link";
 
 import { calendarMonthCells, shiftMonth } from "@/domain/calendar";
 import type {
@@ -529,6 +530,16 @@ export function CalendarShell({
             <h2 id="selected-date-title">{formatSelectedDate(selectedDate)}</h2>
           </div>
         </div>
+        {selectedDate <= today ? (
+          <Link
+            className="secondary-button calendar-assistant-entry"
+            href={`/plan/conversation?date=${encodeURIComponent(selectedDate)}`}
+          >
+            补充这一天
+          </Link>
+        ) : (
+          <p className="calendar-future-assistant-note">未来日期不能补充反馈</p>
+        )}
 
         {detailLoading && (
           <div className="calendar-detail-loading" role="status">
@@ -562,6 +573,7 @@ export function CalendarShell({
                 tasks={dashboard.tasks}
                 onUpdated={onExternalTrainingUpdated}
                 readOnly={writesDisabled}
+                assistantLinks={selectedDate <= today}
               />
             </>
           ) : (
@@ -597,6 +609,7 @@ export function CalendarShell({
                 tasks={dashboard.tasks}
                 onUpdated={onExternalTrainingUpdated}
                 readOnly={writesDisabled}
+                assistantLinks={selectedDate <= today}
               />
               <div className="calendar-task-list">
                 <div className="calendar-subsection-heading">
@@ -634,6 +647,14 @@ export function CalendarShell({
                     {(task.status !== "planned" ||
                       task.actual ||
                       task.subjectiveNote) && <ActualRecord task={task} />}
+                    {selectedDate <= today ? (
+                      <Link
+                        className="text-button calendar-task-assistant-link"
+                        href={`/plan/conversation?date=${encodeURIComponent(selectedDate)}&task=${encodeURIComponent(task.id)}`}
+                      >
+                        补充这项训练
+                      </Link>
+                    ) : null}
                   </article>
                 ))}
                 {dashboard.tasks.length === 0 && (

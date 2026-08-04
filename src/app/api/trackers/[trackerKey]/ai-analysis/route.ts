@@ -4,6 +4,7 @@ import { requestPlanAnalysisSchema } from "@/domain/ai-analysis";
 import { getAuthorizedSession } from "@/server/auth/session";
 import {
   AiAnalysisPlanNotFoundError,
+  AiAnalysisSourceTurnNotFoundError,
   AiAnalysisTrackerNotFoundError,
 } from "@/server/integrations/ai/context";
 import { aiAnalysisRuntime } from "@/server/integrations/ai/runtime";
@@ -17,6 +18,9 @@ function knownError(error: unknown) {
   }
   if (error instanceof AiAnalysisPlanNotFoundError) {
     return Response.json({ error: error.message }, { status: 409 });
+  }
+  if (error instanceof AiAnalysisSourceTurnNotFoundError) {
+    return Response.json({ error: error.message }, { status: 404 });
   }
   if (error instanceof AiAnalysisPreviewChangedError) {
     return Response.json({ error: error.message }, { status: 409 });
@@ -61,6 +65,7 @@ export async function POST(
         trackerKey,
         commandId: input.commandId,
         previewHash: input.previewHash,
+        sourceAssistantTurnId: input.sourceAssistantTurnId,
       }),
       { headers: { "Cache-Control": "private, no-store" } },
     );

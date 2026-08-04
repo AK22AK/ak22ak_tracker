@@ -57,6 +57,8 @@ function contextMatchesJob(
     job.contextRevision === context.contextRevision &&
     job.basePlanVersionId === context.basePlanVersionId &&
     job.timelineHeadPlanVersionId === context.timelineHeadPlanVersionId &&
+    (job.sourceAssistantTurnId ?? null) ===
+      (context.sourceAssistantTurnId ?? null) &&
     job.safetyLevel === context.safetyLevel
   );
 }
@@ -83,6 +85,7 @@ async function ensureCurrentProposal(
   prepareContext: (
     trackerKey: string,
     now: Date,
+    sourceAssistantTurnId?: string | null,
   ) => Promise<PreparedAiAnalysisContext>,
   currentTime: Date,
 ) {
@@ -94,7 +97,11 @@ async function ensureCurrentProposal(
     return { job, context: null };
   }
   try {
-    const context = await prepareContext(job.trackerKey, currentTime);
+    const context = await prepareContext(
+      job.trackerKey,
+      currentTime,
+      job.sourceAssistantTurnId,
+    );
     return contextMatchesJob(job, context)
       ? { job, context }
       : { job: await expireProposal(job, store), context: null };
@@ -272,8 +279,11 @@ function pageDto(
 
 export function createAiAnalysisRuntime({
   store = createNeonAiAnalysisStore(),
-  prepareContext = (trackerKey: string, now: Date) =>
-    prepareAiAnalysisContext({ trackerKey, now }),
+  prepareContext = (
+    trackerKey: string,
+    now: Date,
+    sourceAssistantTurnId?: string | null,
+  ) => prepareAiAnalysisContext({ trackerKey, now, sourceAssistantTurnId }),
   readConfiguration = (trackerKey: string) =>
     deepSeekCredentialRuntime.resolveConfiguration(trackerKey),
   createAdvisor = createDeepSeekPlanAdvisor,
@@ -292,6 +302,7 @@ export function createAiAnalysisRuntime({
   prepareContext?: (
     trackerKey: string,
     now: Date,
+    sourceAssistantTurnId?: string | null,
   ) => Promise<PreparedAiAnalysisContext>;
   readConfiguration?: (trackerKey: string) =>
     | Promise<
@@ -321,8 +332,15 @@ export function createAiAnalysisRuntime({
   }) => Promise<void>;
   now?: () => Date;
 } = {}) {
-  async function preview(trackerKey: string) {
-    const context = await prepareContext(trackerKey, now());
+  async function preview(
+    trackerKey: string,
+    sourceAssistantTurnId?: string | null,
+  ) {
+    const context = await prepareContext(
+      trackerKey,
+      now(),
+      sourceAssistantTurnId,
+    );
     const evidence = context.modelContext.observedTrainingEvidence ?? [];
     const coverage = context.modelContext.evidenceCoverage ?? [];
     const coverageSummary = (
@@ -376,6 +394,13 @@ export function createAiAnalysisRuntime({
           (item) => item.stepsStatus === "available",
         ).length,
       },
+      assistantContext: {
+        rehabProfileVersion: context.modelContext.rehabProfile?.version ?? null,
+        memoryCount: context.modelContext.assistantMemories?.length ?? 0,
+        sourceConversationIncluded:
+          context.modelContext.sourceConversation !== null &&
+          context.modelContext.sourceConversation !== undefined,
+      },
       coverage: {
         garminActivity: coverageSummary("garminActivity"),
         garminWellness: coverageSummary("garminWellness"),
@@ -411,10 +436,15 @@ export function createAiAnalysisRuntime({
     trackerKey: string;
     commandId: string;
     previewHash?: string;
+    sourceAssistantTurnId?: string | null;
   }) {
     const requestedAt = now();
     const configuration = await readConfiguration(input.trackerKey);
-    const context = await prepareContext(input.trackerKey, requestedAt);
+    const context = await prepareContext(
+      input.trackerKey,
+      requestedAt,
+      input.sourceAssistantTurnId,
+    );
     if (
       input.previewHash !== undefined &&
       input.previewHash !== context.contextHash
@@ -547,13 +577,14 @@ export const aiAnalysisRuntime = {
   load(trackerKey: string, jobId?: string) {
     return createAiAnalysisRuntime().load(trackerKey, jobId);
   },
-  preview(trackerKey: string) {
-    return createAiAnalysisRuntime().preview(trackerKey);
+  preview(trackerKey: string, sourceAssistantTurnId?: string | null) {
+    return createAiAnalysisRuntime().preview(trackerKey, sourceAssistantTurnId);
   },
   request(input: {
     trackerKey: string;
     commandId: string;
     previewHash: string;
+    sourceAssistantTurnId?: string | null;
   }) {
     return createAiAnalysisRuntime().request(input);
   },

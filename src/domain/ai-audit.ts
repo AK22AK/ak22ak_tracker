@@ -16,7 +16,7 @@ import {
 const hashSchema = z.string().regex(/^[0-9a-f]{64}$/);
 
 const contextAuditFields = {
-  version: z.enum(["1", "2"]),
+  version: z.enum(["1", "2", "3"]),
   hash: hashSchema,
   revision: z.number().int().nonnegative(),
   range: z.object({ from: localDateSchema, through: localDateSchema }).strict(),
@@ -159,7 +159,7 @@ export function createAiAnalysisJobAuditDocument(input: {
   provider: string;
   model: string;
   attemptCount: number;
-  contextVersion: "1" | "2";
+  contextVersion: "1" | "2" | "3";
   contextHash: string;
   contextRevision: number;
   contextFrom: string;
@@ -202,7 +202,7 @@ export function createAiAnalysisJobAuditDocument(input: {
 export function createPlanChangeProposalAuditDocument(input: {
   analysisJobId: string;
   model: string;
-  contextVersion: "1" | "2";
+  contextVersion: "1" | "2" | "3";
   contextHash: string;
   contextRevision?: number;
   contextFrom: string;

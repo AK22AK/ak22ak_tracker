@@ -5,14 +5,22 @@ import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { buildRecoveryEvidence } from "@/domain/ai-recovery";
 import { localDateInTimeZone } from "@/domain/planning-time";
 import { planVersionSchema, taskActualSchema } from "@/domain/schemas";
+import {
+  assistantMemoryCategorySchema,
+  assistantTurnResponseSchema,
+  rehabProfileDocumentSchema,
+} from "@/domain/rehab-assistant";
 import { kneeCheckInEventPayloadSchema } from "@/modules/knee-rehab/check-in";
 import { getDatabase } from "@/server/db/client";
 import {
   events,
+  assistantMemories,
+  assistantTurns,
   externalRecordLinks,
   externalRecords,
   integrationDateSyncState,
   planVersions,
+  rehabProfiles,
   taskInstances,
   trackers,
 } from "@/server/db/schema";
@@ -61,6 +69,13 @@ export class AiAnalysisPlanNotFoundError extends Error {
   }
 }
 
+export class AiAnalysisSourceTurnNotFoundError extends Error {
+  constructor() {
+    super("source_turn_not_found");
+    this.name = "AiAnalysisSourceTurnNotFoundError";
+  }
+}
+
 export type PreparedAiAnalysisContext = {
   trackerId: string;
   trackerKey: string;
@@ -69,22 +84,25 @@ export type PreparedAiAnalysisContext = {
   basePlan: ReturnType<typeof planVersionSchema.parse>;
   timelineHeadPlan: ReturnType<typeof planVersionSchema.parse>;
   modelContext: PlanAdjustmentContext;
-  contextVersion: "1" | "2";
+  contextVersion: "1" | "2" | "3";
   contextHash: string;
   contextRevision: number;
   contextFrom: string;
   contextThrough: string;
   safetyLevel: PlanAdjustmentSafetyLevel;
+  sourceAssistantTurnId?: string | null;
 };
 
 export async function prepareAiAnalysisContext({
   trackerKey,
   now = new Date(),
   database = getDatabase(),
+  sourceAssistantTurnId = null,
 }: {
   trackerKey: string;
   now?: Date;
   database?: Database;
+  sourceAssistantTurnId?: string | null;
 }): Promise<PreparedAiAnalysisContext> {
   const [tracker] = await database
     .select({
@@ -108,6 +126,9 @@ export async function prepareAiAnalysisContext({
     wellnessRows,
     externalTrainingRows,
     coverageRows,
+    profileRows,
+    memoryRows,
+    sourceTurnRows,
   ] = await Promise.all([
     database
       .select({ id: planVersions.id, document: planVersions.document })
@@ -233,10 +254,57 @@ export async function prepareAiAnalysisContext({
           lte(integrationDateSyncState.localDate, contextThrough),
         ),
       ),
+    database
+      .select({
+        version: rehabProfiles.version,
+        document: rehabProfiles.document,
+      })
+      .from(rehabProfiles)
+      .where(
+        and(
+          eq(rehabProfiles.trackerId, tracker.id),
+          eq(rehabProfiles.status, "active"),
+        ),
+      )
+      .orderBy(desc(rehabProfiles.version))
+      .limit(1),
+    database
+      .select({
+        category: assistantMemories.category,
+        content: assistantMemories.content,
+      })
+      .from(assistantMemories)
+      .where(
+        and(
+          eq(assistantMemories.trackerId, tracker.id),
+          eq(assistantMemories.status, "active"),
+        ),
+      )
+      .orderBy(asc(assistantMemories.createdAt))
+      .limit(100),
+    sourceAssistantTurnId
+      ? database
+          .select({
+            message: assistantTurns.message,
+            response: assistantTurns.response,
+          })
+          .from(assistantTurns)
+          .where(
+            and(
+              eq(assistantTurns.id, sourceAssistantTurnId),
+              eq(assistantTurns.trackerId, tracker.id),
+              eq(assistantTurns.status, "succeeded"),
+            ),
+          )
+          .limit(1)
+      : Promise.resolve([]),
   ]);
   const base = baseRow[0];
   const head = headRow[0];
   if (!base || !head) throw new AiAnalysisPlanNotFoundError();
+  if (sourceAssistantTurnId && !sourceTurnRows[0]) {
+    throw new AiAnalysisSourceTurnNotFoundError();
+  }
   const parsedPlan = planVersionSchema.parse(base.document);
   const parsedTimelineHead = planVersionSchema.parse(head.document);
   const currentPlan: PlanAdjustmentContext["currentPlan"] = {
@@ -376,6 +444,25 @@ export async function prepareAiAnalysisContext({
     xunjiTraining: item.xunjiTraining,
   }));
   const safetyLevel = mostSevere(recentFeedback);
+  const profile = profileRows[0]
+    ? {
+        version: profileRows[0].version,
+        document: rehabProfileDocumentSchema.parse(profileRows[0].document),
+      }
+    : null;
+  const memories = memoryRows.map((memory) => ({
+    category: assistantMemoryCategorySchema.parse(memory.category),
+    content: memory.content.slice(0, 500),
+  }));
+  const sourceTurn = sourceTurnRows[0];
+  const sourceConversation = sourceTurn
+    ? {
+        userMessage: sourceTurn.message.slice(0, 4_000),
+        assistantReply: assistantTurnResponseSchema
+          .parse(sourceTurn.response)
+          .reply.slice(0, 4_000),
+      }
+    : null;
   const modelContext: PlanAdjustmentContext = {
     currentPlan,
     timelineHeadPlanVersionId: head.id,
@@ -386,6 +473,9 @@ export async function prepareAiAnalysisContext({
     observedTrainingEvidence,
     evidenceCoverage,
     recoveryEvidence,
+    rehabProfile: profile,
+    assistantMemories: memories,
+    sourceConversation,
     safetyLevel,
   };
   return {
@@ -396,11 +486,12 @@ export async function prepareAiAnalysisContext({
     basePlan: parsedPlan,
     timelineHeadPlan: parsedTimelineHead,
     modelContext,
-    contextVersion: "2",
+    contextVersion: "3",
     contextHash: contentHash(modelContext),
     contextRevision: tracker.aiContextRevision,
     contextFrom,
     contextThrough,
     safetyLevel,
+    sourceAssistantTurnId,
   };
 }
