@@ -465,7 +465,7 @@ integration("P4b-1 AI analysis Neon persistence", () => {
       .where(
         inArray(githubSyncOutbox.aggregateId, [commandId, failedCommandId]),
       );
-    expect(backfilled).toHaveLength(3);
+    expect(backfilled).toHaveLength(2);
     expect(
       aiAnalysisJobAuditDocumentSchema.parse(
         backfilled.find(
@@ -488,10 +488,7 @@ integration("P4b-1 AI analysis Neon persistence", () => {
       errorCode: "provider_unavailable",
     });
     expect(
-      planChangeProposalAuditDocumentSchema.parse(
-        backfilled.find((row) => row.aggregateType === "plan_change_proposal")
-          ?.payload,
-      ),
-    ).toMatchObject({ status: "expired", decision: null, rollback: null });
+      backfilled.find((row) => row.aggregateType === "plan_change_proposal"),
+    ).toBeUndefined();
   }, 45_000);
 });

@@ -54,14 +54,25 @@ integration("P5b provider-neutral bounded history persistence", () => {
       store: normalDateStore,
       readSource: async () => [],
     });
-    await database.insert(integrationSyncState).values({
-      trackerId,
-      provider: "xunji",
-      status: "succeeded",
-      cursor: { kind: "date_catch_up_v1", nextDate: null },
-      lastSucceededAt: new Date("2026-08-03T08:00:00.000Z"),
-      updatedAt: new Date("2026-08-03T08:00:00.000Z"),
-    });
+    await database
+      .insert(integrationSyncState)
+      .values({
+        trackerId,
+        provider: "xunji",
+        status: "succeeded",
+        cursor: { kind: "date_catch_up_v1", nextDate: null },
+        lastSucceededAt: new Date("2026-08-03T08:00:00.000Z"),
+        updatedAt: new Date("2026-08-03T08:00:00.000Z"),
+      })
+      .onConflictDoUpdate({
+        target: [integrationSyncState.trackerId, integrationSyncState.provider],
+        set: {
+          status: "succeeded",
+          cursor: { kind: "date_catch_up_v1", nextDate: null },
+          lastSucceededAt: new Date("2026-08-03T08:00:00.000Z"),
+          updatedAt: new Date("2026-08-03T08:00:00.000Z"),
+        },
+      });
 
     const historyDateStore = createNeonProviderDateSyncStore(
       trackerKey,
