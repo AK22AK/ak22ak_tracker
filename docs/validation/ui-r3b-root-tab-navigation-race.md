@@ -1,6 +1,6 @@
 # UI-R3b 设置详情与根 Tab 导航竞态
 
-状态：代码与匿名 production-build 门禁完成，待项目经理独立生产复核。
+状态：已于 2026-08-04 由项目经理独立生产复核并验收。
 
 ## 现象与根因
 
@@ -52,3 +52,13 @@ transition 的 children 可能来自不同提交。旧壳仅按 pathname 选择 
   必须恢复唯一 7 行列表且设置面板内不得存在日历壳。
 
 本返修不改变 DB、Schema、Provider、计划、安全、离线命令或 P5b 领域语义。
+
+## 独立生产验收
+
+- 账号详情→日历→browser back→forward→设置：最终 URL 为 `/settings`，设置底栏 active，
+  设置页 7 行入口完整；日历内容与账号详情均无残留。
+- Garmin 详情导航尚未稳定时立即点击今日，等待迟到导航后仍为 `/`、今日 active、今日内容
+  可见且 Garmin 详情无残留。
+- 历史数据补录详情→立即点击日历，以及 DeepSeek 详情→立即点击趋势，最终 URL、底栏 active
+  与可见根面板均一致。
+- 正式域名全程控制台 warning/error 为 0；未调用 Provider，未写业务数据。
