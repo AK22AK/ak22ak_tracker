@@ -3282,6 +3282,20 @@ summary:focus-visible {
   text-decoration: none;
 }
 
+.feedback-card > .button-row {
+  align-items: stretch;
+  margin-top: 0.75rem;
+}
+
+.feedback-card > .button-row .primary-button,
+.feedback-card > .button-row .secondary-button {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
 .safety-message {
   margin-top: 0.75rem;
   padding: 0.75rem;
@@ -4811,6 +4825,268 @@ html[data-ak-shell-geometry-ready="false"]
 @media (max-width: 350px) {
   .recovery-reference-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+.plan-workspace-page,
+.assistant-conversation-page,
+.assistant-conversation,
+.plan-workspace-summary,
+.plan-assistant-entry,
+.assistant-turn,
+.assistant-reply,
+.assistant-composer,
+.assistant-feedback-confirmation,
+.rehab-profile-form,
+.assistant-memory-list,
+.assistant-memory-item,
+.assistant-privacy-note {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 0.875rem;
+}
+
+.plan-workspace-heading-row {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.plan-workspace-heading-row h2,
+.plan-workspace-summary p,
+.plan-assistant-entry h2,
+.plan-assistant-entry p,
+.assistant-turn p,
+.assistant-privacy-note h2,
+.assistant-privacy-note p,
+.rehab-profile-form p,
+.assistant-memory-item p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.plan-workspace-heading-row > span,
+.plan-workspace-summary > div > strong {
+  color: var(--color-muted);
+  font-size: 0.8125rem;
+  font-weight: 720;
+}
+
+.plan-workspace-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+  gap: 0.75rem;
+}
+
+.plan-workspace-links a,
+.plan-pending-advice {
+  display: grid;
+  min-width: 0;
+  min-height: var(--control-height);
+  align-content: center;
+  gap: 0.25rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-weight: 700;
+  line-height: 1.35;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.plan-pending-advice {
+  border-color: var(--color-warning);
+  background: var(--color-warning-soft);
+}
+
+.plan-pending-advice span {
+  color: var(--color-muted);
+  font-size: 0.75rem;
+}
+
+.plan-assistant-entry .primary-button,
+.assistant-composer .primary-button,
+.assistant-feedback-confirmation > .primary-button {
+  width: fit-content;
+  min-height: 44px;
+}
+
+.plan-workspace-summary > a,
+.settings-detail-header > a {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 44px;
+  align-items: center;
+}
+
+.assistant-turn {
+  padding-block: 0.25rem;
+}
+
+.assistant-user-message,
+.assistant-reply,
+.assistant-composer,
+.assistant-feedback-confirmation {
+  padding: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+}
+
+.assistant-user-message {
+  width: min(92%, 34rem);
+  margin-left: auto;
+  background: var(--color-brand-soft);
+}
+
+.assistant-user-message small,
+.rehab-profile-form small,
+.assistant-privacy-note p,
+.assistant-memory-item label,
+.assistant-composer label,
+.assistant-feedback-confirmation label {
+  color: var(--color-muted);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.assistant-reply {
+  width: min(96%, 38rem);
+  background: var(--color-surface);
+}
+
+.assistant-reply ul,
+.assistant-feedback-confirmation ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.assistant-composer {
+  position: sticky;
+  z-index: 2;
+  bottom: 0;
+  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
+  box-shadow: var(--shadow-floating);
+  backdrop-filter: blur(12px);
+}
+
+.assistant-composer textarea,
+.rehab-profile-form textarea,
+.assistant-memory-item textarea,
+.assistant-feedback-confirmation textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 6rem;
+  resize: vertical;
+}
+
+.assistant-conversation button,
+.rehab-profile-form button,
+.assistant-memory-item button,
+.assistant-feedback-confirmation input:not([type="checkbox"]),
+.assistant-feedback-confirmation select,
+.assistant-memory-item select {
+  min-height: 44px;
+}
+
+.assistant-pain-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.assistant-pain-grid label,
+.rehab-profile-form label,
+.assistant-memory-item label {
+  display: grid;
+  min-width: 0;
+  gap: 0.35rem;
+}
+
+.assistant-symptom-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.625rem;
+  margin-top: 0.75rem;
+}
+
+.assistant-symptom-grid label {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.assistant-symptom-grid input {
+  flex: 0 0 auto;
+}
+
+.assistant-memory-list {
+  gap: 0;
+}
+
+.assistant-memory-item {
+  padding-block: 1rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.assistant-memory-item:last-child {
+  border-bottom: 0;
+}
+
+.assistant-memory-delete-confirmation {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--color-danger);
+}
+
+.calendar-task-assistant-link,
+.external-assistant-link,
+.calendar-assistant-entry {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 44px;
+  align-items: center;
+}
+
+@media (max-width: 430px) {
+  .assistant-conversation-page {
+    padding-right: max(var(--page-gutter), env(safe-area-inset-right));
+    padding-left: max(var(--page-gutter), env(safe-area-inset-left));
+  }
+
+  .assistant-user-message,
+  .assistant-reply {
+    width: 100%;
+  }
+}
+
+@media (max-width: 374px) {
+  .plan-workspace-links,
+  .assistant-pain-grid,
+  .assistant-symptom-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .plan-workspace-heading-row,
+  .assistant-memory-delete-confirmation {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .plan-assistant-entry .primary-button,
+  .assistant-composer .primary-button,
+  .assistant-feedback-confirmation > .primary-button,
+  .rehab-profile-form > .primary-button {
+    width: 100%;
   }
 }
 

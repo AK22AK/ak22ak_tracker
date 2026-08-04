@@ -1,5 +1,5 @@
-import { PlanAdviceClient } from "@/components/plan-advice-client";
+import { redirect } from "next/navigation";
 
 export default function PlanAdvicePage() {
-  return <PlanAdviceClient />;
+  redirect("/plan/advice");
 }

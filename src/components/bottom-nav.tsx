@@ -6,7 +6,7 @@ import type { MouseEvent } from "react";
 const tabs = [
   { href: "/", label: "今日", icon: "⌂" },
   { href: "/calendar", label: "日历", icon: "▦" },
-  { href: "/trends", label: "趋势", icon: "⌁" },
+  { href: "/plan", label: "计划", icon: "⌁" },
   { href: "/settings", label: "设置", icon: "•••" },
 ] as const;
 

@@ -173,7 +173,7 @@ describe("P4a-1 TrendsClient", () => {
 
     renderTrends();
 
-    expect(screen.getByRole("main", { name: "趋势页面" })).toBeTruthy();
+    expect(screen.getByRole("main", { name: "近期回顾页面" })).toBeTruthy();
     expect(screen.getByText("正在整理最近记录…")).toBeTruthy();
     expect(
       await screen.findByRole("heading", { name: "完成 2/4（50%）" }),
@@ -256,7 +256,7 @@ describe("P4a-1 TrendsClient", () => {
     expect(
       await screen.findByRole("heading", { name: "完成 2/4（50%）" }),
     ).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "刷新趋势" }));
+    fireEvent.click(screen.getByRole("button", { name: "刷新近期回顾" }));
 
     expect(
       screen.getByRole("heading", { name: "完成 2/4（50%）" }),

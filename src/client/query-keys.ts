@@ -9,11 +9,14 @@ export const trackerQueryKeys = {
   calendar: (trackerKey: string, month: string) =>
     ["calendar", trackerKey, month] as const,
   trends: (trackerKey: string) => ["trends", trackerKey] as const,
+  planWorkspace: (trackerKey: string) =>
+    ["plan-workspace", trackerKey] as const,
   evaluation: (trackerKey: string) => ["evaluation", trackerKey] as const,
   planAdvice: (trackerKey: string) =>
     ["proposals", trackerKey, "latest"] as const,
-  planAdviceContext: (trackerKey: string) =>
-    ["proposals", trackerKey, "context-preview"] as const,
+  planAdviceContext: (trackerKey: string, sourceTurnId?: string | null) =>
+    ["proposals", trackerKey, "context-preview", sourceTurnId ?? null] as const,
+  assistant: (trackerKey: string) => ["assistant", trackerKey] as const,
   resumptionAssessment: (trackerKey: string, assessmentId: string) =>
     ["resumption-assessment", trackerKey, assessmentId] as const,
 };

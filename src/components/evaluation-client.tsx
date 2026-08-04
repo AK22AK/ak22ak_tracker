@@ -890,7 +890,7 @@ export function EvaluationClient() {
           <p className="eyebrow">计划阶段</p>
           <h1>阶段评估</h1>
         </div>
-        <Link className="secondary-button" href="/trends">
+        <Link className="secondary-button" href="/plan">
           返回趋势
         </Link>
       </header>

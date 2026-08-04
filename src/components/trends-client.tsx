@@ -212,8 +212,8 @@ function MoreTrendActions() {
     <details className="trend-more-actions">
       <summary>更多</summary>
       <div>
-        <Link href="/trends/advice">查看调整建议</Link>
-        <Link href="/trends/evaluation">查看阶段评估</Link>
+        <Link href="/plan/advice">查看调整建议</Link>
+        <Link href="/plan/evaluation">查看阶段评估</Link>
       </div>
     </details>
   );
@@ -230,13 +230,13 @@ export function TrendsClient() {
     return (
       <main
         className="app-shell page-frame trends-page"
-        aria-label="趋势页面"
+        aria-label="近期回顾页面"
         aria-busy="true"
       >
         <header className="trend-page-header">
           <div>
             <p className="eyebrow">最近 8 周</p>
-            <h1>趋势</h1>
+            <h1>近期回顾</h1>
           </div>
         </header>
         <section className="surface-card page-section-loading" role="status">
@@ -248,15 +248,18 @@ export function TrendsClient() {
 
   if (!query.data) {
     return (
-      <main className="app-shell page-frame trends-page" aria-label="趋势页面">
+      <main
+        className="app-shell page-frame trends-page"
+        aria-label="近期回顾页面"
+      >
         <header className="trend-page-header">
           <div>
             <p className="eyebrow">最近 8 周</p>
-            <h1>趋势</h1>
+            <h1>近期回顾</h1>
           </div>
         </header>
         <section className="surface-card trend-error-card" role="alert">
-          <h2>趋势暂时无法加载</h2>
+          <h2>近期回顾暂时无法加载</h2>
           <p>请检查网络后再试，已有的训练和反馈记录不会受影响。</p>
           <button
             className="primary-button"
@@ -276,16 +279,19 @@ export function TrendsClient() {
   const allEmpty = query.data.weeks.every((week) => !hasAnyRecord(week));
 
   return (
-    <main className="app-shell page-frame trends-page" aria-label="趋势页面">
+    <main
+      className="app-shell page-frame trends-page"
+      aria-label="近期回顾页面"
+    >
       <header className="trend-page-header">
         <div>
           <p className="eyebrow">最近 8 周</p>
-          <h1>趋势</h1>
+          <h1>近期回顾</h1>
         </div>
         <button
           className="refresh-button trend-refresh-button"
           type="button"
-          aria-label="刷新趋势"
+          aria-label="刷新近期回顾"
           disabled={query.isFetching}
           onClick={() => void query.refetch()}
         >

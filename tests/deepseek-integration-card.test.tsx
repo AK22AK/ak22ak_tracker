@@ -116,7 +116,7 @@ describe("DeepSeek private credential card", () => {
       screen
         .getByRole("link", { name: "生成训练调整建议" })
         .getAttribute("href"),
-    ).toBe("/trends/advice");
+    ).toBe("/plan/advice");
   });
 
   it("tests the current canonical model once and never exposes a test action while disconnected", async () => {

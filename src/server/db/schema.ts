@@ -35,6 +35,11 @@ import type {
 } from "@/domain/evaluation";
 import type { TrackerSafetyPolicyDocument } from "@/domain/safety-policy";
 import type { IntegrationPreferenceDocument } from "@/domain/integration-preferences";
+import type {
+  AssistantAssociation,
+  AssistantTurnResponse,
+  RehabProfileDocument,
+} from "@/domain/rehab-assistant";
 
 export const taskStatus = pgEnum("task_status", [
   "planned",
@@ -680,6 +685,144 @@ export const integrationPreferences = pgTable(
   ],
 );
 
+export const rehabProfiles = pgTable(
+  "rehab_profiles",
+  {
+    id: uuid("id").primaryKey(),
+    trackerId: uuid("tracker_id")
+      .notNull()
+      .references(() => trackers.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    status: text("status").notNull(),
+    hash: text("hash").notNull(),
+    document: jsonb("document").$type<RehabProfileDocument>().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    activatedAt: timestamp("activated_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("rehab_profiles_tracker_version_unique").on(
+      table.trackerId,
+      table.version,
+    ),
+    index("rehab_profiles_tracker_hash_index").on(table.trackerId, table.hash),
+    index("rehab_profiles_tracker_status_index").on(
+      table.trackerId,
+      table.status,
+    ),
+    check(
+      "rehab_profiles_status_check",
+      sql`${table.status} IN ('draft', 'active', 'superseded')`,
+    ),
+  ],
+);
+
+export const assistantConversations = pgTable(
+  "assistant_conversations",
+  {
+    id: uuid("id").primaryKey(),
+    trackerId: uuid("tracker_id")
+      .notNull()
+      .references(() => trackers.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("assistant_conversations_tracker_unique").on(table.trackerId),
+  ],
+);
+
+export const assistantTurns = pgTable(
+  "assistant_turns",
+  {
+    id: uuid("id").primaryKey(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => assistantConversations.id, { onDelete: "cascade" }),
+    trackerId: uuid("tracker_id")
+      .notNull()
+      .references(() => trackers.id, { onDelete: "cascade" }),
+    commandId: uuid("command_id").notNull(),
+    message: text("message").notNull(),
+    association: jsonb("association").$type<AssistantAssociation>().notNull(),
+    status: text("status").default("pending").notNull(),
+    response: jsonb("response").$type<AssistantTurnResponse>(),
+    provider: text("provider"),
+    model: text("model"),
+    contextVersion: text("context_version"),
+    contextHash: text("context_hash"),
+    contextRevision: integer("context_revision"),
+    lastErrorCode: text("last_error_code"),
+    confirmedFeedbackId: uuid("confirmed_feedback_id"),
+    leaseOwner: uuid("lease_owner"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("assistant_turns_tracker_command_unique").on(
+      table.trackerId,
+      table.commandId,
+    ),
+    index("assistant_turns_conversation_created_index").on(
+      table.conversationId,
+      table.createdAt,
+    ),
+    check(
+      "assistant_turns_status_check",
+      sql`${table.status} IN ('pending', 'running', 'succeeded', 'failed')`,
+    ),
+  ],
+);
+
+export const assistantMemories = pgTable(
+  "assistant_memories",
+  {
+    id: uuid("id").primaryKey(),
+    trackerId: uuid("tracker_id")
+      .notNull()
+      .references(() => trackers.id, { onDelete: "cascade" }),
+    category: text("category").notNull(),
+    content: text("content").notNull(),
+    status: text("status").default("active").notNull(),
+    sourceTurnId: uuid("source_turn_id").references(() => assistantTurns.id, {
+      onDelete: "set null",
+    }),
+    supersedesId: uuid("supersedes_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("assistant_memories_tracker_status_index").on(
+      table.trackerId,
+      table.status,
+    ),
+    check(
+      "assistant_memories_category_check",
+      sql`${table.category} IN ('goal', 'preference', 'schedule', 'equipment', 'routine', 'stable_constraint')`,
+    ),
+    check(
+      "assistant_memories_status_check",
+      sql`${table.status} IN ('active', 'superseded', 'deleted')`,
+    ),
+  ],
+);
+
 export const aiAnalysisJobs = pgTable(
   "ai_analysis_jobs",
   {
@@ -703,6 +846,10 @@ export const aiAnalysisJobs = pgTable(
     contextFrom: date("context_from").notNull(),
     contextThrough: date("context_through").notNull(),
     safetyLevel: text("safety_level").notNull(),
+    sourceAssistantTurnId: uuid("source_assistant_turn_id").references(
+      () => assistantTurns.id,
+      { onDelete: "set null" },
+    ),
     responseHash: text("response_hash"),
     lastErrorCode: text("last_error_code"),
     requestedAt: timestamp("requested_at", { withTimezone: true }).notNull(),

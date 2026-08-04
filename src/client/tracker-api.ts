@@ -48,6 +48,18 @@ import {
   type PlanChangeDecisionCommand,
   type PlanVersionRollbackCommand,
 } from "@/domain/ai-analysis";
+import {
+  assistantConversationDtoSchema,
+  assistantMemoryCategorySchema,
+  createAssistantTurnCommandSchema,
+  rehabProfileDtoSchema,
+  rehabProfileDocumentSchema,
+  saveAssistantFeedbackCommandSchema,
+  type CreateAssistantTurnCommand,
+  type RehabProfileDocument,
+  type SaveAssistantFeedbackCommand,
+} from "@/domain/rehab-assistant";
+import { planWorkspaceSchema } from "@/domain/plan-workspace";
 
 async function getJson(url: string, signal?: AbortSignal) {
   const response = await fetch(url, {
@@ -56,6 +68,129 @@ async function getJson(url: string, signal?: AbortSignal) {
   });
   if (!response.ok) throw new Error(`request_failed_${response.status}`);
   return response.json();
+}
+
+export async function fetchPlanWorkspace(
+  trackerKey: string,
+  signal?: AbortSignal,
+) {
+  return planWorkspaceSchema.parse(
+    await getJson(
+      `/api/trackers/${encodeURIComponent(trackerKey)}/plan-workspace`,
+      signal,
+    ),
+  );
+}
+
+export async function fetchAssistantConversation(
+  trackerKey: string,
+  signal?: AbortSignal,
+) {
+  return assistantConversationDtoSchema.parse(
+    await getJson(
+      `/api/trackers/${encodeURIComponent(trackerKey)}/assistant`,
+      signal,
+    ),
+  );
+}
+
+export async function sendAssistantTurn(
+  trackerKey: string,
+  input: CreateAssistantTurnCommand,
+) {
+  const response = await fetch(
+    `/api/trackers/${encodeURIComponent(trackerKey)}/assistant`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(createAssistantTurnCommandSchema.parse(input)),
+    },
+  );
+  if (!response.ok) throw new Error(`assistant_failed_${response.status}`);
+  return assistantConversationDtoSchema.parse(await response.json());
+}
+
+export async function saveAssistantFeedback(
+  trackerKey: string,
+  input: SaveAssistantFeedbackCommand,
+) {
+  const command = saveAssistantFeedbackCommandSchema.parse(input);
+  const response = await fetch(
+    `/api/trackers/${encodeURIComponent(trackerKey)}/assistant/turns/${encodeURIComponent(command.turnId)}/feedback`,
+    {
+      method: "PUT",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(command),
+    },
+  );
+  if (!response.ok) throw new Error(`feedback_failed_${response.status}`);
+  return response.json() as Promise<{
+    id: string;
+    safetyLevel: "green" | "yellow" | "red";
+    replayed: boolean;
+    conversation: ReturnType<typeof assistantConversationDtoSchema.parse>;
+  }>;
+}
+
+export async function saveRehabProfile(
+  trackerKey: string,
+  document: RehabProfileDocument,
+) {
+  const response = await fetch(
+    `/api/trackers/${encodeURIComponent(trackerKey)}/assistant/profile`,
+    {
+      method: "PUT",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(rehabProfileDocumentSchema.parse(document)),
+    },
+  );
+  if (!response.ok) throw new Error(`profile_failed_${response.status}`);
+  return rehabProfileDtoSchema.parse(await response.json());
+}
+
+export async function updateAssistantMemory(
+  trackerKey: string,
+  memoryId: string,
+  input: { category: string; content: string },
+) {
+  const body = {
+    category: assistantMemoryCategorySchema.parse(input.category),
+    content: input.content.trim(),
+  };
+  const response = await fetch(
+    `/api/trackers/${encodeURIComponent(trackerKey)}/assistant/memories/${encodeURIComponent(memoryId)}`,
+    {
+      method: "PUT",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!response.ok) throw new Error(`memory_failed_${response.status}`);
+  return assistantConversationDtoSchema.parse(await response.json());
+}
+
+export async function deleteAssistantMemory(
+  trackerKey: string,
+  memoryId: string,
+) {
+  const response = await fetch(
+    `/api/trackers/${encodeURIComponent(trackerKey)}/assistant/memories/${encodeURIComponent(memoryId)}`,
+    { method: "DELETE", headers: { Accept: "application/json" } },
+  );
+  if (!response.ok) throw new Error(`memory_failed_${response.status}`);
+  return assistantConversationDtoSchema.parse(await response.json());
 }
 
 export async function fetchTodayAggregate(
@@ -209,11 +344,15 @@ export async function fetchPlanAdvice(
 
 export async function fetchPlanAdviceContext(
   trackerKey: string,
+  sourceTurnId?: string | null,
   signal?: AbortSignal,
 ) {
+  const query = sourceTurnId
+    ? `?sourceTurnId=${encodeURIComponent(sourceTurnId)}`
+    : "";
   return aiAnalysisContextPreviewSchema.parse(
     await getJson(
-      `/api/trackers/${encodeURIComponent(trackerKey)}/ai-analysis/context-preview`,
+      `/api/trackers/${encodeURIComponent(trackerKey)}/ai-analysis/context-preview${query}`,
       signal,
     ),
   );
@@ -223,6 +362,7 @@ export async function requestPlanAdvice(
   trackerKey: string,
   commandId: string,
   previewHash: string,
+  sourceAssistantTurnId?: string | null,
 ) {
   const response = await fetch(
     `/api/trackers/${encodeURIComponent(trackerKey)}/ai-analysis`,
@@ -233,7 +373,11 @@ export async function requestPlanAdvice(
         "Content-Type": "application/json",
       },
       body: JSON.stringify(
-        requestPlanAnalysisSchema.parse({ commandId, previewHash }),
+        requestPlanAnalysisSchema.parse({
+          commandId,
+          previewHash,
+          ...(sourceAssistantTurnId ? { sourceAssistantTurnId } : {}),
+        }),
       ),
     },
   );

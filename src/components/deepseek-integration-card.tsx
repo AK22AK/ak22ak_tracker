@@ -261,7 +261,7 @@ export function DeepSeekIntegrationCard({
           >
             {testBusy ? "正在测试…" : "测试当前模型"}
           </button>
-          <Link className="secondary-button" href="/trends/advice">
+          <Link className="secondary-button" href="/plan/advice">
             生成训练调整建议
           </Link>
         </div>

@@ -42,8 +42,8 @@ vi.mock("@/components/settings-client", () => ({
   ),
 }));
 
-vi.mock("@/components/trends-client", () => ({
-  TrendsClient: () => <main aria-label="趋势页面">趋势缓存内容</main>,
+vi.mock("@/components/plan-workspace-client", () => ({
+  PlanWorkspaceClient: () => <main aria-label="计划页面">计划缓存内容</main>,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -107,17 +107,17 @@ describe("protected app shell navigation (P0-05)", () => {
     queueMicrotask(() => {
       nextMicrotaskStarted = true;
     });
-    fireEvent.click(screen.getByRole("link", { name: /趋势/ }));
+    fireEvent.click(screen.getByRole("link", { name: /计划/ }));
 
     // The browser navigation suite owns the real 100 ms wall-clock gate. This
     // jsdom test locks the stronger scheduling invariant without CPU-load flakes.
     expect(nextMicrotaskStarted).toBe(false);
     expect(
-      screen.getByRole("link", { name: /趋势/ }).getAttribute("aria-current"),
+      screen.getByRole("link", { name: /计划/ }).getAttribute("aria-current"),
     ).toBe("page");
-    const trendsPage = screen.getByRole("main", { name: "趋势页面" });
+    const planPage = screen.getByRole("main", { name: "计划页面" });
     expect(
-      within(trendsPage).getByRole("heading", { name: "趋势" }),
+      within(planPage).getByRole("heading", { name: "计划" }),
     ).toBeTruthy();
     expect(screen.queryByText(/正在切换/)).toBeNull();
     expect(screen.getByRole("navigation", { name: "主导航" })).toBeTruthy();
@@ -225,7 +225,7 @@ describe("protected app shell navigation (P0-05)", () => {
         <main aria-label="历史数据补录设置">历史数据补录详情</main>
       </ProtectedAppShell>,
     );
-    const labels = [/今日/, /日历/, /趋势/, /设置/] as const;
+    const labels = [/今日/, /日历/, /计划/, /设置/] as const;
 
     for (let index = 0; index < 20; index += 1) {
       fireEvent.click(
@@ -295,7 +295,7 @@ describe("protected app shell navigation (P0-05)", () => {
     expect(links.map((link) => link.getAttribute("href"))).toEqual([
       "/",
       "/calendar",
-      "/trends",
+      "/plan",
       "/settings",
     ]);
     expect(screen.queryByText("不可用")).toBeNull();

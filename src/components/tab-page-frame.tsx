@@ -1,7 +1,7 @@
 const tabLabels = {
   "/": "今日",
   "/calendar": "日历",
-  "/trends": "趋势",
+  "/plan": "计划",
   "/settings": "设置",
 } as const;
 

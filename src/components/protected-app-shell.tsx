@@ -38,27 +38,27 @@ const SettingsClient = lazy(() =>
   })),
 );
 
-const TrendsClient = lazy(() =>
-  import("./trends-client").then((module) => ({
-    default: module.TrendsClient,
+const PlanWorkspaceClient = lazy(() =>
+  import("./plan-workspace-client").then((module) => ({
+    default: module.PlanWorkspaceClient,
   })),
 );
 
-function TrendsTabLoading() {
+function PlanTabLoading() {
   return (
     <main
-      className="app-shell page-frame trends-page"
-      aria-label="趋势页面"
+      className="app-shell page-frame plan-workspace-page"
+      aria-label="计划页面"
       aria-busy="true"
     >
       <header className="trend-page-header">
         <div>
-          <p className="eyebrow">最近 8 周</p>
-          <h1>趋势</h1>
+          <p className="eyebrow">康复安排</p>
+          <h1>计划</h1>
         </div>
       </header>
       <section className="surface-card page-section-loading" role="status">
-        正在整理最近记录…
+        正在打开计划…
       </section>
     </main>
   );
@@ -101,7 +101,7 @@ function SettingsTabLoading() {
   );
 }
 
-type RootTab = "today" | "calendar" | "trends" | "settings";
+type RootTab = "today" | "calendar" | "plan" | "settings";
 
 type RootNavigationIntent = {
   generation: number;
@@ -113,7 +113,7 @@ type RootNavigationIntent = {
 const rootTabPaths: Record<RootTab, string> = {
   today: "/",
   calendar: "/calendar",
-  trends: "/trends",
+  plan: "/plan",
   settings: "/settings",
 };
 
@@ -169,7 +169,9 @@ function exactRootTab(pathname: string): RootTab | null {
 
 function navigationTab(pathname: string): RootTab {
   if (pathname.startsWith("/calendar")) return "calendar";
-  if (pathname.startsWith("/trends")) return "trends";
+  if (pathname.startsWith("/plan") || pathname.startsWith("/trends")) {
+    return "plan";
+  }
   if (pathname.startsWith("/settings")) return "settings";
   return "today";
 }
@@ -204,10 +206,10 @@ function TabContent({ tab }: { tab: RootTab }) {
       </Suspense>
     );
   }
-  if (tab === "trends") {
+  if (tab === "plan") {
     return (
-      <Suspense fallback={<TrendsTabLoading />}>
-        <TrendsClient />
+      <Suspense fallback={<PlanTabLoading />}>
+        <PlanWorkspaceClient />
       </Suspense>
     );
   }
@@ -252,7 +254,7 @@ export function ProtectedAppShell({ children }: { children: React.ReactNode }) {
   const scrollPositionsRef = useRef<Record<RootTab, number>>({
     today: 0,
     calendar: 0,
-    trends: 0,
+    plan: 0,
     settings: 0,
   });
   const tabUrlsRef = useRef<Record<RootTab, string>>({ ...rootTabPaths });

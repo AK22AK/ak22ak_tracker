@@ -1,5 +1,5 @@
-import { EvaluationClient } from "@/components/evaluation-client";
+import { redirect } from "next/navigation";
 
 export default function EvaluationPage() {
-  return <EvaluationClient />;
+  redirect("/plan/evaluation");
 }
