@@ -2,6 +2,7 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { encode } from "next-auth/jwt";
 
 import { aggregateEightWeekTrends } from "@/domain/trends";
+import type { TodayDashboard } from "@/server/dashboard";
 
 const baseURL = "http://127.0.0.1:4174";
 const localDate = new Intl.DateTimeFormat("en-CA", {
@@ -622,10 +623,13 @@ type RequestCounters = {
   trends: number;
   advice: number;
   evaluation: number;
+  association: number;
 };
 
 type MockPrivateReadOptions = {
   today?: unknown | (() => unknown);
+  day?: (date: string) => unknown;
+  association?: (body: Record<string, unknown>) => unknown;
 };
 
 async function authorize(context: BrowserContext) {
@@ -663,12 +667,22 @@ async function mockPrivateReads(
     trends: 0,
     advice: 0,
     evaluation: 0,
+    association: 0,
   };
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
     let body: unknown = null;
-    if (url.pathname.endsWith("/today")) {
+    if (
+      request.method() === "PUT" &&
+      url.pathname.endsWith("/association") &&
+      options.association
+    ) {
+      counters.association += 1;
+      body = options.association(
+        JSON.parse(request.postData() ?? "{}") as Record<string, unknown>,
+      );
+    } else if (url.pathname.endsWith("/today")) {
       counters.today += 1;
       body =
         typeof options.today === "function"
@@ -683,7 +697,10 @@ async function mockPrivateReads(
       body = calendarAggregate;
     } else if (/\/days\/\d{4}-\d{2}-\d{2}$/.test(url.pathname)) {
       counters.day += 1;
-      body = dayAggregateFor(url.pathname.slice(-10));
+      const requestedDate = url.pathname.slice(-10);
+      body = options.day
+        ? options.day(requestedDate)
+        : dayAggregateFor(requestedDate);
     } else if (url.pathname.endsWith("/integrations/history-sync")) {
       body = providerHistoryOverview;
     } else if (url.pathname.endsWith("/integrations/xunji/credential")) {
@@ -732,6 +749,77 @@ async function mockPrivateReads(
     await route.fulfill({ status: 200, json: body });
   });
   return counters;
+}
+
+function externalAssociationScenario() {
+  const recordId = day.externalTrainingRecords[0]!.id;
+  const mutableDay = structuredClone(day) as unknown as TodayDashboard;
+  mutableDay.externalTrainingRecords.push({
+    id: "019c0000-0000-7000-8000-000000000005",
+    provider: "garmin",
+    localDate,
+    occurredAt: `${localDate}T05:00:00+08:00`,
+    sourceVersion: 1,
+    details: {
+      kind: "activity",
+      activityType: "walking",
+      startedAt: `${localDate}T05:00:00+08:00`,
+      durationSeconds: 1_200,
+      distanceMeters: 1_400,
+      averagePaceSecondsPerKilometer: 857,
+      averageHeartRateBpm: 90,
+    },
+    association: {
+      status: "unrelated",
+      taskId: null,
+      sourceVersion: 1,
+      needsReview: false,
+    },
+    suggestion: null,
+  });
+
+  return {
+    recordId,
+    today: () => ({
+      ...todayAggregate,
+      day: structuredClone(mutableDay),
+    }),
+    selectedDay: (date: string) =>
+      date === localDate
+        ? {
+            ...dayAggregate,
+            day: structuredClone(mutableDay),
+          }
+        : dayAggregateFor(date),
+    associate: (body: Record<string, unknown>) => {
+      const target = mutableDay.externalTrainingRecords.find(
+        (record) => record.id === body.externalRecordId,
+      );
+      if (!target) throw new Error("anonymous_record_not_found");
+      const association =
+        body.decision === "unrelated"
+          ? {
+              status: "unrelated" as const,
+              taskId: null,
+              sourceVersion: target.sourceVersion,
+              needsReview: false,
+            }
+          : {
+              status: "confirmed" as const,
+              taskId: String(body.taskId),
+              sourceVersion: target.sourceVersion,
+              needsReview: false,
+            };
+      target.association = association;
+      target.suggestion = null;
+      return {
+        commandId: String(body.commandId),
+        replayed: false,
+        recordId: target.id,
+        association,
+      };
+    },
+  };
 }
 
 async function expectMobileLayoutIntegrity(page: Page) {
@@ -2140,6 +2228,90 @@ test("persistent tabs keep DOM, active state and browser history URLs aligned", 
   ).toBeVisible();
   await expectActiveTab(page, "/", "/");
 });
+
+for (const width of [320, 375, 390, 430]) {
+  test(`association feedback stays canonical across persistent tabs at ${width}px`, async ({
+    page,
+  }) => {
+    const scenario = externalAssociationScenario();
+    await page.setViewportSize({ width, height: 844 });
+    const counters = await mockPrivateReads(
+      page,
+      0,
+      planAdvice,
+      evaluationAggregate,
+      trendsAggregate,
+      {
+        today: scenario.today,
+        day: scenario.selectedDay,
+        association: scenario.associate,
+      },
+    );
+    await page.goto("/");
+
+    const todayPanel = page.locator('[data-tab-panel="today"]');
+    await expect(todayPanel.getByLabel("待处理来源")).toBeVisible();
+    await expect(todayPanel.getByRole("heading", { name: "步行" })).toHaveCount(
+      0,
+    );
+    const taskCheckbox = todayPanel.getByRole("checkbox", {
+      name: "Anonymous task",
+    });
+    await expect(taskCheckbox).not.toBeChecked();
+    await expectMobileLayoutIntegrity(page);
+
+    await todayPanel.getByRole("button", { name: "关联到此任务" }).click();
+    await expect(
+      todayPanel.getByText(
+        "Garmin 活动已关联到“Anonymous task”；任务完成状态未改变，可在日历当天修改。",
+      ),
+    ).toBeVisible();
+    await expect(
+      todayPanel.getByText("已关联 1 条来源 · Garmin"),
+    ).toBeVisible();
+    await expect(todayPanel.getByLabel("待处理来源")).toHaveCount(0);
+    await expect(taskCheckbox).not.toBeChecked();
+    await expect.poll(() => counters.association).toBe(1);
+
+    await page.getByRole("link", { name: "日历", exact: true }).click();
+    await expect(page).toHaveURL("/calendar");
+    const calendarPanel = page.locator('[data-tab-panel="calendar"]');
+    await expect(
+      calendarPanel.getByText("已关联：Anonymous task"),
+    ).toBeVisible();
+    await expect(calendarPanel.getByText("已标记为与计划无关")).toBeVisible();
+    await expect(calendarPanel.getByLabel("康复任务")).toHaveCount(0);
+    await expect(
+      calendarPanel.getByRole("button", { name: "修改关联" }),
+    ).toHaveCount(2);
+    await expectMobileLayoutIntegrity(page);
+
+    await calendarPanel
+      .getByRole("button", { name: "修改关联" })
+      .first()
+      .click();
+    await expect(calendarPanel.getByLabel("康复任务")).toBeVisible();
+    await expectMobileLayoutIntegrity(page);
+
+    await page.goBack();
+    await expect(page).toHaveURL("/");
+    await expect(
+      todayPanel.getByText("已关联 1 条来源 · Garmin"),
+    ).toBeVisible();
+    await page.goForward();
+    await expect(page).toHaveURL("/calendar");
+    await expect(
+      calendarPanel.getByText("已关联：Anonymous task"),
+    ).toBeVisible();
+    await page.reload();
+    await expect(page).toHaveURL("/calendar");
+    await expect(
+      page
+        .locator('[data-tab-panel="calendar"]')
+        .getByText("已关联：Anonymous task"),
+    ).toBeVisible();
+  });
+}
 
 test("calendar only offers return-to-today away from today and restores focus", async ({
   page,

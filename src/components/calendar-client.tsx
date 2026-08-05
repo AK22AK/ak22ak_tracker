@@ -4,6 +4,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 
 import { trackerQueryKeys } from "@/client/query-keys";
+import {
+  projectCanonicalExternalRecordAssociation,
+  refreshExternalRecordAssociationQueries,
+} from "@/client/external-record-association-cache";
 import { useRootTabLocation } from "@/client/root-tab-location";
 import {
   fetchCalendarAggregate,
@@ -11,7 +15,6 @@ import {
 } from "@/client/tracker-api";
 import { isLocalDate, monthBounds } from "@/domain/calendar";
 import { localDateInTimeZone } from "@/domain/planning-time";
-import type { DayAggregate } from "@/domain/api-contracts";
 import type { ExternalRecordAssociation } from "@/domain/external-training";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -23,6 +26,7 @@ import type {
 import { useQuerySnapshot } from "@/offline/use-query-snapshot";
 import { useEffect } from "react";
 import { useOfflineCommands } from "@/offline/offline-command-context";
+import { usePrivateOfflineIdentity } from "@/offline/private-offline-context";
 import {
   projectCalendarPendingCommands,
   projectDayPendingCommands,
@@ -47,6 +51,7 @@ function calendarDateFromLocation() {
 
 export function CalendarClient({ initialDate }: { initialDate?: string }) {
   const queryClient = useQueryClient();
+  const githubUserId = usePrivateOfflineIdentity();
   const rootTabLocation = useRootTabLocation();
   const { commands } = useOfflineCommands();
   const today = localDateInTimeZone(new Date(), planningTimeZone);
@@ -164,27 +169,17 @@ export function CalendarClient({ initialDate }: { initialDate?: string }) {
   );
 
   const updateAssociation = useCallback(
-    (recordId: string, association: ExternalRecordAssociation) => {
-      queryClient.setQueryData<DayAggregate>(
-        trackerQueryKeys.day(trackerKey, selectedDate),
-        (current) =>
-          current
-            ? {
-                ...current,
-                day: {
-                  ...current.day,
-                  externalTrainingRecords:
-                    current.day.externalTrainingRecords.map((record) =>
-                      record.id === recordId
-                        ? { ...record, association, suggestion: null }
-                        : record,
-                    ),
-                },
-              }
-            : current,
-      );
+    async (recordId: string, association: ExternalRecordAssociation) => {
+      await projectCanonicalExternalRecordAssociation({
+        queryClient,
+        githubUserId,
+        trackerKey,
+        localDate: selectedDate,
+        recordId,
+        association,
+      });
     },
-    [queryClient, selectedDate],
+    [githubUserId, queryClient, selectedDate],
   );
 
   return (
@@ -227,6 +222,13 @@ export function CalendarClient({ initialDate }: { initialDate?: string }) {
       onExternalDateFocused={() => setExternallyFocusedDate(null)}
       onSelectMonth={selectMonth}
       onExternalTrainingUpdated={updateAssociation}
+      onExternalTrainingConflict={() =>
+        refreshExternalRecordAssociationQueries({
+          queryClient,
+          trackerKey,
+          localDate: selectedDate,
+        })
+      }
     />
   );
 }

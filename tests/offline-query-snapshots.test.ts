@@ -14,6 +14,7 @@ import {
   prepareOfflineIdentity,
   readQuerySnapshot,
   saveQuerySnapshot,
+  updateExternalRecordAssociationSnapshots,
 } from "@/offline/query-snapshots";
 import { projectTodaySnapshot } from "@/offline/snapshot-contracts";
 
@@ -86,6 +87,96 @@ afterEach(async () => {
 });
 
 describe("private offline query snapshots (P2a)", () => {
+  it("updates Today and day snapshots from the canonical association result", async () => {
+    const db = database();
+    const aggregate = anonymousToday();
+    const taskId = "019c0000-0000-7000-8000-000000000021";
+    const recordId = "019c0000-0000-7000-8000-000000000022";
+    aggregate.day.tasks.push({
+      id: taskId,
+      title: "Anonymous task",
+      category: "general",
+      prescription: {},
+      status: "planned",
+      actual: null,
+      subjectiveNote: null,
+    });
+    aggregate.day.externalTrainingRecords.push({
+      id: recordId,
+      provider: "garmin",
+      localDate: "2026-07-21",
+      occurredAt: "2026-07-21T02:00:00.000Z",
+      sourceVersion: 2,
+      details: {
+        kind: "activity",
+        activityType: "running",
+        startedAt: "2026-07-21T02:00:00.000Z",
+        durationSeconds: 1_200,
+        distanceMeters: 2_000,
+        averagePaceSecondsPerKilometer: 360,
+        averageHeartRateBpm: 110,
+      },
+      association: null,
+      suggestion: { taskId, reason: "Anonymous suggestion" },
+    });
+    await prepareOfflineIdentity(db, "10001");
+    const common = {
+      githubUserId: "10001",
+      trackerKey: "knee-rehab",
+      scope: "2026-07-21",
+      savedAt: "2026-07-21T03:00:00.000Z",
+      expiresAt: "2026-07-28T03:00:00.000Z",
+      sourceVersion: "anonymous",
+    };
+    await saveQuerySnapshot(db, {
+      ...common,
+      kind: "today",
+      data: projectTodaySnapshot(aggregate),
+    });
+    await saveQuerySnapshot(db, {
+      ...common,
+      kind: "day",
+      data: {
+        trackerKey: "knee-rehab",
+        targetDate: "2026-07-21",
+        plan: aggregate.plan,
+        day: aggregate.day,
+      },
+    });
+    const canonical = {
+      status: "confirmed" as const,
+      taskId,
+      sourceVersion: 2,
+      needsReview: false,
+    };
+
+    await updateExternalRecordAssociationSnapshots(db, {
+      githubUserId: "10001",
+      trackerKey: "knee-rehab",
+      localDate: "2026-07-21",
+      recordId,
+      association: canonical,
+    });
+
+    for (const kind of ["today", "day"] as const) {
+      const restored = await readQuerySnapshot(db, {
+        githubUserId: "10001",
+        trackerKey: "knee-rehab",
+        kind,
+        scope: "2026-07-21",
+        now: new Date("2026-07-21T04:00:00.000Z"),
+      });
+      expect(
+        (restored?.data as { day: TodayAggregate["day"] }).day
+          .externalTrainingRecords[0]?.association,
+      ).toEqual(canonical);
+      expect(
+        (restored?.data as { day: TodayAggregate["day"] }).day
+          .externalTrainingRecords[0]?.suggestion,
+      ).toBeNull();
+    }
+  });
+
   it("migrates the version 1 scaffold to the versioned snapshot schema without retaining legacy tables", async () => {
     const name = `ak-tracker-legacy-${crypto.randomUUID()}`;
     const legacy = new Dexie(name);

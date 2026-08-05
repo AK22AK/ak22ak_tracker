@@ -2,6 +2,8 @@ import "client-only";
 
 import type { ZodType } from "zod";
 
+import type { ExternalRecordAssociation } from "@/domain/external-training";
+
 import {
   offlineCalendarSnapshotSchema,
   offlineDaySnapshotSchema,
@@ -144,4 +146,65 @@ export async function readQuerySnapshot(
     return null;
   }
   return { ...row, data: result.data };
+}
+
+export async function updateExternalRecordAssociationSnapshots(
+  database: TrackerOfflineDatabase,
+  input: {
+    githubUserId: string;
+    trackerKey: string;
+    localDate: string;
+    recordId: string;
+    association: ExternalRecordAssociation;
+  },
+) {
+  assertIdentity(input.githubUserId);
+  await database.transaction("rw", database.querySnapshots, async () => {
+    for (const kind of ["today", "day"] as const) {
+      const id = snapshotId({
+        githubUserId: input.githubUserId,
+        trackerKey: input.trackerKey,
+        kind,
+        scope: input.localDate,
+      });
+      const row = await database.querySnapshots.get(id);
+      if (!row) continue;
+      const parsed = schemas[kind].safeParse(row.data);
+      if (!parsed.success) {
+        await database.querySnapshots.delete(id);
+        continue;
+      }
+      const data = parsed.data as {
+        targetDate: string;
+        day: {
+          externalTrainingRecords: Array<{
+            id: string;
+            association: ExternalRecordAssociation | null;
+            suggestion: unknown;
+          }>;
+        };
+      };
+      if (data.targetDate !== input.localDate) continue;
+      const nextData = {
+        ...data,
+        day: {
+          ...data.day,
+          externalTrainingRecords: data.day.externalTrainingRecords.map(
+            (record) =>
+              record.id === input.recordId
+                ? {
+                    ...record,
+                    association: input.association,
+                    suggestion: null,
+                  }
+                : record,
+          ),
+        },
+      };
+      await database.querySnapshots.put({
+        ...row,
+        data: schemas[kind].parse(nextData),
+      });
+    }
+  });
 }

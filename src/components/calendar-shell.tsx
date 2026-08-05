@@ -298,6 +298,7 @@ export function CalendarShell({
   onExternalDateFocused,
   onSelectMonth,
   onExternalTrainingUpdated,
+  onExternalTrainingConflict,
   readOnlyOffline = false,
   offlineSavedAt = null,
 }: {
@@ -319,7 +320,8 @@ export function CalendarShell({
   onExternalTrainingUpdated: (
     recordId: string,
     association: ExternalRecordAssociation,
-  ) => void;
+  ) => void | Promise<void>;
+  onExternalTrainingConflict?: () => void | Promise<void>;
   readOnlyOffline?: boolean;
   offlineSavedAt?: string | null;
 }) {
@@ -572,8 +574,10 @@ export function CalendarShell({
                 records={dashboard.externalTrainingRecords}
                 tasks={dashboard.tasks}
                 onUpdated={onExternalTrainingUpdated}
+                onConflict={onExternalTrainingConflict}
                 readOnly={writesDisabled}
                 assistantLinks={selectedDate <= today}
+                presentation="calendar"
               />
             </>
           ) : (
@@ -608,8 +612,10 @@ export function CalendarShell({
                 records={dashboard.externalTrainingRecords}
                 tasks={dashboard.tasks}
                 onUpdated={onExternalTrainingUpdated}
+                onConflict={onExternalTrainingConflict}
                 readOnly={writesDisabled}
                 assistantLinks={selectedDate <= today}
+                presentation="calendar"
               />
               <div className="calendar-task-list">
                 <div className="calendar-subsection-heading">

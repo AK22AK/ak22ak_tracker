@@ -15,6 +15,10 @@ import {
 } from "@/client/integration-api";
 import { integrationQueryKeys, trackerQueryKeys } from "@/client/query-keys";
 import {
+  projectCanonicalExternalRecordAssociation,
+  refreshExternalRecordAssociationQueries,
+} from "@/client/external-record-association-cache";
+import {
   fetchCalendarAggregate,
   fetchDayAggregate,
   fetchTodayAggregate,
@@ -273,18 +277,18 @@ export function TodayClient() {
     refreshRelatedData();
   };
 
-  const handleExternalTrainingUpdated = (
+  const handleExternalTrainingUpdated = async (
     recordId: string,
     association: ExternalRecordAssociation,
   ) => {
-    updateDay((day) => ({
-      ...day,
-      externalTrainingRecords: day.externalTrainingRecords.map((record) =>
-        record.id === recordId
-          ? { ...record, association, suggestion: null }
-          : record,
-      ),
-    }));
+    await projectCanonicalExternalRecordAssociation({
+      queryClient,
+      githubUserId,
+      trackerKey,
+      localDate,
+      recordId,
+      association,
+    });
   };
 
   return (
@@ -303,6 +307,13 @@ export function TodayClient() {
       onExecutionChanged={() => query.refetch()}
       onTaskUpdated={handleTaskUpdated}
       onExternalTrainingUpdated={handleExternalTrainingUpdated}
+      onExternalTrainingConflict={() =>
+        refreshExternalRecordAssociationQueries({
+          queryClient,
+          trackerKey,
+          localDate,
+        })
+      }
     />
   );
 }

@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CalendarClient } from "@/components/calendar-client";
 import { ProtectedAppShell } from "@/components/protected-app-shell";
+import type { DayAggregate } from "@/domain/api-contracts";
 
 vi.mock("next-auth/react", () => ({
   signOut: vi.fn(),
@@ -37,7 +38,7 @@ function jsonResponse(value: unknown) {
   });
 }
 
-function dayAggregate(date: string, title: string) {
+function dayAggregate(date: string, title: string): DayAggregate {
   return {
     trackerKey: "knee-rehab",
     targetDate: date,
@@ -138,6 +139,85 @@ describe("calendar instant interaction (P0-04/P0-06)", () => {
       selected.resolve(jsonResponse(dayAggregate("2026-07-20", "Newest day")));
     });
     expect(await screen.findByText("Newest day")).toBeTruthy();
+  });
+
+  it("keeps resolved associations compact until the user chooses to modify them", async () => {
+    const day = dayAggregate("2026-07-19", "Anonymous task");
+    const taskId = day.day.tasks[0]!.id;
+    day.day.externalTrainingRecords = [
+      {
+        id: "019c0000-0000-7000-8000-000000000211",
+        provider: "garmin",
+        localDate: "2026-07-19",
+        occurredAt: "2026-07-19T04:00:00.000Z",
+        sourceVersion: 2,
+        details: {
+          kind: "activity",
+          activityType: "running",
+          startedAt: "2026-07-19T04:00:00.000Z",
+          durationSeconds: 1_800,
+          distanceMeters: 3_000,
+          averagePaceSecondsPerKilometer: 360,
+          averageHeartRateBpm: 120,
+        },
+        association: {
+          status: "confirmed",
+          taskId,
+          sourceVersion: 2,
+          needsReview: false,
+        },
+        suggestion: null,
+      },
+      {
+        id: "019c0000-0000-7000-8000-000000000212",
+        provider: "garmin",
+        localDate: "2026-07-19",
+        occurredAt: "2026-07-19T06:00:00.000Z",
+        sourceVersion: 1,
+        details: {
+          kind: "activity",
+          activityType: "walking",
+          startedAt: "2026-07-19T06:00:00.000Z",
+          durationSeconds: 1_200,
+          distanceMeters: 1_400,
+          averagePaceSecondsPerKilometer: 857,
+          averageHeartRateBpm: 90,
+        },
+        association: {
+          status: "unrelated",
+          taskId: null,
+          sourceVersion: 1,
+          needsReview: false,
+        },
+        suggestion: null,
+      },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: RequestInfo | URL) =>
+        String(input).includes("/calendar?month=")
+          ? Promise.resolve(
+              jsonResponse({
+                trackerKey: "knee-rehab",
+                month: "2026-07",
+                days: [],
+              }),
+            )
+          : Promise.resolve(jsonResponse(day)),
+      ),
+    );
+
+    renderCalendar();
+
+    expect(await screen.findByText("已关联：Anonymous task")).toBeTruthy();
+    expect(screen.getByText("已标记为与计划无关")).toBeTruthy();
+    expect(screen.queryByLabelText("康复任务")).toBeNull();
+    expect(screen.getAllByRole("button", { name: "修改关联" })).toHaveLength(2);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "修改关联" })[0]!);
+    expect(screen.getByLabelText("康复任务")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "重新确认此任务" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "与计划无关" })).toBeTruthy();
   });
 
   it("returns from another date to today with URL, selection and focus restored", async () => {

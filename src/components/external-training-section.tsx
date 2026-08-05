@@ -129,8 +129,10 @@ function GarminActivitySummary({
 
 function XunjiTrainingSummary({
   record,
+  compact = false,
 }: {
   record: XunjiExternalTrainingRecord;
+  compact?: boolean;
 }) {
   return (
     <>
@@ -146,7 +148,7 @@ function XunjiTrainingSummary({
         {timeLabel(record.details.endedAt)}
         {record.details.rpe !== null ? ` · RPE ${record.details.rpe}` : ""}
       </p>
-      {record.details.movements.length > 0 && (
+      {!compact && record.details.movements.length > 0 && (
         <div className="external-movement-list">
           {record.details.movements.map((movement, movementIndex) => (
             <div key={`${movement.name}-${movementIndex}`}>
@@ -181,7 +183,7 @@ function XunjiTrainingSummary({
           ))}
         </div>
       )}
-      {record.details.note && (
+      {!compact && record.details.note && (
         <p className="external-training-note">备注：{record.details.note}</p>
       )}
     </>
@@ -195,13 +197,20 @@ function ExternalTrainingCard({
   onUpdated,
   readOnly,
   assistantLink,
+  presentation,
+  onConflict,
 }: {
   trackerKey: string;
   record: ExternalTrainingRecord;
   tasks: DashboardTask[];
-  onUpdated: (recordId: string, association: ExternalRecordAssociation) => void;
+  onUpdated: (
+    recordId: string,
+    association: ExternalRecordAssociation,
+  ) => void | Promise<void>;
   readOnly: boolean;
   assistantLink: boolean;
+  presentation: "actionable" | "calendar";
+  onConflict?: () => void | Promise<void>;
 }) {
   const [selectedTaskId, setSelectedTaskId] = useState(
     record.association?.taskId ??
@@ -210,11 +219,13 @@ function ExternalTrainingCard({
       "",
   );
   const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const pendingCommand = useRef<PendingClientCommand | null>(null);
+  const savingRef = useRef(false);
 
   async function decide(decision: "link" | "unrelated") {
-    if (decision === "link" && !selectedTaskId) return;
+    if (savingRef.current || (decision === "link" && !selectedTaskId)) return;
     const payload =
       decision === "link"
         ? {
@@ -230,6 +241,7 @@ function ExternalTrainingCard({
           };
     const command = createOrReuseClientCommand(pendingCommand.current, payload);
     pendingCommand.current = command;
+    savingRef.current = true;
     setSaving(true);
     setMessage(null);
     try {
@@ -245,19 +257,22 @@ function ExternalTrainingCard({
           : { ...payload, ...command.metadata, decision },
       );
       pendingCommand.current = null;
-      onUpdated(record.id, result.association);
+      await onUpdated(record.id, result.association);
+      if (presentation === "calendar") setEditing(false);
       setMessage(
         result.association.status === "unrelated"
           ? "已记录为与计划无关"
           : "已关联到任务",
       );
     } catch (error) {
-      setMessage(
-        String(error).includes("409")
-          ? "来源记录已更新，请刷新后重新确认"
-          : "关联保存失败，请稍后重试",
-      );
+      if (String(error).includes("409")) {
+        setMessage("来源记录已更新，已载入最新状态，请重新确认");
+        await onConflict?.();
+      } else {
+        setMessage("关联保存失败，请稍后重试");
+      }
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }
@@ -268,11 +283,19 @@ function ExternalTrainingCard({
       ? "重新确认此任务"
       : "更换任务"
     : "关联到此任务";
+  const resolved =
+    (record.association?.status === "confirmed" ||
+      record.association?.status === "unrelated") &&
+    !record.association.needsReview;
+  const showEditor = presentation === "actionable" || !resolved || editing;
 
   return (
-    <article className="external-training-card">
+    <article
+      className={`external-training-card ${resolved && !showEditor ? "compact" : ""}`}
+      data-association-state={record.association?.status ?? "pending"}
+    >
       {record.provider === "xunji" ? (
-        <XunjiTrainingSummary record={record} />
+        <XunjiTrainingSummary record={record} compact={!showEditor} />
       ) : (
         <GarminActivitySummary record={record} />
       )}
@@ -285,10 +308,10 @@ function ExternalTrainingCard({
             内容已更新，请重新确认关联。
           </p>
         )}
-        {!record.association && record.suggestion && (
+        {showEditor && !record.association && record.suggestion && (
           <p>建议：{record.suggestion.reason}</p>
         )}
-        {tasks.length > 0 && (
+        {showEditor && tasks.length > 0 && (
           <label>
             康复任务
             <select
@@ -304,28 +327,51 @@ function ExternalTrainingCard({
             </select>
           </label>
         )}
-        <div className="external-association-actions">
-          {tasks.length > 0 && (
+        {showEditor ? (
+          <div className="external-association-actions">
+            {tasks.length > 0 && (
+              <button
+                type="button"
+                disabled={saving || readOnly || !selectedTaskId}
+                onClick={() => void decide("link")}
+              >
+                {saving ? "保存中…" : linkButtonLabel}
+              </button>
+            )}
             <button
+              className="quiet"
               type="button"
-              disabled={saving || readOnly || !selectedTaskId}
-              onClick={() => void decide("link")}
+              disabled={saving || readOnly}
+              onClick={() => void decide("unrelated")}
             >
-              {saving ? "保存中…" : linkButtonLabel}
+              与计划无关
             </button>
-          )}
+            {presentation === "calendar" && resolved ? (
+              <button
+                className="quiet"
+                type="button"
+                disabled={saving}
+                onClick={() => setEditing(false)}
+              >
+                取消修改
+              </button>
+            ) : null}
+          </div>
+        ) : (
           <button
-            className="quiet"
+            className="external-association-edit"
             type="button"
-            disabled={saving || readOnly}
-            onClick={() => void decide("unrelated")}
+            disabled={readOnly}
+            onClick={() => setEditing(true)}
           >
-            与计划无关
+            修改关联
           </button>
-        </div>
-        <p className="external-association-hint">
-          确认后，这条记录会显示在所选任务下；任务状态不会自动改变。
-        </p>
+        )}
+        {showEditor ? (
+          <p className="external-association-hint">
+            关联只整理来源记录，任务完成状态仍需单独确认。
+          </p>
+        ) : null}
         {message && <p role="status">{message}</p>}
         {assistantLink ? (
           <Link
@@ -348,14 +394,21 @@ export function ExternalTrainingSection({
   onUpdated,
   readOnly = false,
   assistantLinks = false,
+  presentation = "actionable",
+  onConflict,
 }: {
   trackerKey: string;
   records: ExternalTrainingRecord[];
   tasks: DashboardTask[];
   heading?: string;
-  onUpdated: (recordId: string, association: ExternalRecordAssociation) => void;
+  onUpdated: (
+    recordId: string,
+    association: ExternalRecordAssociation,
+  ) => void | Promise<void>;
   readOnly?: boolean;
   assistantLinks?: boolean;
+  presentation?: "actionable" | "calendar";
+  onConflict?: () => void | Promise<void>;
 }) {
   if (records.length === 0) return null;
   return (
@@ -376,6 +429,8 @@ export function ExternalTrainingSection({
           onUpdated={onUpdated}
           readOnly={readOnly}
           assistantLink={assistantLinks}
+          presentation={presentation}
+          onConflict={onConflict}
         />
       ))}
     </section>

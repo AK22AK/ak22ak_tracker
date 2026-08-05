@@ -11,7 +11,6 @@ import type {
   ExternalRecordAssociation,
   ExternalTrainingRecord,
 } from "@/domain/external-training";
-import { garminActivityTypeLabel } from "@/domain/garmin";
 import type { TaskActual } from "@/domain/schemas";
 import type { DashboardTask, TodayDashboard } from "@/server/dashboard";
 import type { ExecutionContextToday } from "@/domain/execution-context";
@@ -165,24 +164,15 @@ function Prescription({
 function TaskCard({
   task,
   records,
-  tasks,
   onUpdated,
-  onExternalTrainingUpdated,
   localDate,
   planVersion,
-  externalWritesDisabled,
 }: {
   task: DashboardTask;
   records: ExternalTrainingRecord[];
-  tasks: DashboardTask[];
   onUpdated: (task: DashboardTask) => void;
-  onExternalTrainingUpdated: (
-    recordId: string,
-    association: ExternalRecordAssociation,
-  ) => void;
   localDate: string;
   planVersion: number | null;
-  externalWritesDisabled: boolean;
 }) {
   const githubUserId = usePrivateOfflineIdentity();
   const { commands, confirmedCommandIds, enqueue, ready } =
@@ -318,6 +308,23 @@ function TaskCard({
           {status.label}
         </StatusPill>
       </div>
+      {records.length > 0 ? (
+        <div className="task-linked-source-summary">
+          <span>
+            已关联 {records.length} 条来源 ·{" "}
+            {[
+              ...new Set(
+                records.map((record) =>
+                  record.provider === "xunji" ? "训记" : "Garmin",
+                ),
+              ),
+            ].join("、")}
+          </span>
+          <Link href={`/calendar?date=${localDate}`} scroll={false}>
+            日历中查看
+          </Link>
+        </div>
+      ) : null}
       {expanded ? (
         <div className="task-card-details" id={detailsId}>
           <div className="task-detail-block">
@@ -327,17 +334,6 @@ function TaskCard({
             ) : null}
             <Prescription prescription={task.prescription} />
           </div>
-
-          {records.length > 0 ? (
-            <ExternalTrainingSection
-              trackerKey="knee-rehab"
-              records={records}
-              tasks={tasks}
-              heading="已同步记录"
-              onUpdated={onExternalTrainingUpdated}
-              readOnly={externalWritesDisabled}
-            />
-          ) : null}
 
           <div className="manual-entry-fallback">
             <button
@@ -581,6 +577,7 @@ export function DashboardShell({
   onExecutionChanged,
   onTaskUpdated,
   onExternalTrainingUpdated,
+  onExternalTrainingConflict,
   readOnlyOffline = false,
   offlineSavedAt = null,
   pendingSummary = null,
@@ -598,7 +595,8 @@ export function DashboardShell({
   onExternalTrainingUpdated: (
     recordId: string,
     association: ExternalRecordAssociation,
-  ) => void;
+  ) => void | Promise<void>;
+  onExternalTrainingConflict: () => void | Promise<void>;
   readOnlyOffline?: boolean;
   offlineSavedAt?: string | null;
   pendingSummary?: PendingProjectionSummary | null;
@@ -609,6 +607,9 @@ export function DashboardShell({
   const refreshingFromLocal = online && readOnlyOffline;
   const [refreshing, setRefreshing] = useState(false);
   const [adjustmentsOpen, setAdjustmentsOpen] = useState(false);
+  const [associationFeedback, setAssociationFeedback] = useState<string | null>(
+    null,
+  );
 
   const tasks = initialDashboard.tasks;
   const feedbackCount = initialDashboard.feedbackCount;
@@ -631,14 +632,31 @@ export function DashboardShell({
       record.association.status === "suggested" ||
       record.association.needsReview,
   );
-  const unassignedRecords = externalRecords.filter(
-    (record) => taskIdForRecord(record, tasks) === null,
+  const confirmedRecords = externalRecords.filter(
+    (record) =>
+      record.association?.status === "confirmed" &&
+      !record.association.needsReview,
   );
   const adjustmentException = executionExceptionLabel(execution);
   const adjustmentPanelId = "today-adjustments";
   const forceAdjustmentPanel =
     execution.safety.blocked || Boolean(execution.pause);
   const adjustmentPanelOpen = adjustmentsOpen || forceAdjustmentPanel;
+
+  const handleExternalTrainingUpdated = async (
+    recordId: string,
+    association: ExternalRecordAssociation,
+  ) => {
+    const record = externalRecords.find((item) => item.id === recordId);
+    const source = record?.provider === "xunji" ? "训记训练" : "Garmin 活动";
+    const task = tasks.find((item) => item.id === association.taskId);
+    setAssociationFeedback(
+      association.status === "unrelated"
+        ? `${source}已标记与计划无关，已从今日待处理移除；可在日历当天修改。`
+        : `${source}已关联到“${task?.title ?? "计划任务"}”；任务完成状态未改变，可在日历当天修改。`,
+    );
+    await onExternalTrainingUpdated(recordId, association);
+  };
 
   const planTitle = missing
     ? "等待导入私人计划"
@@ -707,6 +725,12 @@ export function DashboardShell({
               ? "更新完成后，可以继续使用需要联网的操作。"
               : "任务和身体反馈可先保存到本机，其他操作请联网后进行。"}
           </small>
+        </section>
+      ) : null}
+
+      {associationFeedback ? (
+        <section className="association-feedback" role="status">
+          {associationFeedback}
         </section>
       ) : null}
 
@@ -847,7 +871,7 @@ export function DashboardShell({
         {tasks.length > 0 ? (
           <div className="task-list">
             {tasks.map((task) => {
-              const taskRecords = externalRecords.filter(
+              const taskRecords = confirmedRecords.filter(
                 (record) => taskIdForRecord(record, tasks) === task.id,
               );
               return (
@@ -855,12 +879,9 @@ export function DashboardShell({
                   key={task.id}
                   task={task}
                   records={taskRecords}
-                  tasks={tasks}
                   onUpdated={onTaskUpdated}
-                  onExternalTrainingUpdated={onExternalTrainingUpdated}
                   localDate={localDate}
                   planVersion={planVersion}
-                  externalWritesDisabled={writesDisabled}
                 />
               );
             })}
@@ -964,37 +985,15 @@ export function DashboardShell({
               </StatusPill>
             }
           />
-          <div className="pending-source-list">
-            {pendingRecords.map((record) => (
-              <div key={record.id}>
-                <StatusPill tone="brand">
-                  {record.provider === "xunji" ? "训记" : "Garmin"}
-                </StatusPill>
-                <span>
-                  {record.provider === "xunji"
-                    ? record.details.title
-                    : garminActivityTypeLabel(record.details.activityType)}
-                </span>
-                <small>
-                  {record.association?.needsReview
-                    ? "来源已更新，需复核"
-                    : record.suggestion
-                      ? "已有匹配建议，请展开任务确认"
-                      : "尚未匹配任务"}
-                </small>
-              </div>
-            ))}
-          </div>
-          {unassignedRecords.length > 0 ? (
-            <ExternalTrainingSection
-              trackerKey="knee-rehab"
-              records={unassignedRecords}
-              tasks={tasks}
-              heading="未归入任务的记录"
-              onUpdated={onExternalTrainingUpdated}
-              readOnly={writesDisabled}
-            />
-          ) : null}
+          <ExternalTrainingSection
+            trackerKey="knee-rehab"
+            records={pendingRecords}
+            tasks={tasks}
+            heading="需要确认的来源记录"
+            onUpdated={handleExternalTrainingUpdated}
+            onConflict={onExternalTrainingConflict}
+            readOnly={writesDisabled}
+          />
         </SurfaceCard>
       ) : null}
     </main>
