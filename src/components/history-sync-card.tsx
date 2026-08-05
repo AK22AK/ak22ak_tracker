@@ -40,6 +40,12 @@ function failureMessage(code: string) {
   if (code === "rate_limited") {
     return "请求较多，请稍后继续。已完成的日期会保留。";
   }
+  if (code === "membership_required") {
+    return "仅支持 VIP 会员使用，请升级会员后再试。已完成的日期会保留。";
+  }
+  if (code === "invalid_response") {
+    return "返回异常，请稍后继续。已完成的日期会保留。";
+  }
   if (code === "sync_in_progress") {
     return "另一项同步正在进行，请稍后继续。";
   }

@@ -129,6 +129,7 @@ export const providerHistoryRecordSourceSchema = z.enum([
 
 export const providerHistoryErrorCodeSchema = z.enum([
   "authentication",
+  "membership_required",
   "invalid_token_bundle",
   "unsupported_client_version",
   "rate_limited",

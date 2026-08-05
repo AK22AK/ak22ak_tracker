@@ -191,6 +191,49 @@ describe("history sync card", () => {
     );
   });
 
+  it.each([
+    [
+      "membership_required",
+      "仅支持 VIP 会员使用，请升级会员后再试。已完成的日期会保留。",
+    ],
+    [
+      "authentication",
+      "连接需要更新，请先检查对应的数据来源。已完成的日期会保留。",
+    ],
+    ["rate_limited", "请求较多，请稍后继续。已完成的日期会保留。"],
+    ["invalid_response", "返回异常，请稍后继续。已完成的日期会保留。"],
+  ] as const)(
+    "shows a safe actionable history error for %s",
+    async (code, text) => {
+      const failedOverview = {
+        ...overview,
+        scopes: overview.scopes.map((scope) =>
+          scope.scope === "xunji_training_history"
+            ? {
+                ...scope,
+                status: "failed" as const,
+                nextCursor: "2026-08-01",
+                lastErrorCode: code,
+              }
+            : scope,
+        ),
+      };
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => Response.json(failedOverview)),
+      );
+
+      renderCard();
+
+      const xunjiItem = (await screen.findByText("训记训练")).closest("li");
+      await waitFor(() =>
+        expect(
+          within(xunjiItem!).getByText((content) => content.includes(text)),
+        ).toBeTruthy(),
+      );
+    },
+  );
+
   it("restores the same persisted overview after the page is remounted", async () => {
     const fetchMock = vi.fn(async () => Response.json(overview));
     vi.stubGlobal("fetch", fetchMock);
