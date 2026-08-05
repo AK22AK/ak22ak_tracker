@@ -91,6 +91,56 @@ describe("Xunji read-only adapter", () => {
     ).rejects.toEqual(expect.objectContaining({ code: "invalid_response" }));
   });
 
+  it.each([
+    ["res string: apikey missing", { res: "apikey missing" }, "authentication"],
+    [
+      "res string: invalid api key",
+      { res: "invalid api key" },
+      "authentication",
+    ],
+    [
+      "structured too frequent error",
+      {
+        success: false,
+        error: { message: "too frequent", field: "apikey", code: "busy" },
+      },
+      "rate_limited",
+    ],
+    [
+      "structured vip-only error",
+      { success: false, error: { message: "only VIP available" } },
+      "membership_required",
+    ],
+    [
+      "unknown structured business error",
+      { success: false, error: { message: "provider internals" } },
+      "invalid_response",
+    ],
+  ] as const)(
+    "maps known HTTP 200 business error: %s",
+    async (_label, res, code) => {
+      const adapter = createXunjiReadOnlyAdapter({
+        fetchImpl: vi.fn().mockResolvedValue(
+          new Response(JSON.stringify(res), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        ),
+      });
+
+      const error = await adapter
+        .fetchTrainsForDate({
+          apiKey: "anonymous-fake-key",
+          date: "2026-07-19",
+        })
+        .catch((caught: unknown) => caught);
+
+      expect(error).toEqual(expect.objectContaining({ code }));
+      expect(String(error)).not.toContain("provider internals");
+      expect(String(error)).not.toContain("anonymous-fake-key");
+    },
+  );
+
   it("rejects duplicate provider record ids instead of issuing conflicting writes", async () => {
     const adapter = createXunjiReadOnlyAdapter({
       fetchImpl: vi.fn().mockResolvedValue(
@@ -260,17 +310,58 @@ describe("Xunji read-only adapter", () => {
     expect(changed.contentHash).not.toBe(first.contentHash);
   });
 
-  it("rejects a source timestamp outside the declared planning date", () => {
+  it("uses the provider date for a valid cross-midnight training", () => {
+    const fetchedAt = new Date("2026-07-20T08:00:00.000Z");
+    const records = normalizeXunjiTrains({
+      trains: [
+        anonymousTrain({
+          datestr: "2026-07-20",
+          localid: "anonymous-cross-midnight",
+          start: Date.parse("2026-07-19T23:30:00+08:00"),
+          end: Date.parse("2026-07-20T00:30:00+08:00"),
+        }),
+      ],
+      date: "2026-07-20",
+      fetchedAt,
+      planningTimeZone: "Asia/Shanghai",
+    });
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      providerRecordId: "anonymous-cross-midnight",
+      localDate: "2026-07-20",
+      occurredAt: new Date("2026-07-19T15:30:00.000Z"),
+    });
+  });
+
+  it("rejects a source timestamp beyond the bounded adjacent-date window", () => {
     expect(() =>
       normalizeXunjiTrains({
         trains: [
           anonymousTrain({
-            start: Date.parse("2026-07-18T23:00:00+08:00"),
-            end: Date.parse("2026-07-18T23:30:00+08:00"),
+            start: Date.parse("2026-07-17T23:00:00+08:00"),
+            end: Date.parse("2026-07-17T23:30:00+08:00"),
           }),
         ],
         date: "2026-07-19",
         fetchedAt: new Date("2026-07-19T08:00:00.000Z"),
+        planningTimeZone: "Asia/Shanghai",
+      }),
+    ).toThrowError(expect.objectContaining({ code: "invalid_response" }));
+  });
+
+  it("rejects an implausibly long training even within the date window", () => {
+    expect(() =>
+      normalizeXunjiTrains({
+        trains: [
+          anonymousTrain({
+            datestr: "2026-07-20",
+            start: Date.parse("2026-07-19T23:30:00+08:00"),
+            end: Date.parse("2026-07-20T23:30:01+08:00"),
+          }),
+        ],
+        date: "2026-07-20",
+        fetchedAt: new Date("2026-07-20T08:00:00.000Z"),
         planningTimeZone: "Asia/Shanghai",
       }),
     ).toThrowError(expect.objectContaining({ code: "invalid_response" }));

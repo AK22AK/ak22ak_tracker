@@ -485,6 +485,98 @@ integration("P1a Xunji provider-neutral database slice", () => {
     expect(link).toEqual({ sourceVersion: 1, needsReview: true });
   });
 
+  it("persists same-date trains when one starts on the adjacent local date", async () => {
+    const database = getDatabase();
+    const crossMidnightDate = "2026-07-20";
+    const crossMidnightStart = Date.parse("2026-07-19T23:30:00+08:00");
+    const crossMidnightEnd = Date.parse("2026-07-20T00:30:00+08:00");
+    const sameDayTrain = {
+      ...anonymousTrain("Anonymous same-day session"),
+      datestr: crossMidnightDate,
+      localid: "anonymous-same-day-2",
+      start: Date.parse("2026-07-20T10:00:00+08:00"),
+      end: Date.parse("2026-07-20T11:00:00+08:00"),
+    };
+    const crossMidnightTrain = {
+      ...anonymousTrain("Anonymous cross-midnight session"),
+      datestr: crossMidnightDate,
+      localid: "anonymous-cross-midnight-2",
+      start: crossMidnightStart,
+      end: crossMidnightEnd,
+    };
+    const store = createNeonProviderDateSyncStore(trackerKey, database);
+    const input = (now: Date) => ({
+      trackerId,
+      provider: "xunji" as const,
+      date: crossMidnightDate,
+      now,
+      store,
+      readSource: async () =>
+        normalizeXunjiTrains({
+          trains: [sameDayTrain, crossMidnightTrain],
+          date: crossMidnightDate,
+          fetchedAt: now,
+          planningTimeZone: "Asia/Shanghai",
+        }),
+    });
+
+    const first = await syncProviderDate(
+      input(new Date("2026-07-20T08:10:00.000Z")),
+    );
+    const repeated = await syncProviderDate(
+      input(new Date("2026-07-20T08:10:31.000Z")),
+    );
+    const rows = await database
+      .select({
+        providerRecordId: externalRecords.providerRecordId,
+        localDate: externalRecords.localDate,
+        occurredAt: externalRecords.occurredAt,
+      })
+      .from(externalRecords)
+      .where(
+        and(
+          eq(externalRecords.trackerId, trackerId),
+          eq(externalRecords.provider, "xunji"),
+          eq(externalRecords.localDate, crossMidnightDate),
+        ),
+      );
+    const aggregate = await getDayAggregate(trackerKey, crossMidnightDate);
+
+    expect(first).toMatchObject({ created: 2, recordCount: 2 });
+    expect(repeated).toMatchObject({ unchanged: 2, recordCount: 2 });
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        {
+          providerRecordId: "anonymous-same-day-2",
+          localDate: crossMidnightDate,
+          occurredAt: new Date(Date.parse("2026-07-20T10:00:00+08:00")),
+        },
+        {
+          providerRecordId: "anonymous-cross-midnight-2",
+          localDate: crossMidnightDate,
+          occurredAt: new Date(crossMidnightStart),
+        },
+      ]),
+    );
+    expect(aggregate.day.externalTrainingRecords).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          localDate: crossMidnightDate,
+          details: expect.objectContaining({
+            title: "Anonymous same-day session",
+          }),
+        }),
+        expect.objectContaining({
+          localDate: crossMidnightDate,
+          details: expect.objectContaining({
+            title: "Anonymous cross-midnight session",
+            startedAt: new Date(crossMidnightStart).toISOString(),
+          }),
+        }),
+      ]),
+    );
+  });
+
   it("keeps core task/event/outbox committed when the real provider boundary fails (P0-10)", async () => {
     const database = getDatabase();
     await executeTaskCommand(createNeonTaskCommandStore(database), {

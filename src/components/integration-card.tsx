@@ -21,14 +21,37 @@ function syncFailureMessage(displayName: string, errorCode: string) {
   if (errorCode === "rate_limited") {
     return `${displayName}请求过于频繁，请稍后重试。`;
   }
-  if (
-    errorCode === "timeout" ||
-    errorCode === "provider_unavailable" ||
-    errorCode === "invalid_response"
-  ) {
+  if (errorCode === "membership_required") {
+    return `${displayName}仅支持 VIP 会员使用，请升级会员后重试。`;
+  }
+  if (errorCode === "invalid_response") {
+    return `${displayName}返回异常，请稍后重试。`;
+  }
+  if (errorCode === "timeout" || errorCode === "provider_unavailable") {
     return `${displayName}暂时无法同步，请稍后重试。`;
   }
   return `${displayName}同步失败，请稍后重试。`;
+}
+
+const publicSyncErrorCodes = new Set([
+  "authentication",
+  "rate_limited",
+  "membership_required",
+  "timeout",
+  "provider_unavailable",
+  "invalid_response",
+]);
+
+async function safeErrorCode(response: Response) {
+  try {
+    const body = (await response.json()) as { error?: unknown };
+    return typeof body.error === "string" &&
+      publicSyncErrorCodes.has(body.error)
+      ? body.error
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 export function IntegrationCard({
@@ -64,13 +87,23 @@ export function IntegrationCard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ apiKey }),
       });
+      if (!response.ok) {
+        throw new Error((await safeErrorCode(response)) ?? "credential_failed");
+      }
       const body: unknown = await response.json();
-      if (!response.ok) throw new Error("credential_failed");
       setStatus(integrationStatusSchema.parse(body));
       setApiKey("");
       setMessage(`${definition.displayName}已连接。`);
-    } catch {
-      setMessage("连接验证失败。原有凭证未被覆盖，请检查后重试。");
+    } catch (error) {
+      const code =
+        error instanceof Error && publicSyncErrorCodes.has(error.message)
+          ? error.message
+          : null;
+      setMessage(
+        code
+          ? syncFailureMessage(definition.displayName, code)
+          : "连接验证失败。原有凭证未被覆盖，请检查后重试。",
+      );
     } finally {
       setBusy(null);
     }
@@ -91,8 +124,10 @@ export function IntegrationCard({
     try {
       for (let batch = 0; batch < 64; batch += 1) {
         const response = await fetch(`${baseUrl}/sync`, { method: "POST" });
+        if (!response.ok) {
+          throw new Error((await safeErrorCode(response)) ?? "sync_failed");
+        }
         const body: unknown = await response.json();
-        if (!response.ok) throw new Error("sync_failed");
         const result = integrationCatchUpResultSchema.parse(body);
         succeeded += result.summary.succeeded;
         failed += result.summary.failed;
@@ -164,12 +199,24 @@ export function IntegrationCard({
             : `本次已同步：成功 ${succeeded} 天，失败 ${failed} 天。请继续同步。`,
         );
       }
-    } catch {
+    } catch (error) {
+      const code =
+        error instanceof Error && publicSyncErrorCodes.has(error.message)
+          ? error.message
+          : null;
       setStatus((current) => ({
         ...current,
-        sync: { ...current.sync, status: "failed" },
+        sync: {
+          ...current.sync,
+          status: "failed",
+          lastErrorCode: code ?? current.sync.lastErrorCode,
+        },
       }));
-      setMessage("同步没有完成，请稍后重试。");
+      setMessage(
+        code
+          ? syncFailureMessage(definition.displayName, code)
+          : "同步没有完成，请稍后重试。",
+      );
     } finally {
       setBusy(null);
     }

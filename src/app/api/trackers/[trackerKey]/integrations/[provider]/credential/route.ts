@@ -50,7 +50,9 @@ function providerFailure(error: XunjiProviderError) {
       ? 401
       : error.code === "rate_limited"
         ? 429
-        : 502;
+        : error.code === "membership_required"
+          ? 403
+          : 502;
   return Response.json({ error: error.code }, { status });
 }
 

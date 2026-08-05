@@ -187,7 +187,8 @@ describe("provider-neutral integration card", () => {
     ["authentication", "连接已失效，请更新 API Key 后重试"],
     ["timeout", "暂时无法同步，请稍后重试"],
     ["provider_unavailable", "暂时无法同步，请稍后重试"],
-    ["invalid_response", "暂时无法同步，请稍后重试"],
+    ["membership_required", "仅支持 VIP 会员使用，请升级会员后重试"],
+    ["invalid_response", "返回异常，请稍后重试"],
   ])("renders a safe actionable message for %s", async (errorCode, text) => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
@@ -234,5 +235,38 @@ describe("provider-neutral integration card", () => {
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(document.body.textContent).not.toContain("provider failed");
+  });
+
+  it("maps a safe provider error from a non-success HTTP response", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "membership_required" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <IntegrationCard
+        trackerKey="anonymous-tracker"
+        definition={{
+          provider: "xunji",
+          displayName: "Anonymous Provider",
+          description: "Anonymous read-only training source",
+        }}
+        initialStatus={{
+          ...disconnected,
+          configured: true,
+          maskedKey: "••••••••",
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "同步到今天" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/仅支持 VIP 会员使用，请升级会员后重试/),
+      ).toBeTruthy(),
+    );
   });
 });
