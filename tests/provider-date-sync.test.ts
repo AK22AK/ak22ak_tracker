@@ -23,6 +23,28 @@ function createStore(): ProviderDateSyncStore {
 }
 
 describe("provider-neutral single-date sync", () => {
+  it("commits a filtered empty source as a successful empty day", async () => {
+    const store = createStore();
+
+    await expect(
+      syncProviderDate({
+        trackerId: "019c0000-0000-7000-8000-000000000001",
+        provider: "xunji",
+        date: "2026-07-19",
+        now: new Date("2026-07-19T08:00:00.000Z"),
+        store,
+        readSource: vi.fn(async () => []),
+      }),
+    ).resolves.toMatchObject({
+      created: 0,
+      changed: 0,
+      unchanged: 0,
+      recordCount: 0,
+    });
+
+    expect(store.markFailure).not.toHaveBeenCalled();
+  });
+
   it("uses a successful same-date cache without calling the provider", async () => {
     const store = createStore();
     const cached = {

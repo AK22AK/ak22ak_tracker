@@ -37,6 +37,36 @@ function synced(date: string) {
 }
 
 describe("provider-neutral catch-up sync", () => {
+  it("keeps zero-record dates successful during catch-up", async () => {
+    const store = createStore();
+    const syncDate = vi.fn(async (date: string) => ({
+      ...synced(date),
+      created: 0,
+      recordCount: 0,
+    }));
+
+    const result = await syncProviderCatchUpBatch({
+      trackerId,
+      provider: "xunji",
+      startedOn: "2026-07-01",
+      today: "2026-07-01",
+      now: new Date("2026-07-01T08:00:00.000Z"),
+      batchSize: 1,
+      store,
+      syncDate,
+    });
+
+    expect(result).toMatchObject({
+      days: [{ date: "2026-07-01", status: "succeeded", recordCount: 0 }],
+      summary: { succeeded: 1, failed: 0, created: 0 },
+      complete: true,
+      nextCursor: null,
+    });
+    expect(store.saveProgress).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "succeeded", lastErrorCode: null }),
+    );
+  });
+
   it("starts at tracker.startedOn and returns a bounded next cursor", async () => {
     const store = createStore();
     const syncDate = vi.fn(async (date: string) => synced(date));

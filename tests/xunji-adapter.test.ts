@@ -366,6 +366,97 @@ describe("Xunji read-only adapter", () => {
     expect(changed.contentHash).not.toBe(first.contentHash);
   });
 
+  it("does not let an unstarted zero-time draft block a valid same-day training", () => {
+    expect(
+      normalizeXunjiTrains({
+        trains: [
+          anonymousTrain({
+            localid: "anonymous-unstarted-draft",
+            start: 0,
+            end: 0,
+            movements: [
+              {
+                name: "Anonymous planned movement",
+                sets: [{ weight: 10, reps: 8 }],
+              },
+            ],
+          }),
+          anonymousTrain({ localid: "anonymous-completed-training" }),
+        ],
+        date: "2026-07-19",
+        fetchedAt: new Date("2026-07-19T08:00:00.000Z"),
+        planningTimeZone: "Asia/Shanghai",
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("filters an only unstarted zero-time draft into a successful empty day", () => {
+    const records = normalizeXunjiTrains({
+      trains: [
+        anonymousTrain({
+          localid: "anonymous-unstarted-only",
+          start: 0,
+          end: 0,
+          movements: [],
+        }),
+      ],
+      date: "2026-07-19",
+      fetchedAt: new Date("2026-07-19T08:00:00.000Z"),
+      planningTimeZone: "Asia/Shanghai",
+    });
+
+    expect(records).toEqual([]);
+  });
+
+  it.each([
+    ["completed set", { movements: [{ sets: [{ done: true }] }] }],
+    [
+      "completed nested item",
+      { movements: [{ sets: [{ items: [{ set: { completed: true } }] }] }] },
+    ],
+    ["malformed completion marker", { movements: [{ done: "true" }] }],
+    ["movement metrics", { movements: [{ metrics: { durationSeconds: 30 } }] }],
+    ["completed status", { status: "completed" }],
+  ] as const)(
+    "rejects a zero-time record with %s instead of treating it as a draft",
+    (_label, overrides) => {
+      expect(() =>
+        normalizeXunjiTrains({
+          trains: [
+            anonymousTrain({
+              localid: `anonymous-zero-time-${_label.replaceAll(" ", "-")}`,
+              start: 0,
+              end: 0,
+              ...overrides,
+            }),
+          ],
+          date: "2026-07-19",
+          fetchedAt: new Date("2026-07-19T08:00:00.000Z"),
+          planningTimeZone: "Asia/Shanghai",
+        }),
+      ).toThrowError(expect.objectContaining({ code: "invalid_response" }));
+    },
+  );
+
+  it("does not let the zero-time draft filter bypass a source-date mismatch", () => {
+    expect(() =>
+      normalizeXunjiTrains({
+        trains: [
+          anonymousTrain({
+            datestr: "2026-07-18",
+            localid: "anonymous-zero-time-wrong-date",
+            start: 0,
+            end: 0,
+            movements: [],
+          }),
+        ],
+        date: "2026-07-19",
+        fetchedAt: new Date("2026-07-19T08:00:00.000Z"),
+        planningTimeZone: "Asia/Shanghai",
+      }),
+    ).toThrowError(expect.objectContaining({ code: "invalid_response" }));
+  });
+
   it("uses the provider date for a valid cross-midnight training", () => {
     const fetchedAt = new Date("2026-07-20T08:00:00.000Z");
     const records = normalizeXunjiTrains({
