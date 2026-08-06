@@ -851,7 +851,7 @@ P5a-2c“恢复趋势与 DeepSeek 背景证据”均已于 2026-07-27 由项目�
 
 #### P5b-2：外部数据每日后端同步，移除网页自动同步
 
-状态：实现、测试和部署待项目经理复核；本切片不调用真实 Garmin、训记或其他 Provider，
+状态：项目经理验收通过；本切片不调用真实 Garmin、训记或其他 Provider，
 不创建生产健康/训练数据。
 
 - 受保护网页不再挂载 Garmin/Xunji foreground recovery coordinator。冷启动、首次在线、
