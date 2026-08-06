@@ -886,7 +886,7 @@ P5a-2c“恢复趋势与 DeepSeek 背景证据”均已于 2026-07-27 由项目�
 
 #### P5d：训记 Provider 30 秒冷却期与界面状态
 
-状态：实现完成，等待项目经理复核。
+状态：项目经理验收通过。
 
 - `integration_sync_state.cooldown_until/cooldown_kind` 通过正式 `0022` migration 保存
   provider-level canonical cooldown；原子 claim 发生在缓存 miss、Provider full-data 读取前，
@@ -897,8 +897,11 @@ P5a-2c“恢复趋势与 DeepSeek 背景证据”均已于 2026-07-27 由项目�
   `retryAvailableAt` 与 `serverNow`；正常冷却、in-flight 和真实 `rate_limited` 使用不同
   文案，倒计时到期自动清理。Garmin 日常语义与租约保持不变。
 - Vitest、Python、format、lint、typecheck、production build 和相关 320/375/390/430
-  浏览器门禁已通过；Neon cooldown 集成测试在本机缺少 `TEST_DATABASE_URL` 时按契约跳过，
-  未冒充数据库并发验证已通过。
+  浏览器门禁已通过；项目经理独立复跑真实临时 Neon cooldown 集成 2/2，Production
+  `0022` migration 与 journal 对账通过，部署后 HEAD、origin/main、health/database 与匿名
+  Xunji `401` 均已核对。
+- 本切片未主动调用真实 Provider，下一次自然同步由使用者体验验证；不将部署门禁或匿名
+  route 验证表述为真实训记业务调用。
 
 #### 后续未开始增强
 
