@@ -238,11 +238,12 @@ Tracker 正式范围，也不推进常规增量 cursor。每天成功且零记�
 `xunji_training_history` scope。它复用相同的只读 Adapter、30 秒同日缓存、外部记录
 幂等与来源版本规则，不会修改从 `startedOn` 开始的常规追赶 cursor。
 
-受保护 App Shell 的日常恢复只在首次在线挂载和离线恢复联网时触发一次，顺序为 Garmin
-activity、Garmin daily wellness、训记；普通 focus、visibility、路由和 Query refetch
-不触发。两个 Garmin scope 仍共享凭证 I/O 租约，三个业务 cursor 各自独立。每日 Garmin
-Cron 在同一触发中最多推进 activity 两天和 wellness 一天，保持总调用预算；独立训记
-Cron 最多推进三天。两条 Cron 都只运行常规追赶，绝不自动触发历史补录。
+受保护 App Shell 只读取已持久化的 Garmin activity、Garmin daily wellness 和训记结果；
+网页冷启动、首次在线、离线恢复联网、focus、visibility、路由切换和 Query refetch 均不
+触发 Provider recovery POST。设置页仍提供明确的手动同步入口和状态读取。两个 Garmin
+scope 仍共享凭证 I/O 租约，三个业务 cursor 各自独立。每日 Garmin Cron 在同一触发中
+最多推进 activity 两天和 wellness 一天，保持总调用预算；独立训记 Cron 最多推进三天。
+两条 Cron 都只运行常规追赶，绝不自动触发历史补录。
 
 ### PostgreSQL 到 GitHub
 

@@ -219,12 +219,12 @@ revision 并改变 hash，使已有建议按现有时效机制失效。
 Garmin activity 与 daily wellness 均使用通用的日期同步、追赶游标和外部记录幂等
 边界，但各自保存独立的 scope、cursor 和 claim：
 
-- 手工追赶和前台恢复每次最多处理五天；首次范围只从 Tracker 开始日到计划时区今天，
+- 手工追赶每次最多处理五天；首次范围只从 Tracker 开始日到计划时区今天，
   完成首次覆盖后使用两天重叠窗口检查近期修改。
-- 前台恢复只在受保护 App Shell 首次在线打开或离线恢复联网时触发；一个客户端协调器
-  依次推进 activity 与 wellness，服务端各自使用 30 分钟到期判断和两分钟原子业务租约。
-  普通 Tab 切换、聚焦与 Query 刷新不会重复触发。
-- activity 与 wellness 的前台恢复每次最多五天，彼此不能抢占或改写业务状态；两类
+- 受保护网页只读取已持久化结果；冷启动、首次在线、离线恢复联网、Tab/路由切换、聚焦、
+  visibility 和 Query 刷新均不触发 activity 或 wellness recovery POST。设置页的明确
+  手动同步继续复用服务端到期判断、两分钟原子业务租约和既有门禁。
+- activity 与 wellness 的手工追赶每次最多五天，彼此不能抢占或改写业务状态；两类
   Provider I/O 仍由共享凭证租约串行保护。wellness 成功后只精确更新相应今日/单日
   缓存，不修改当前未包含恢复参考的月摘要。
 - 每日 Cron 复用同一到期判断、租约、日期状态、游标和 Garmin Runtime，不建立第二套
@@ -238,10 +238,15 @@ Garmin activity 与 daily wellness 均使用通用的日期同步、追赶游标
   Provider 内部 ID、raw payload、Token、Authorization 或第三方错误原文。
 
 Vercel Hobby 当前每项目最多 100 个 Cron，但单个 Cron 最多每日一次，且只提供小时级
-精度：例如 `0 21 * * *` 可能在 21:00 至 21:59 UTC 之间运行。因此每日 Cron 是持久
+精度：Garmin 与训记均配置为 `0 20 * * *`，可能在 20:00 至 20:59 UTC（北京时间
+04:00 至 04:59）之间运行。因此每日 Cron 是持久
 同步状态的尽力修复触发器，不是精确分钟调度、队列或自动重试系统。项目部署后只通过
 未授权 401、Route 注册和健康检查做人工门禁；首次授权平台调用必须等待 Vercel 自动
 触发并单独观察，不人工携带 Secret 调用。
+
+Vercel Hobby 不会替失败的 Cron 调用自动重试。单次失败由日期状态和 cursor 保留，下一
+天的同一 Cron 从持久 cursor 续跑；在此之前使用者可以通过设置页手动同步兜底。平台重试
+边界不改变 Provider lease、幂等键、30 秒 provider-level cooldown 或有界批次语义。
 
 参考：[Vercel Cron 使用与计费](https://vercel.com/docs/cron-jobs/usage-and-pricing)、
 [Vercel Cron 管理与鉴权](https://vercel.com/docs/cron-jobs/manage-cron-jobs)。

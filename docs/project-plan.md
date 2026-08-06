@@ -849,6 +849,26 @@ P5a-2c“恢复趋势与 DeepSeek 背景证据”均已于 2026-07-27 由项目�
   来源事实。完成批次后只失效涉及的日期和月份缓存，不触发全局刷新。一次点击自动续批的
   真实 Provider 行为仍等待使用者本人受控执行；旧页面中尚未完成的逐日状态不代表返修失败。
 
+#### P5b-2：外部数据每日后端同步，移除网页自动同步
+
+状态：实现、测试和部署待项目经理复核；本切片不调用真实 Garmin、训记或其他 Provider，
+不创建生产健康/训练数据。
+
+- 受保护网页不再挂载 Garmin/Xunji foreground recovery coordinator。冷启动、首次在线、
+  offline→online、focus、visibility、Tab/路由切换和 Query refetch 均只读取已持久化的
+  canonical integration status 与外部记录；GitHub mirror 的既有前台/after-response/Cron
+  语义保持不变。
+- Garmin 每日 Cron 继续在一次调用内按既有顺序覆盖 activity 与 daily wellness；训记使用
+  独立 Cron。两者均配置为 `0 20 * * *` UTC，即北京时间凌晨 4:00–4:59 的 Hobby 小时窗口，
+  不宣称精确 4:00。既有 CRON_SECRET 鉴权、有界批次、lease、cursor、幂等和 cooldown 保持。
+- Vercel Hobby 不会替失败 Cron 自动重试；失败日由数据库日期状态和 cursor 保留，下一天
+  由同一 Cron 续跑，期间使用者可手动同步兜底。Cron 仍不触发 7/14/30 天历史补录。
+- 保留设置页手动 Garmin/Xunji 同步、状态展示、30 秒冷却、operation lease、0-record、
+  错误文案、历史补录、AI 上下文、任务完成/关联和 `startedOn` 语义；无数据库 migration。
+- RED/GREEN 门禁覆盖 AppProviders 不挂载 Garmin recovery、各前台生命周期零 Provider
+  recovery POST、GitHub recovery 仍存在，以及两条 Cron schedule、Garmin activity+wellness
+  协调器、训记有界批次和安全鉴权响应。
+
 #### P5c：康复计划入口与康复助手重构
 
 状态：独立验收返修完成、等待项目经理复核。

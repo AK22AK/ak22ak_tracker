@@ -211,7 +211,8 @@ DeepSeek 不持有 PostgreSQL、GitHub、Garmin 或训记凭证，也不直接�
 
 ### 5. Garmin、训记与任务关联
 
-1. 每日作业、应用打开或“立即同步”调用隔离的 Garmin 与训记只读 Adapter。
+1. 每日作业或使用者明确点击“立即同步”调用隔离的 Garmin 与训记只读 Adapter；应用打开
+   只读取已持久化结果。
 2. Garmin 负责活动时间、时长、距离、配速、心率和基础睡眠；训记负责力量训练的
    动作、重量、组次、次数、RPE 和训练备注。数据经过白名单、标准化和 Schema 校验
    后，以 provider 和稳定外部 ID 幂等写入 `external_records`。

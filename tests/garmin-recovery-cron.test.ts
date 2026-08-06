@@ -83,7 +83,11 @@ describe("P3b-2e Garmin daily recovery Cron", () => {
     });
     expect(config.crons).toContainEqual({
       path: "/api/cron/garmin-activity",
-      schedule: "0 21 * * *",
+      schedule: "0 20 * * *",
+    });
+    expect(config.crons).toContainEqual({
+      path: "/api/cron/xunji-training",
+      schedule: "0 20 * * *",
     });
     const routeSource = await readFile(
       new URL("../src/app/api/cron/garmin-activity/route.ts", import.meta.url),

@@ -8,11 +8,11 @@
     },
     {
       "path": "/api/cron/garmin-activity",
-      "schedule": "0 21 * * *"
+      "schedule": "0 20 * * *"
     },
     {
       "path": "/api/cron/xunji-training",
-      "schedule": "0 23 * * *"
+      "schedule": "0 20 * * *"
     }
   ]
 }

@@ -126,11 +126,14 @@ Authorization、Token、目标 payload 或外部响应原文。
 发布检查顺序：
 
 1. 只确认 Production 中 `CRON_SECRET` 的变量名处于 configured 状态，不拉取或输出值。
-2. 部署后确认 Vercel 已注册 `/api/cron/github-mirror` 的每日计划。
+2. 部署后确认 Vercel 已注册 `/api/cron/github-mirror`、`/api/cron/garmin-activity` 和
+   `/api/cron/xunji-training` 的每日计划；后两者目标为 `20:00 UTC` 小时窗口（北京时间
+   04:00–04:59），不宣称精确 `04:00`。
 3. 未带授权访问该路由必须返回 401；不要在终端或任务记录中手工拼接 Secret。
 4. 首次平台调用后核对安全计数、outbox 状态和 Runtime Logs 中不存在敏感内容。
-5. 平台调用失败时等待持久 outbox 的下次可领取时间；不要把 Cron 当作队列或手工
-   制造健康记录验证。
+5. 平台调用失败时等待对应 Provider 持久日期状态和 cursor 在下一次每日 Cron 续跑，或由
+   使用者明确发起手动同步；不要把 Cron 当作队列或手工制造健康/训练记录验证。Vercel
+   Hobby 不提供失败 Cron 的平台自动重试。
 
 平台限制以 [Vercel Cron 用量与计划](https://vercel.com/docs/cron-jobs/usage-and-pricing)
 和 [Cron 管理与失败行为](https://vercel.com/docs/cron-jobs/manage-cron-jobs)为准。
