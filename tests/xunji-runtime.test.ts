@@ -10,6 +10,7 @@ import {
   type XunjiCredentialStore,
   type XunjiRuntimeAdapter,
 } from "@/server/integrations/xunji/runtime";
+import { XunjiProviderError } from "@/server/integrations/xunji/adapter";
 
 const tracker = {
   id: "019c0000-0000-7000-8000-000000000001",
@@ -71,6 +72,8 @@ function successfulHistoryStore(): ProviderHistoryStore {
 function fixture() {
   let status = baseStatus;
   let activeOwner: string | null = null;
+  let cooldownUntil: Date | null = null;
+  let cooldownKind: "normal" | "rate_limited" = "normal";
   let enteredProvider: (() => void) | null = null;
   let releaseProvider: (() => void) | null = null;
   const providerEntered = new Promise<void>((resolve) => {
@@ -111,6 +114,42 @@ function fixture() {
       };
       return true;
     }),
+    claimProviderCooldown: vi.fn(async ({ claimedAt }) => {
+      if (cooldownUntil && cooldownUntil > claimedAt) {
+        return {
+          status: "cooldown" as const,
+          cooldown: {
+            kind: cooldownKind,
+            retryAvailableAt: cooldownUntil,
+            retryAfterMs: cooldownUntil.valueOf() - claimedAt.valueOf(),
+            serverNow: claimedAt,
+          },
+        };
+      }
+      cooldownUntil = new Date(claimedAt.valueOf() + 30_000);
+      return {
+        status: "claimed" as const,
+        cooldown: {
+          kind: "normal" as const,
+          retryAvailableAt: cooldownUntil,
+          retryAfterMs: 30_000,
+          serverNow: claimedAt,
+        },
+      };
+    }),
+    extendProviderCooldown: vi.fn(
+      async ({ now, cooldownUntil: nextCooldownUntil }) => {
+        cooldownKind = "rate_limited";
+        cooldownUntil = nextCooldownUntil;
+        const cooldown = {
+          kind: "rate_limited" as const,
+          retryAvailableAt: nextCooldownUntil,
+          retryAfterMs: nextCooldownUntil.valueOf() - now.valueOf(),
+          serverNow: now,
+        };
+        return cooldown;
+      },
+    ),
   };
   const runtime = createXunjiRuntime({
     store,
@@ -211,5 +250,59 @@ describe("Xunji shared provider operation lease", () => {
     expect(test.adapter.fetchTrainsForDate).toHaveBeenCalledTimes(1);
     test.releaseProvider();
     await expect(history).resolves.toMatchObject({ provider: "xunji" });
+  });
+
+  it("keeps a provider cooldown after the first scope releases its operation lease", async () => {
+    const test = fixture();
+    const first = test.runtime.syncCatchUp({
+      trackerKey: "anonymous-tracker",
+      batchSize: 1,
+    });
+    await test.providerEntered;
+    test.releaseProvider();
+    await expect(first).resolves.toMatchObject({ provider: "xunji" });
+
+    await expect(
+      test.runtime.syncBoundedHistory({
+        trackerKey: "anonymous-tracker",
+        days: 7,
+        batchSize: 1,
+      }),
+    ).rejects.toMatchObject({
+      code: "provider_cooldown",
+      cooldown: { kind: "normal", retryAfterMs: 30_000 },
+    });
+    expect(test.adapter.fetchTrainsForDate).toHaveBeenCalledTimes(1);
+  });
+
+  it("extends the canonical cooldown when Xunji returns retry_after_ms", async () => {
+    const test = fixture();
+    test.adapter.fetchTrainsForDate = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new XunjiProviderError("rate_limited", { retryAfterMs: 45_000 }),
+      );
+
+    await expect(
+      test.runtime.syncCatchUp({
+        trackerKey: "anonymous-tracker",
+        batchSize: 1,
+      }),
+    ).resolves.toMatchObject({
+      days: [
+        { status: "failed", errorCode: "rate_limited", retryAfterMs: 45_000 },
+      ],
+      cooldown: { kind: "rate_limited", retryAfterMs: 45_000 },
+    });
+    await expect(
+      test.runtime.syncBoundedHistory({
+        trackerKey: "anonymous-tracker",
+        days: 7,
+        batchSize: 1,
+      }),
+    ).rejects.toMatchObject({
+      code: "provider_cooldown",
+      cooldown: { kind: "rate_limited", retryAfterMs: 45_000 },
+    });
   });
 });

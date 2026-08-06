@@ -16,6 +16,8 @@ export type IntegrationCardDefinition = {
   description: string;
 };
 
+type PublicCooldown = NonNullable<IntegrationStatus["sync"]["cooldown"]>;
+
 function syncFailureMessage(
   displayName: string,
   errorCode: string,
@@ -53,6 +55,7 @@ const publicSyncErrorCodes = new Set([
   "provider_unavailable",
   "invalid_response",
   "sync_in_progress",
+  "provider_cooldown",
 ]);
 
 function safeRetryAfterMs(value: unknown) {
@@ -70,6 +73,9 @@ async function safeErrorDetails(response: Response) {
     const body = (await response.json()) as {
       error?: unknown;
       retryAfterMs?: unknown;
+      cooldownKind?: unknown;
+      retryAvailableAt?: unknown;
+      serverNow?: unknown;
     };
     return {
       code:
@@ -77,16 +83,64 @@ async function safeErrorDetails(response: Response) {
           ? body.error
           : null,
       retryAfterMs: safeRetryAfterMs(body.retryAfterMs),
+      cooldown:
+        body.cooldownKind === "normal" || body.cooldownKind === "rate_limited"
+          ? {
+              kind: body.cooldownKind,
+              retryAvailableAt:
+                typeof body.retryAvailableAt === "string"
+                  ? body.retryAvailableAt
+                  : null,
+              serverNow:
+                typeof body.serverNow === "string" ? body.serverNow : null,
+            }
+          : null,
     };
   } catch {
-    return { code: null, retryAfterMs: null };
+    return { code: null, retryAfterMs: null, cooldown: null };
   }
 }
 
-function requestError(code: string, retryAfterMs: number | null = null) {
-  const error = new Error(code) as Error & { retryAfterMs?: number | null };
+function requestError(
+  code: string,
+  retryAfterMs: number | null = null,
+  cooldown: PublicCooldown | null = null,
+) {
+  const error = new Error(code) as Error & {
+    retryAfterMs?: number | null;
+    cooldown?: PublicCooldown | null;
+  };
   error.retryAfterMs = retryAfterMs;
+  error.cooldown = cooldown;
   return error;
+}
+
+function safePublicCooldown(value: {
+  kind: "normal" | "rate_limited";
+  retryAvailableAt: string | null;
+  serverNow: string | null;
+  retryAfterMs: number | null;
+}): PublicCooldown | null {
+  if (
+    !value.retryAvailableAt ||
+    !value.serverNow ||
+    value.retryAfterMs === null ||
+    !Number.isFinite(Date.parse(value.retryAvailableAt)) ||
+    !Number.isFinite(Date.parse(value.serverNow))
+  ) {
+    return null;
+  }
+  return {
+    kind: value.kind,
+    retryAvailableAt: value.retryAvailableAt,
+    serverNow: value.serverNow,
+    retryAfterMs: value.retryAfterMs,
+  };
+}
+
+function localCooldownDeadline(cooldown: PublicCooldown) {
+  const serverClockOffset = Date.parse(cooldown.serverNow) - Date.now();
+  return Date.parse(cooldown.retryAvailableAt) - serverClockOffset;
 }
 
 function syncOutcomeMessage(
@@ -123,7 +177,14 @@ export function IntegrationCard({
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState<"credential" | "sync" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [retryAvailableAt, setRetryAvailableAt] = useState<number | null>(null);
+  const [retryAvailableAt, setRetryAvailableAt] = useState<number | null>(() =>
+    initialStatus.sync.cooldown
+      ? localCooldownDeadline(initialStatus.sync.cooldown)
+      : null,
+  );
+  const [cooldownKind, setCooldownKind] = useState<
+    PublicCooldown["kind"] | null
+  >(initialStatus.sync.cooldown?.kind ?? null);
   const [clockNow, setClockNow] = useState(() => Date.now());
   const [syncProgress, setSyncProgress] = useState<{
     from: string;
@@ -137,6 +198,21 @@ export function IntegrationCard({
   if (initialStatus !== previousInitialStatus) {
     setPreviousInitialStatus(initialStatus);
     setStatus(initialStatus);
+    setCooldownKind(initialStatus.sync.cooldown?.kind ?? null);
+    setRetryAvailableAt(
+      initialStatus.sync.cooldown
+        ? localCooldownDeadline(initialStatus.sync.cooldown)
+        : null,
+    );
+  }
+
+  if (
+    retryAvailableAt === null &&
+    initialStatus.sync.cooldown &&
+    cooldownKind === null
+  ) {
+    setCooldownKind(initialStatus.sync.cooldown.kind);
+    setRetryAvailableAt(localCooldownDeadline(initialStatus.sync.cooldown));
   }
 
   useEffect(() => {
@@ -151,13 +227,26 @@ export function IntegrationCard({
     const timer = window.setInterval(() => {
       const now = Date.now();
       setClockNow(now);
-      if (now >= retryAvailableAt) setRetryAvailableAt(null);
+      if (now >= retryAvailableAt) {
+        setRetryAvailableAt(null);
+        setCooldownKind(null);
+        setStatus((current) => ({
+          ...current,
+          sync: { ...current.sync, cooldown: null },
+        }));
+      }
     }, 1_000);
     return () => window.clearInterval(timer);
   }, [retryAvailableAt]);
 
   const retryAfterMsRemaining =
     retryAvailableAt === null ? 0 : Math.max(0, retryAvailableAt - clockNow);
+  const cooldownMessage =
+    retryAfterMsRemaining > 0
+      ? cooldownKind === "rate_limited"
+        ? `训记要求等待，约 ${Math.ceil(retryAfterMsRemaining / 1_000)} 秒后可重试`
+        : `刚刚已同步，约 ${Math.ceil(retryAfterMsRemaining / 1_000)} 秒后可再次同步`
+      : null;
 
   function markSyncInProgress() {
     setStatus((current) => ({
@@ -198,6 +287,14 @@ export function IntegrationCard({
         throw requestError(
           details.code ?? "credential_failed",
           details.retryAfterMs,
+          details.cooldown
+            ? safePublicCooldown({
+                kind: details.cooldown.kind as "normal" | "rate_limited",
+                retryAvailableAt: details.cooldown.retryAvailableAt,
+                serverNow: details.cooldown.serverNow,
+                retryAfterMs: details.retryAfterMs,
+              })
+            : null,
         );
       }
       const body: unknown = await response.json();
@@ -241,6 +338,14 @@ export function IntegrationCard({
           throw requestError(
             details.code ?? "sync_failed",
             details.retryAfterMs,
+            details.cooldown
+              ? safePublicCooldown({
+                  kind: details.cooldown.kind as "normal" | "rate_limited",
+                  retryAvailableAt: details.cooldown.retryAvailableAt,
+                  serverNow: details.cooldown.serverNow,
+                  retryAfterMs: details.retryAfterMs,
+                })
+              : null,
           );
         }
         const body: unknown = await response.json();
@@ -268,7 +373,12 @@ export function IntegrationCard({
           .reverse()
           .find((day) => day.status === "succeeded");
         const failedDay = result.days.find((day) => day.status === "failed");
+        if (result.cooldown) {
+          setCooldownKind(result.cooldown.kind);
+          setRetryAvailableAt(localCooldownDeadline(result.cooldown));
+        }
         if (failedDay?.retryAfterMs !== undefined) {
+          setCooldownKind("rate_limited");
           setRetryAvailableAt(Date.now() + failedDay.retryAfterMs);
         }
         setStatus((current) => ({
@@ -289,6 +399,7 @@ export function IntegrationCard({
             lastSucceededDate:
               result.lastSucceededDate ?? current.sync.lastSucceededDate,
             lastErrorCode: failedDay?.errorCode ?? null,
+            cooldown: result.cooldown ?? current.sync.cooldown ?? null,
             lastOutcome: failedDay
               ? {
                   kind: "failed" as const,
@@ -357,11 +468,24 @@ export function IntegrationCard({
         error instanceof Error && "retryAfterMs" in error
           ? safeRetryAfterMs(error.retryAfterMs)
           : null;
+      const errorCooldown =
+        error instanceof Error && "cooldown" in error
+          ? ((error as Error & { cooldown?: PublicCooldown | null }).cooldown ??
+            null)
+          : null;
       if (code === "sync_in_progress") markSyncInProgress();
-      if (retryAfterMs !== null) {
+      if (errorCooldown) {
+        setCooldownKind(errorCooldown.kind);
+        setRetryAvailableAt(localCooldownDeadline(errorCooldown));
+        setStatus((current) => ({
+          ...current,
+          sync: { ...current.sync, cooldown: errorCooldown },
+        }));
+      } else if (retryAfterMs !== null) {
+        setCooldownKind(code === "rate_limited" ? "rate_limited" : "normal");
         setRetryAvailableAt(Date.now() + retryAfterMs);
       }
-      if (code !== "sync_in_progress") {
+      if (code !== "sync_in_progress" && code !== "provider_cooldown") {
         setStatus((current) => ({
           ...current,
           sync: {
@@ -437,7 +561,9 @@ export function IntegrationCard({
           {busy === "sync"
             ? "正在同步…"
             : retryAfterMsRemaining > 0
-              ? `请等待 ${Math.ceil(retryAfterMsRemaining / 1_000)} 秒`
+              ? cooldownKind === "rate_limited"
+                ? `请等待 ${Math.ceil(retryAfterMsRemaining / 1_000)} 秒后重试`
+                : `刚刚已同步，约 ${Math.ceil(retryAfterMsRemaining / 1_000)} 秒后可再次同步`
               : status.sync.status === "running"
                 ? "另一项训记同步正在进行…"
                 : "同步到今天"}
@@ -457,6 +583,7 @@ export function IntegrationCard({
         </p>
       ) : null}
       {message ||
+      cooldownMessage ||
       syncOutcomeMessage(
         definition.displayName,
         status.sync.lastOutcome ??
@@ -466,6 +593,7 @@ export function IntegrationCard({
       ) ? (
         <p role="status" className="integration-message">
           {message ??
+            cooldownMessage ??
             syncOutcomeMessage(
               definition.displayName,
               status.sync.lastOutcome ??

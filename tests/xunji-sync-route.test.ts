@@ -11,7 +11,10 @@ vi.mock("@/server/integrations/xunji/runtime", () => ({
 }));
 
 import { POST } from "@/app/api/trackers/[trackerKey]/integrations/[provider]/sync/route";
-import { IntegrationOperationInProgressError } from "@/server/integrations/credentials/operation-errors";
+import {
+  IntegrationOperationInProgressError,
+  IntegrationProviderCooldownError,
+} from "@/server/integrations/credentials/operation-errors";
 
 function request() {
   return new Request("https://anonymous.invalid/api/sync", { method: "POST" });
@@ -78,5 +81,27 @@ describe("Xunji sync route safety boundary", () => {
 
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({ error: "sync_in_progress" });
+  });
+
+  it("returns the server canonical normal cooldown without creating a failed day", async () => {
+    syncXunjiCatchUpBatch.mockRejectedValue(
+      new IntegrationProviderCooldownError({
+        kind: "normal",
+        retryAvailableAt: new Date("2026-08-06T00:00:30.000Z"),
+        retryAfterMs: 30_000,
+        serverNow: new Date("2026-08-06T00:00:00.000Z"),
+      }),
+    );
+
+    const response = await POST(request(), { params });
+
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({
+      error: "provider_cooldown",
+      cooldownKind: "normal",
+      retryAvailableAt: "2026-08-06T00:00:30.000Z",
+      retryAfterMs: 30_000,
+      serverNow: "2026-08-06T00:00:00.000Z",
+    });
   });
 });

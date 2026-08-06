@@ -31,6 +31,7 @@ describe("provider-neutral integration card", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("clears the submitted key and renders only masked connection metadata", async () => {
@@ -315,6 +316,86 @@ describe("provider-neutral integration card", () => {
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
+  });
+
+  it("shows a persisted normal cooldown when the detail page opens", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-06T00:00:00.000Z"));
+    render(
+      <IntegrationCard
+        trackerKey="anonymous-tracker"
+        definition={{
+          provider: "xunji",
+          displayName: "训记",
+          description: "Anonymous read-only training source",
+        }}
+        initialStatus={{
+          ...disconnected,
+          configured: true,
+          maskedKey: "••••••••",
+          sync: {
+            ...disconnected.sync,
+            status: "succeeded",
+            lastOutcome: { kind: "succeeded_empty" },
+            cooldown: {
+              kind: "normal",
+              retryAvailableAt: "2026-08-06T00:00:30.000Z",
+              retryAfterMs: 30_000,
+              serverNow: "2026-08-06T00:00:00.000Z",
+            },
+          },
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", {
+        name: /刚刚已同步，约 30 秒后可再次同步/,
+      }),
+    ).toHaveProperty("disabled", true);
+    expect(screen.getByRole("status").textContent).toMatch(
+      /刚刚已同步，约 30 秒后可再次同步/,
+    );
+    expect(document.body.textContent).not.toContain("请求过于频繁");
+  });
+
+  it("keeps Provider rate limiting visibly distinct from normal cooldown", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-06T00:00:00.000Z"));
+    render(
+      <IntegrationCard
+        trackerKey="anonymous-tracker"
+        definition={{
+          provider: "xunji",
+          displayName: "训记",
+          description: "Anonymous read-only training source",
+        }}
+        initialStatus={{
+          ...disconnected,
+          configured: true,
+          maskedKey: "••••••••",
+          sync: {
+            ...disconnected.sync,
+            status: "failed",
+            lastErrorCode: "rate_limited",
+            cooldown: {
+              kind: "rate_limited",
+              retryAvailableAt: "2026-08-06T00:00:45.000Z",
+              retryAfterMs: 45_000,
+              serverNow: "2026-08-06T00:00:00.000Z",
+            },
+          },
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /训记要求等待|请等待/ }),
+    ).toHaveProperty("disabled", true);
+    expect(screen.getByRole("status").textContent).toMatch(
+      /训记要求等待，约 45 秒后可重试/,
+    );
+    expect(document.body.textContent).not.toContain("刚刚已同步");
   });
 
   it("renders and enforces a safe retry_after_ms countdown", async () => {

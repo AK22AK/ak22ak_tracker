@@ -18,6 +18,12 @@ import {
 } from "./crypto";
 import { getIntegrationEncryptionConfig } from "./config";
 import { publicCredentialStatus } from "./public-status";
+import {
+  cooldownFromDeadline,
+  type ProviderCooldownTimestamp,
+  type ProviderCooldown,
+  type ProviderCooldownClaim,
+} from "../core/provider-cooldown";
 
 type Database = ReturnType<typeof getDatabase>;
 
@@ -76,6 +82,7 @@ export async function getIntegrationStatus(
   provider: string,
   database: Database = getDatabase(),
 ) {
+  const serverNow = new Date();
   const tracker = await requireIntegrationTracker(trackerKey, database);
   const [credential, latestSuccessfulDate, sync] = await Promise.all([
     database
@@ -110,6 +117,8 @@ export async function getIntegrationStatus(
         lastSucceededAt: integrationSyncState.lastSucceededAt,
         cursor: integrationSyncState.cursor,
         lastErrorCode: integrationSyncState.lastErrorCode,
+        cooldownUntil: integrationSyncState.cooldownUntil,
+        cooldownKind: integrationSyncState.cooldownKind,
       })
       .from(integrationSyncState)
       .where(
@@ -122,6 +131,7 @@ export async function getIntegrationStatus(
   ]);
   const credentialRow = credential[0] ?? null;
   const syncRow = sync[0] ?? null;
+  const cooldown = syncRow ? providerCooldownFromRow(syncRow, serverNow) : null;
   return {
     ...publicCredentialStatus({
       provider,
@@ -136,6 +146,14 @@ export async function getIntegrationStatus(
       lastSucceededDate: latestSuccessfulDate[0]?.localDate ?? null,
       nextCursor: catchUpCursorDate(syncRow?.cursor),
       lastErrorCode: syncRow?.lastErrorCode ?? null,
+      cooldown: cooldown
+        ? {
+            kind: cooldown.kind,
+            retryAvailableAt: cooldown.retryAvailableAt.toISOString(),
+            retryAfterMs: cooldown.retryAfterMs,
+            serverNow: cooldown.serverNow.toISOString(),
+          }
+        : null,
     },
   };
 }
@@ -359,6 +377,126 @@ export async function releaseIntegrationCredentialOperation(input: {
     )
     .returning({ id: integrationCredentials.id });
   return rows.length === 1;
+}
+
+function providerCooldownFromRow(
+  row: {
+    cooldownUntil: ProviderCooldownTimestamp | null;
+    cooldownKind: string | null;
+  },
+  serverNow: Date,
+): ProviderCooldown | null {
+  if (row.cooldownUntil === null) {
+    return null;
+  }
+  if (row.cooldownKind !== "normal" && row.cooldownKind !== "rate_limited") {
+    throw new Error("provider_cooldown_kind_invalid");
+  }
+  const cooldown = cooldownFromDeadline({
+    kind: row.cooldownKind,
+    retryAvailableAt: row.cooldownUntil,
+    serverNow,
+  });
+  if (cooldown.retryAvailableAt <= cooldown.serverNow) return null;
+  return cooldown;
+}
+
+export async function claimIntegrationProviderCooldown(input: {
+  trackerId: string;
+  provider: string;
+  claimedAt: Date;
+  cooldownUntil: Date;
+  database?: Database;
+}): Promise<ProviderCooldownClaim> {
+  const database = input.database ?? getDatabase();
+  const result = await database.execute<{
+    cooldownUntil: Date;
+    cooldownKind: string;
+  }>(sql`
+    insert into integration_sync_state (
+      id, tracker_id, provider, status, cooldown_until, cooldown_kind, updated_at
+    ) values (
+      gen_random_uuid(), ${input.trackerId}::uuid, ${input.provider}, 'idle',
+      ${input.cooldownUntil}, 'normal', ${input.claimedAt}
+    )
+    on conflict (tracker_id, provider) do update set
+      cooldown_until = excluded.cooldown_until,
+      cooldown_kind = excluded.cooldown_kind,
+      updated_at = excluded.updated_at
+    where integration_sync_state.cooldown_until is null
+       or integration_sync_state.cooldown_until <= ${input.claimedAt}
+    returning cooldown_until as "cooldownUntil", cooldown_kind as "cooldownKind"
+  `);
+  const claimed = result.rows[0];
+  if (claimed) {
+    const cooldown = providerCooldownFromRow(
+      {
+        cooldownUntil: claimed.cooldownUntil,
+        cooldownKind: claimed.cooldownKind,
+      },
+      input.claimedAt,
+    );
+    if (!cooldown) throw new Error("provider_cooldown_claim_invalid");
+    return {
+      status: "claimed",
+      cooldown,
+    };
+  }
+  const [current] = await database
+    .select({
+      cooldownUntil: integrationSyncState.cooldownUntil,
+      cooldownKind: integrationSyncState.cooldownKind,
+    })
+    .from(integrationSyncState)
+    .where(
+      and(
+        eq(integrationSyncState.trackerId, input.trackerId),
+        eq(integrationSyncState.provider, input.provider),
+      ),
+    )
+    .limit(1);
+  const cooldown = current
+    ? providerCooldownFromRow(current, input.claimedAt)
+    : null;
+  if (!cooldown) {
+    throw new Error("provider_cooldown_claim_lost");
+  }
+  return { status: "cooldown", cooldown };
+}
+
+export async function extendIntegrationProviderCooldown(input: {
+  trackerId: string;
+  provider: string;
+  now: Date;
+  cooldownUntil: Date;
+  database?: Database;
+}): Promise<ProviderCooldown> {
+  const database = input.database ?? getDatabase();
+  const result = await database.execute<{
+    cooldownUntil: Date;
+    cooldownKind: string;
+  }>(sql`
+    update integration_sync_state
+    set cooldown_until = case
+          when cooldown_until is null or cooldown_until < ${input.cooldownUntil}
+            then ${input.cooldownUntil}
+          else cooldown_until
+        end,
+        cooldown_kind = case
+          when cooldown_until is null or cooldown_until < ${input.cooldownUntil}
+            then 'rate_limited'
+          else cooldown_kind
+        end,
+        updated_at = ${input.now}
+    where tracker_id = ${input.trackerId}::uuid
+      and provider = ${input.provider}
+    returning cooldown_until as "cooldownUntil", cooldown_kind as "cooldownKind"
+  `);
+  const row = result.rows[0];
+  if (!row) throw new Error("provider_cooldown_extend_missing");
+  const cooldown = providerCooldownFromRow(row, input.now);
+  if (!cooldown) throw new Error("provider_cooldown_extend_invalid");
+  return cooldown;
 }
 
 export async function markIntegrationConnectionFailureUnderOperationLease(input: {

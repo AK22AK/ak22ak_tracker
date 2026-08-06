@@ -16,22 +16,30 @@ import { runAutomaticProviderRecovery } from "@/server/integrations/core/automat
 import { syncProviderCatchUpBatch } from "@/server/integrations/core/sync-provider-catch-up";
 import { syncProviderDate } from "@/server/integrations/core/sync-provider-date";
 import {
+  canonicalCooldownDeadline,
+  providerCooldownDefaultMs,
+  type ProviderCooldown,
+} from "@/server/integrations/core/provider-cooldown";
+import {
   syncProviderHistoryBatch,
   type ProviderHistoryDays,
 } from "@/server/integrations/core/sync-provider-history";
 import { getIntegrationEncryptionConfig } from "@/server/integrations/credentials/config";
 import {
   claimIntegrationCredentialOperation,
+  claimIntegrationProviderCooldown,
   IntegrationCredentialNotFoundError,
   getIntegrationStatus,
   markIntegrationConnectionFailure,
   markIntegrationConnectionFailureUnderOperationLease,
   releaseIntegrationCredentialOperation,
+  extendIntegrationProviderCooldown,
   requireIntegrationTracker,
   saveIntegrationCredential,
   saveIntegrationCredentialUnderOperationLease,
 } from "@/server/integrations/credentials/repository";
 import {
+  IntegrationProviderCooldownError,
   IntegrationOperationInProgressError,
   IntegrationOperationLeaseLostError,
 } from "@/server/integrations/credentials/operation-errors";
@@ -57,6 +65,21 @@ export type XunjiCredentialStore = {
     trackerId: string;
     owner: string;
   }): Promise<boolean>;
+  claimProviderCooldown(input: {
+    trackerId: string;
+    provider: string;
+    claimedAt: Date;
+    cooldownUntil: Date;
+  }): Promise<
+    | { status: "claimed"; cooldown: ProviderCooldown }
+    | { status: "cooldown"; cooldown: ProviderCooldown }
+  >;
+  extendProviderCooldown(input: {
+    trackerId: string;
+    provider: string;
+    now: Date;
+    cooldownUntil: Date;
+  }): Promise<ProviderCooldown>;
   markFailure(
     trackerId: string,
     owner: string,
@@ -68,7 +91,64 @@ export type XunjiCredentialStore = {
 type XunjiOperation = {
   owner: string;
   apiKey: string;
+  beforeProviderRead: () => Promise<void>;
+  cooldown: () => ProviderCooldown | null;
 };
+
+function publicCooldown(cooldown: ProviderCooldown) {
+  return {
+    kind: cooldown.kind,
+    retryAvailableAt: cooldown.retryAvailableAt.toISOString(),
+    retryAfterMs: cooldown.retryAfterMs,
+    serverNow: cooldown.serverNow.toISOString(),
+  } as const;
+}
+
+async function decorateBatchCooldown<
+  Result extends {
+    days: Array<{
+      status: "succeeded" | "failed";
+      errorCode?: string;
+      retryAfterMs?: number;
+    }>;
+  },
+>(input: {
+  result: Result;
+  operation: XunjiOperation;
+  trackerId: string;
+  now: () => Date;
+  extendProviderCooldown: XunjiCredentialStore["extendProviderCooldown"];
+}) {
+  const rateLimited = input.result.days.find(
+    (day) => day.status === "failed" && day.errorCode === "rate_limited",
+  );
+  if (!rateLimited) {
+    const cooldown = input.operation.cooldown();
+    return {
+      ...input.result,
+      cooldown: cooldown ? publicCooldown(cooldown) : null,
+    };
+  }
+  const now = input.now();
+  const cooldown = await input.extendProviderCooldown({
+    trackerId: input.trackerId,
+    provider: "xunji",
+    now,
+    cooldownUntil: canonicalCooldownDeadline({
+      now,
+      providerRetryAfterMs: rateLimited.retryAfterMs,
+    }),
+  });
+  return {
+    ...input.result,
+    days: input.result.days.map((day) =>
+      day === rateLimited
+        ? { ...day, retryAfterMs: cooldown.retryAfterMs }
+        : day,
+    ),
+    cooldown: publicCooldown(cooldown),
+  };
+}
 
 function publicStatus(value: unknown) {
   return integrationStatusSchema.parse(value);
@@ -119,8 +199,50 @@ export function createXunjiRuntime({
     if (claimed.status === "busy") {
       throw new IntegrationOperationInProgressError();
     }
+    let providerCooldown: ProviderCooldown | null = null;
+    const beforeProviderRead = async () => {
+      if (providerCooldown) return;
+      const cooldownClaim = await store.claimProviderCooldown({
+        trackerId: tracker.id,
+        provider: "xunji",
+        claimedAt,
+        cooldownUntil: new Date(
+          claimedAt.valueOf() + providerCooldownDefaultMs,
+        ),
+      });
+      if (cooldownClaim.status === "cooldown") {
+        throw new IntegrationProviderCooldownError(cooldownClaim.cooldown);
+      }
+      providerCooldown = cooldownClaim.cooldown;
+    };
     try {
-      return await operation({ owner, apiKey: claimed.plaintext });
+      return await operation({
+        owner,
+        apiKey: claimed.plaintext,
+        beforeProviderRead,
+        cooldown: () => providerCooldown,
+      });
+    } catch (error) {
+      if (
+        error instanceof XunjiProviderError &&
+        error.code === "rate_limited"
+      ) {
+        const cooldown = await store.extendProviderCooldown({
+          trackerId: tracker.id,
+          provider: "xunji",
+          now: claimedAt,
+          cooldownUntil: canonicalCooldownDeadline({
+            now: claimedAt,
+            providerRetryAfterMs: error.retryAfterMs,
+          }),
+        });
+        throw new XunjiProviderError("rate_limited", {
+          cause: error,
+          retryAfterMs: cooldown.retryAfterMs,
+          retryAvailableAt: cooldown.retryAvailableAt,
+        });
+      }
+      throw error;
     } finally {
       await store.releaseOperation({ trackerId: tracker.id, owner });
     }
@@ -149,6 +271,7 @@ export function createXunjiRuntime({
           fetchedAt: input.requestedAt,
           planningTimeZone: input.tracker.planningTimeZone,
         }),
+      beforeReadSource: input.operation.beforeProviderRead,
     });
   }
 
@@ -224,7 +347,20 @@ export function createXunjiRuntime({
       const tracker = await store.requireTracker(input.trackerKey);
       const requestedAt = input.now ?? now();
       return withXunjiOperation(tracker, (operation) =>
-        syncCatchUpForTracker(tracker, operation, requestedAt, input.batchSize),
+        syncCatchUpForTracker(
+          tracker,
+          operation,
+          requestedAt,
+          input.batchSize,
+        ).then((result) =>
+          decorateBatchCooldown({
+            result,
+            operation,
+            trackerId: tracker.id,
+            now,
+            extendProviderCooldown: store.extendProviderCooldown,
+          }),
+        ),
       );
     },
 
@@ -239,7 +375,15 @@ export function createXunjiRuntime({
         syncBoundedHistoryForTracker(tracker, operation, input.now ?? now(), {
           days: input.days,
           batchSize: input.batchSize ?? 5,
-        }),
+        }).then((result) =>
+          decorateBatchCooldown({
+            result,
+            operation,
+            trackerId: tracker.id,
+            now,
+            extendProviderCooldown: store.extendProviderCooldown,
+          }),
+        ),
       );
     },
 
@@ -305,6 +449,27 @@ function createDefaultXunjiCredentialStore(
         owner,
         database,
       }),
+    claimProviderCooldown: ({
+      trackerId,
+      provider,
+      claimedAt,
+      cooldownUntil,
+    }) =>
+      claimIntegrationProviderCooldown({
+        trackerId,
+        provider,
+        claimedAt,
+        cooldownUntil,
+        database,
+      }),
+    extendProviderCooldown: ({ trackerId, provider, now, cooldownUntil }) =>
+      extendIntegrationProviderCooldown({
+        trackerId,
+        provider,
+        now,
+        cooldownUntil,
+        database,
+      }),
     markFailure: (trackerId, owner, failedAt, errorCode) =>
       markIntegrationConnectionFailureUnderOperationLease({
         trackerId,
@@ -366,6 +531,16 @@ export async function validateAndSaveXunjiCredential(input: {
       throw new IntegrationOperationInProgressError();
     }
     leased = claimed?.status === "claimed";
+    const cooldownClaim = await claimIntegrationProviderCooldown({
+      trackerId: tracker.id,
+      provider: "xunji",
+      claimedAt: now,
+      cooldownUntil: new Date(now.valueOf() + providerCooldownDefaultMs),
+      database,
+    });
+    if (cooldownClaim.status === "cooldown") {
+      throw new IntegrationProviderCooldownError(cooldownClaim.cooldown);
+    }
     await createXunjiReadOnlyAdapter().fetchTrainsForDate({
       apiKey: input.apiKey,
       date,
@@ -392,6 +567,26 @@ export async function validateAndSaveXunjiCredential(input: {
       });
     }
   } catch (error) {
+    if (error instanceof IntegrationProviderCooldownError) {
+      throw error;
+    }
+    if (error instanceof XunjiProviderError && error.code === "rate_limited") {
+      const cooldown = await extendIntegrationProviderCooldown({
+        trackerId: tracker.id,
+        provider: "xunji",
+        now,
+        cooldownUntil: canonicalCooldownDeadline({
+          now,
+          providerRetryAfterMs: error.retryAfterMs,
+        }),
+        database,
+      });
+      error = new XunjiProviderError("rate_limited", {
+        cause: error,
+        retryAfterMs: cooldown.retryAfterMs,
+        retryAvailableAt: cooldown.retryAvailableAt,
+      });
+    }
     if (leased) {
       await markIntegrationConnectionFailureUnderOperationLease({
         trackerId: tracker.id,

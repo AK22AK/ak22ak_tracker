@@ -884,6 +884,22 @@ P5a-2c“恢复趋势与 DeepSeek 背景证据”均已于 2026-07-27 由项目�
   因而不能代表有效训练阶段；DTO 与界面现明确称为“起算后的日历周”，并提示不等于有效
   训练阶段，没有新增医学阶段规则。
 
+#### P5d：训记 Provider 30 秒冷却期与界面状态
+
+状态：实现完成，等待项目经理复核。
+
+- `integration_sync_state.cooldown_until/cooldown_kind` 通过正式 `0022` migration 保存
+  provider-level canonical cooldown；原子 claim 发生在缓存 miss、Provider full-data 读取前，
+  operation lease 释放后仍由服务端拦截 automatic/manual/history/Cron 的重复调用。正常
+  cooldown 不写失败日、cursor 或连接状态；Provider `retry_after_ms` 会以服务端时间扩展
+  到 canonical deadline。
+- 设置一级列表和 `/settings/xunji` 详情复用服务端 `cooldown`、绝对
+  `retryAvailableAt` 与 `serverNow`；正常冷却、in-flight 和真实 `rate_limited` 使用不同
+  文案，倒计时到期自动清理。Garmin 日常语义与租约保持不变。
+- Vitest、Python、format、lint、typecheck、production build 和相关 320/375/390/430
+  浏览器门禁已通过；Neon cooldown 集成测试在本机缺少 `TEST_DATABASE_URL` 时按契约跳过，
+  未冒充数据库并发验证已通过。
+
 #### 后续未开始增强
 
 - 用户主动授权的通知、Web Push 和 App Badge。

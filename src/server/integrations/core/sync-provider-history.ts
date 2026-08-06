@@ -2,7 +2,10 @@ import "server-only";
 
 import { isLocalDate } from "@/domain/calendar";
 
-import { IntegrationOperationInterruptedError } from "../credentials/operation-errors";
+import {
+  IntegrationOperationInterruptedError,
+  IntegrationProviderCooldownError,
+} from "../credentials/operation-errors";
 import type { IntegrationProvider } from "./external-records";
 import {
   providerPublicErrorCode,
@@ -125,7 +128,11 @@ export async function syncProviderHistoryBatch(input: {
       results.push({ date, status: "succeeded", ...result });
       states.set(date, { date, status: "succeeded" });
     } catch (error) {
-      if (error instanceof IntegrationOperationInterruptedError) throw error;
+      if (
+        error instanceof IntegrationOperationInterruptedError ||
+        error instanceof IntegrationProviderCooldownError
+      )
+        throw error;
       const errorCode = providerPublicErrorCode(error);
       const retryAfterMs = providerPublicRetryAfterMs(error);
       results.push({

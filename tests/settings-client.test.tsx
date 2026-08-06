@@ -198,4 +198,46 @@ describe("settings client data boundary", () => {
     ).toBeTruthy();
     expect(screen.getByText("1 项需要处理")).toBeTruthy();
   });
+
+  it("shares the normal Xunji cooldown on the first-level row", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      return Promise.resolve(
+        jsonResponse(
+          url.includes("/xunji/")
+            ? {
+                ...integrationStatus,
+                configured: true,
+                maskedKey: "••••••••",
+                sync: {
+                  ...integrationStatus.sync,
+                  status: "succeeded",
+                  cooldown: {
+                    kind: "normal",
+                    retryAvailableAt: "2026-08-06T00:00:30.000Z",
+                    retryAfterMs: 30_000,
+                    serverNow: "2026-08-06T00:00:00.000Z",
+                  },
+                },
+              }
+            : url.includes("/garmin/")
+              ? garminStatus
+              : url === "/api/mirror/status"
+                ? mirrorStatus
+                : url.includes("/deepseek/")
+                  ? deepSeekStatus
+                  : integrationStatus,
+        ),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderSettings();
+
+    expect(
+      await screen.findByRole("link", {
+        name: /训记刚刚已同步，约 30 秒后可再次同步/,
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText("1 项需要处理")).toBeNull();
+  });
 });

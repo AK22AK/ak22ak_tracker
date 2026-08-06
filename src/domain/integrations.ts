@@ -15,6 +15,15 @@ const integrationSyncOutcomeSchema = z
   })
   .strict();
 
+const integrationCooldownSchema = z
+  .object({
+    kind: z.enum(["normal", "rate_limited"]),
+    retryAvailableAt: z.string().datetime(),
+    retryAfterMs: z.number().int().nonnegative().max(86_400_000),
+    serverNow: z.string().datetime(),
+  })
+  .strict();
+
 export const integrationStatusSchema = z.object({
   provider: z.string().min(1),
   configured: z.boolean(),
@@ -29,6 +38,7 @@ export const integrationStatusSchema = z.object({
     nextCursor: localDateSchema.nullable().optional(),
     lastErrorCode: z.string().nullable(),
     lastOutcome: integrationSyncOutcomeSchema.optional(),
+    cooldown: integrationCooldownSchema.nullable().optional(),
   }),
 });
 
@@ -72,6 +82,7 @@ export const integrationCatchUpResultSchema = z.object({
   nextCursor: localDateSchema.nullable(),
   complete: z.boolean(),
   lastSucceededDate: localDateSchema.nullable(),
+  cooldown: integrationCooldownSchema.nullable().optional(),
 });
 
 export type IntegrationCatchUpResult = z.infer<
@@ -127,6 +138,7 @@ export const providerHistorySyncResultSchema = z
       .strict(),
     nextCursor: localDateSchema.nullable(),
     complete: z.boolean(),
+    cooldown: integrationCooldownSchema.nullable().optional(),
   })
   .strict();
 

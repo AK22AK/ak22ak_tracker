@@ -80,10 +80,12 @@ export async function syncProviderDate(input: {
   now: Date;
   store: ProviderDateSyncStore;
   readSource: () => Promise<NormalizedExternalRecord[]>;
+  beforeReadSource?: () => Promise<void>;
 }): Promise<ProviderDateSyncResult> {
   const cached = await input.store.getCachedSuccess(input);
   if (cached) return cached;
 
+  await input.beforeReadSource?.();
   await input.store.markAttempt({
     trackerId: input.trackerId,
     provider: input.provider,

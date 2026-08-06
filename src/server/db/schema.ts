@@ -1014,6 +1014,8 @@ export const integrationSyncState = pgTable(
     lastSucceededAt: timestamp("last_succeeded_at", { withTimezone: true }),
     cursor: jsonb("cursor").$type<Record<string, unknown>>(),
     lastErrorCode: text("last_error_code"),
+    cooldownUntil: timestamp("cooldown_until", { withTimezone: true }),
+    cooldownKind: text("cooldown_kind"),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

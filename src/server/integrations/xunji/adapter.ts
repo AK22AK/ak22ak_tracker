@@ -20,15 +20,23 @@ export type XunjiProviderErrorCode =
 export class XunjiProviderError extends Error {
   readonly code: XunjiProviderErrorCode;
   readonly retryAfterMs: number | null;
+  readonly retryAvailableAt: Date | null;
 
   constructor(
     code: XunjiProviderErrorCode,
-    options?: ErrorOptions & { retryAfterMs?: number | null },
+    options?: ErrorOptions & {
+      retryAfterMs?: number | null;
+      retryAvailableAt?: Date | null;
+    },
   ) {
     super(`xunji_${code}`, options);
     this.name = "XunjiProviderError";
     this.code = code;
     this.retryAfterMs = options?.retryAfterMs ?? null;
+    this.retryAvailableAt =
+      options?.retryAvailableAt instanceof Date
+        ? options.retryAvailableAt
+        : null;
   }
 }
 

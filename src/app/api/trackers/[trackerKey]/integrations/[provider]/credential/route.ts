@@ -8,7 +8,10 @@ import {
   getIntegrationStatus,
   IntegrationTrackerNotFoundError,
 } from "@/server/integrations/credentials/repository";
-import { IntegrationOperationInterruptedError } from "@/server/integrations/credentials/operation-errors";
+import {
+  IntegrationOperationInterruptedError,
+  IntegrationProviderCooldownError,
+} from "@/server/integrations/credentials/operation-errors";
 import { isSupportedIntegrationProvider } from "@/server/integrations/providers";
 import { createDefaultGarminRuntime } from "@/server/integrations/garmin/runtime";
 import { XunjiProviderError } from "@/server/integrations/xunji/adapter";
@@ -60,6 +63,9 @@ function providerFailure(error: XunjiProviderError) {
       ...(error.retryAfterMs === null
         ? {}
         : { retryAfterMs: error.retryAfterMs }),
+      ...(error.retryAvailableAt === null
+        ? {}
+        : { retryAvailableAt: error.retryAvailableAt.toISOString() }),
     },
     { status },
   );
@@ -171,6 +177,18 @@ export async function PUT(
       return Response.json({ error: "invalid_request" }, { status: 400 });
     }
     if (error instanceof XunjiProviderError) return providerFailure(error);
+    if (error instanceof IntegrationProviderCooldownError) {
+      return Response.json(
+        {
+          error: "provider_cooldown",
+          cooldownKind: error.cooldown.kind,
+          retryAvailableAt: error.cooldown.retryAvailableAt.toISOString(),
+          retryAfterMs: error.cooldown.retryAfterMs,
+          serverNow: error.cooldown.serverNow.toISOString(),
+        },
+        { status: 429, headers: { "Cache-Control": "no-store" } },
+      );
+    }
     if (error instanceof IntegrationOperationInterruptedError) {
       return Response.json(
         { error: "sync_in_progress" },

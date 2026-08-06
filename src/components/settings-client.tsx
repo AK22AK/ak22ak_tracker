@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import {
@@ -33,7 +34,36 @@ function garminRowStatus(status: GarminConnectionStatus): RowStatus {
   return { detail: "未连接", needsAttention: false };
 }
 
-function integrationRowStatus(status: IntegrationStatus): RowStatus {
+function integrationRowStatus(
+  status: IntegrationStatus,
+  now = Date.now(),
+): RowStatus {
+  const cooldown = status.sync.cooldown;
+  if (cooldown) {
+    const serverClockOffset = Date.parse(cooldown.serverNow) - now;
+    const remainingMs = Math.max(
+      0,
+      Date.parse(cooldown.retryAvailableAt) - (now + serverClockOffset),
+    );
+    if (remainingMs === 0)
+      return integrationRowStatus(
+        {
+          ...status,
+          sync: { ...status.sync, cooldown: null },
+        },
+        now,
+      );
+    const seconds = Math.max(1, Math.ceil(remainingMs / 1_000));
+    return cooldown.kind === "rate_limited"
+      ? {
+          detail: `训记要求等待，约 ${seconds} 秒后可重试`,
+          needsAttention: true,
+        }
+      : {
+          detail: `刚刚已同步，约 ${seconds} 秒后可再次同步`,
+          needsAttention: false,
+        };
+  }
   if (status.sync.status === "failed") {
     const details: Record<string, string> = {
       authentication: "连接已失效，请更新 API Key",
@@ -142,6 +172,7 @@ function SettingsSkeleton() {
 }
 
 export function SettingsClient() {
+  const [clockNow, setClockNow] = useState(() => Date.now());
   const integrationQuery = useQuery({
     queryKey: integrationQueryKeys.providerStatus(trackerKey, "xunji"),
     queryFn: ({ signal }) =>
@@ -164,6 +195,12 @@ export function SettingsClient() {
     staleTime: 60_000,
   });
 
+  useEffect(() => {
+    if (!integrationQuery.data?.sync.cooldown) return;
+    const timer = window.setInterval(() => setClockNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [integrationQuery.data?.sync.cooldown]);
+
   const loading = [
     garminQuery,
     integrationQuery,
@@ -178,7 +215,7 @@ export function SettingsClient() {
     ? garminRowStatus(garminQuery.data)
     : unavailableStatus(garminQuery.isError);
   const xunjiStatus = integrationQuery.data
-    ? integrationRowStatus(integrationQuery.data)
+    ? integrationRowStatus(integrationQuery.data, clockNow)
     : unavailableStatus(integrationQuery.isError);
   const deepSeekStatus = deepSeekQuery.data
     ? deepSeekRowStatus(deepSeekQuery.data)
