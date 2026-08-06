@@ -20,14 +20,36 @@ const trackerKey = "knee-rehab";
 
 type RowStatus = { detail: string; needsAttention: boolean };
 
+const actionableIntegrationErrorCodes = new Set([
+  "authentication",
+  "membership_required",
+]);
+
 function garminRowStatus(status: GarminConnectionStatus): RowStatus {
+  const syncErrorCode =
+    status.sync?.status === "failed" ? status.sync.lastErrorCode : null;
+  const errorCode = syncErrorCode ?? status.lastErrorCode;
   if (
     status.state === "needs_validation" ||
     status.state === "needs_refresh" ||
     status.state === "invalid" ||
-    status.sync?.status === "failed"
+    errorCode === "authentication" ||
+    errorCode === "invalid_token_bundle" ||
+    errorCode === "unsupported_client_version"
   ) {
     return { detail: "需要处理", needsAttention: true };
+  }
+  if (syncErrorCode === "timeout") {
+    return { detail: "上次同步超时，将自动重试", needsAttention: false };
+  }
+  if (syncErrorCode === "provider_unavailable") {
+    return { detail: "服务暂不可用，将自动重试", needsAttention: false };
+  }
+  if (syncErrorCode === "rate_limited") {
+    return { detail: "请求较多，将自动重试", needsAttention: false };
+  }
+  if (syncErrorCode === "invalid_response") {
+    return { detail: "响应异常，将自动重试", needsAttention: false };
   }
   if (status.state === "connected")
     return { detail: "已连接", needsAttention: false };
@@ -57,7 +79,7 @@ function integrationRowStatus(
     return cooldown.kind === "rate_limited"
       ? {
           detail: `训记要求等待，约 ${seconds} 秒后可重试`,
-          needsAttention: true,
+          needsAttention: false,
         }
       : {
           detail: `刚刚已同步，约 ${seconds} 秒后可再次同步`,
@@ -69,14 +91,16 @@ function integrationRowStatus(
       authentication: "连接已失效，请更新 API Key",
       membership_required: "仅限 VIP 会员",
       rate_limited: "请求过于频繁，请稍后重试",
-      invalid_response: "Provider 返回异常",
-      timeout: "同步超时，请稍后重试",
-      provider_unavailable: "Provider 暂时不可用",
+      invalid_response: "响应异常，将自动重试",
+      timeout: "上次同步超时，将自动重试",
+      provider_unavailable: "服务暂不可用，将自动重试",
+      sync_in_progress: "同步进行中，将自动重试",
+      provider_cooldown: "暂时等待，将自动重试",
     };
+    const errorCode = status.sync.lastErrorCode ?? "";
     return {
-      detail:
-        details[status.sync.lastErrorCode ?? ""] ?? "同步失败，请查看详情",
-      needsAttention: true,
+      detail: details[errorCode] ?? "同步失败，请查看详情",
+      needsAttention: actionableIntegrationErrorCodes.has(errorCode),
     };
   }
   if (status.sync.status === "running")

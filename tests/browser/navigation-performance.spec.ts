@@ -630,6 +630,8 @@ type MockPrivateReadOptions = {
   today?: unknown | (() => unknown);
   day?: (date: string) => unknown;
   association?: (body: Record<string, unknown>) => unknown;
+  integration?: unknown | (() => unknown);
+  garmin?: unknown | (() => unknown);
 };
 
 async function authorize(context: BrowserContext) {
@@ -705,10 +707,16 @@ async function mockPrivateReads(
       body = providerHistoryOverview;
     } else if (url.pathname.endsWith("/integrations/xunji/credential")) {
       counters.integration += 1;
-      body = integrationStatus;
+      body =
+        typeof options.integration === "function"
+          ? options.integration()
+          : (options.integration ?? integrationStatus);
     } else if (url.pathname.endsWith("/integrations/garmin/credential")) {
       counters.garmin += 1;
-      body = garminStatus;
+      body =
+        typeof options.garmin === "function"
+          ? options.garmin()
+          : (options.garmin ?? garminStatus);
     } else if (url.pathname.endsWith("/integrations/garmin/wellness")) {
       body = garminWellnessProgress;
     } else if (url.pathname.endsWith("/integrations/deepseek/credential")) {
@@ -2345,3 +2353,72 @@ test("calendar only offers return-to-today away from today and restores focus", 
   await expect(todayButton).toBeFocused();
   await expect(returnToToday).toHaveCount(0);
 });
+
+for (const width of [320, 375, 390, 430]) {
+  test(`temporary integration status stays neutral across detail navigation at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    const temporaryXunjiStatus = {
+      ...integrationStatus,
+      configured: true,
+      maskedKey: "••••••••",
+      sync: {
+        ...integrationStatus.sync,
+        status: "failed" as const,
+        lastSucceededDate: localDate,
+        lastErrorCode: "timeout",
+        lastOutcome: { kind: "failed" as const, errorCode: "timeout" },
+      },
+    };
+    const temporaryGarminStatus = {
+      ...garminStatus,
+      sync: {
+        status: "failed" as const,
+        lastAttemptAt: `${localDate}T08:00:00.000Z`,
+        lastSucceededDate: localDate,
+        nextCursor: null,
+        lastErrorCode: "timeout" as const,
+      },
+    };
+    const counters = await mockPrivateReads(
+      page,
+      0,
+      planAdvice,
+      evaluationAggregate,
+      trendsAggregate,
+      { integration: temporaryXunjiStatus, garmin: temporaryGarminStatus },
+    );
+
+    await page.goto("/settings/xunji");
+    await expect(page.getByRole("main", { name: "训记设置" })).toBeVisible();
+    await expect(
+      page.getByText(
+        "无需处理，系统会在下一次定时同步时重试；也可使用手动同步。",
+      ),
+    ).toBeVisible();
+    await expect(page.getByText("最近成功日期：").first()).toContainText(
+      localDate,
+    );
+    await expectMobileLayoutIntegrity(page);
+
+    const detailRequestCount = counters.integration;
+    await page.getByRole("link", { name: "返回" }).click();
+    await expect(page).toHaveURL("/settings");
+    await expect(
+      page.getByRole("link", { name: /训记.*上次同步超时，将自动重试/ }),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: /Garmin/ })).toBeVisible();
+    await expect(page.locator(".settings-attention-summary")).toHaveCount(0);
+    await expect.poll(() => counters.integration).toBe(detailRequestCount);
+    await expectMobileLayoutIntegrity(page);
+
+    await page.reload();
+    await expect(page).toHaveURL("/settings");
+    await expect(
+      page.getByRole("link", { name: /训记.*上次同步超时，将自动重试/ }),
+    ).toBeVisible();
+    await expect(page.locator(".settings-attention-summary")).toHaveCount(0);
+    await expectMobileLayoutIntegrity(page);
+  });
+}

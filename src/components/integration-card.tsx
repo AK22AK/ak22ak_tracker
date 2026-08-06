@@ -28,21 +28,27 @@ function syncFailureMessage(
   }
   if (errorCode === "rate_limited") {
     if (retryAfterMs && retryAfterMs > 0) {
-      return `${displayName}请求过于频繁，请约 ${Math.ceil(retryAfterMs / 1_000)} 秒后重试。`;
+      return `${displayName}请求过于频繁，请约 ${Math.ceil(retryAfterMs / 1_000)} 秒后重试。无需处理，系统会在下一次定时同步时重试；也可使用手动同步。`;
     }
-    return `${displayName}请求过于频繁，请稍后重试。`;
+    return `${displayName}请求过于频繁，请稍后重试。无需处理，系统会在下一次定时同步时重试；也可使用手动同步。`;
   }
   if (errorCode === "sync_in_progress") {
-    return `另一项${displayName}同步正在进行，请稍后继续。`;
+    return `另一项${displayName}同步正在进行，请稍后继续。无需处理，系统会在下一次定时同步时重试；也可使用手动同步。`;
   }
   if (errorCode === "membership_required") {
     return `${displayName}仅支持 VIP 会员使用，请升级会员后重试。`;
   }
   if (errorCode === "invalid_response") {
-    return `${displayName}返回异常，请稍后重试。`;
+    return `${displayName}响应异常，将自动重试。无需处理，系统会在下一次定时同步时重试；也可使用手动同步。`;
   }
-  if (errorCode === "timeout" || errorCode === "provider_unavailable") {
-    return `${displayName}暂时无法同步，请稍后重试。`;
+  if (errorCode === "timeout") {
+    return `${displayName}上次同步超时，将自动重试。无需处理，系统会在下一次定时同步时重试；也可使用手动同步。`;
+  }
+  if (errorCode === "provider_unavailable") {
+    return `${displayName}服务暂不可用，将自动重试。无需处理，系统会在下一次定时同步时重试；也可使用手动同步。`;
+  }
+  if (errorCode === "provider_cooldown") {
+    return `${displayName}暂时等待，将自动重试。无需处理，系统会在下一次定时同步时重试；也可使用手动同步。`;
   }
   return `${displayName}同步失败，请稍后重试。`;
 }
@@ -244,7 +250,7 @@ export function IntegrationCard({
   const cooldownMessage =
     retryAfterMsRemaining > 0
       ? cooldownKind === "rate_limited"
-        ? `训记要求等待，约 ${Math.ceil(retryAfterMsRemaining / 1_000)} 秒后可重试`
+        ? `${definition.displayName}要求等待，约 ${Math.ceil(retryAfterMsRemaining / 1_000)} 秒后可重试；无需处理，系统会在下一次定时同步时重试，也可使用手动同步。`
         : `刚刚已同步，约 ${Math.ceil(retryAfterMsRemaining / 1_000)} 秒后可再次同步`
       : null;
 

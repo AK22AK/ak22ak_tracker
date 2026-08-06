@@ -87,6 +87,7 @@ function renderSettings() {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("settings client data boundary", () => {
@@ -197,6 +198,192 @@ describe("settings client data boundary", () => {
       await screen.findByRole("link", { name: /训记仅限 VIP 会员/ }),
     ).toBeTruthy();
     expect(screen.getByText("1 项需要处理")).toBeTruthy();
+  });
+
+  it("does not promote a persisted temporary Xunji timeout to first-level attention", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      return Promise.resolve(
+        jsonResponse(
+          url.includes("/xunji/")
+            ? {
+                ...integrationStatus,
+                configured: true,
+                maskedKey: "••••••••",
+                sync: {
+                  ...integrationStatus.sync,
+                  status: "failed",
+                  lastSucceededDate: "2026-08-06",
+                  lastErrorCode: "timeout",
+                  lastOutcome: { kind: "failed", errorCode: "timeout" },
+                },
+              }
+            : url.includes("/garmin/")
+              ? garminStatus
+              : url === "/api/mirror/status"
+                ? mirrorStatus
+                : url.includes("/deepseek/")
+                  ? deepSeekStatus
+                  : integrationStatus,
+        ),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderSettings();
+
+    expect(
+      await screen.findByRole("link", {
+        name: /训记上次同步超时，将自动重试/,
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText("1 项需要处理")).toBeNull();
+  });
+
+  it.each(["timeout", "provider_unavailable", "invalid_response"])(
+    "does not count %s as first-level attention",
+    async (errorCode) => {
+      const fetchMock = vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        return Promise.resolve(
+          jsonResponse(
+            url.includes("/xunji/")
+              ? {
+                  ...integrationStatus,
+                  configured: true,
+                  maskedKey: "••••••••",
+                  sync: {
+                    ...integrationStatus.sync,
+                    status: "failed",
+                    lastErrorCode: errorCode,
+                  },
+                }
+              : url.includes("/garmin/")
+                ? garminStatus
+                : url === "/api/mirror/status"
+                  ? mirrorStatus
+                  : url.includes("/deepseek/")
+                    ? deepSeekStatus
+                    : integrationStatus,
+          ),
+        );
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      renderSettings();
+
+      await screen.findByRole("link", { name: /训记/ });
+      expect(screen.queryByText("1 项需要处理")).toBeNull();
+    },
+  );
+
+  it("keeps authentication and membership failures actionable", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      return Promise.resolve(
+        jsonResponse(
+          url.includes("/xunji/")
+            ? {
+                ...integrationStatus,
+                configured: true,
+                maskedKey: "••••••••",
+                sync: {
+                  ...integrationStatus.sync,
+                  status: "failed",
+                  lastErrorCode: "authentication",
+                },
+              }
+            : url.includes("/garmin/")
+              ? garminStatus
+              : url === "/api/mirror/status"
+                ? mirrorStatus
+                : url.includes("/deepseek/")
+                  ? deepSeekStatus
+                  : integrationStatus,
+        ),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderSettings();
+
+    expect(await screen.findByText("1 项需要处理")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /训记连接已失效/ })).toBeTruthy();
+  });
+
+  it("does not count a rate-limit cooldown as attention while preserving its deadline copy", async () => {
+    const now = Date.now();
+    const serverNow = new Date(now).toISOString();
+    const retryAvailableAt = new Date(now + 30_000).toISOString();
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      return Promise.resolve(
+        jsonResponse(
+          url.includes("/xunji/")
+            ? {
+                ...integrationStatus,
+                configured: true,
+                maskedKey: "••••••••",
+                sync: {
+                  ...integrationStatus.sync,
+                  status: "failed",
+                  lastErrorCode: "rate_limited",
+                  cooldown: {
+                    kind: "rate_limited",
+                    retryAvailableAt,
+                    retryAfterMs: 30_000,
+                    serverNow,
+                  },
+                },
+              }
+            : url.includes("/garmin/")
+              ? garminStatus
+              : url === "/api/mirror/status"
+                ? mirrorStatus
+                : url.includes("/deepseek/")
+                  ? deepSeekStatus
+                  : integrationStatus,
+        ),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderSettings();
+
+    expect(
+      await screen.findByRole("link", {
+        name: /训记要求等待，约 30 秒后可重试/,
+      }),
+    ).toBeTruthy();
+    expect(screen.queryByText("1 项需要处理")).toBeNull();
+  });
+
+  it("does not count a Garmin temporary timeout but keeps needs_refresh actionable", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      return Promise.resolve(
+        jsonResponse(
+          url.includes("/garmin/")
+            ? {
+                ...garminStatus,
+                state: "connected",
+                sync: {
+                  status: "failed",
+                  lastAttemptAt: "2026-08-06T00:00:00.000Z",
+                  lastSucceededDate: "2026-08-06",
+                  nextCursor: null,
+                  lastErrorCode: "timeout",
+                },
+              }
+            : url === "/api/mirror/status"
+              ? mirrorStatus
+              : url.includes("/deepseek/")
+                ? deepSeekStatus
+                : integrationStatus,
+        ),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderSettings();
+
+    expect(await screen.findByRole("link", { name: /Garmin/ })).toBeTruthy();
+    expect(screen.queryByText("1 项需要处理")).toBeNull();
   });
 
   it("shares the normal Xunji cooldown on the first-level row", async () => {

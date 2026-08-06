@@ -187,10 +187,10 @@ describe("provider-neutral integration card", () => {
 
   it.each([
     ["authentication", "连接已失效，请更新 API Key 后重试"],
-    ["timeout", "暂时无法同步，请稍后重试"],
-    ["provider_unavailable", "暂时无法同步，请稍后重试"],
+    ["timeout", "上次同步超时，将自动重试"],
+    ["provider_unavailable", "服务暂不可用，将自动重试"],
     ["membership_required", "仅支持 VIP 会员使用，请升级会员后重试"],
-    ["invalid_response", "返回异常，请稍后重试"],
+    ["invalid_response", "响应异常，将自动重试"],
   ])("renders a safe actionable message for %s", async (errorCode, text) => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
@@ -306,7 +306,7 @@ describe("provider-neutral integration card", () => {
     fireEvent.click(button);
     await waitFor(() =>
       expect(
-        screen.getByText("另一项训记同步正在进行，请稍后继续。"),
+        screen.getByText(/另一项训记同步正在进行，请稍后继续。/),
       ).toBeTruthy(),
     );
     expect(
@@ -547,5 +547,81 @@ describe("provider-neutral integration card", () => {
     );
 
     expect(screen.getByText(new RegExp(text))).toBeTruthy();
+  });
+
+  it("explains that a persisted temporary failure needs no user action", () => {
+    render(
+      <IntegrationCard
+        trackerKey="anonymous-tracker"
+        definition={{
+          provider: "xunji",
+          displayName: "训记",
+          description: "Anonymous read-only training source",
+        }}
+        initialStatus={{
+          ...disconnected,
+          configured: true,
+          maskedKey: "••••••••",
+          sync: {
+            ...disconnected.sync,
+            status: "failed",
+            lastSucceededDate: "2026-08-06",
+            lastErrorCode: "timeout",
+            lastOutcome: { kind: "failed", errorCode: "timeout" },
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/训记上次同步超时，将自动重试/)).toBeTruthy();
+    expect(
+      screen.getByText(
+        /无需处理，系统会在下一次定时同步时重试；也可使用手动同步/,
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("最近成功日期：2026-08-06")).toBeTruthy();
+  });
+
+  it("preserves the canonical rate-limit countdown and disables manual sync", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-06T00:00:00.000Z"));
+    render(
+      <IntegrationCard
+        trackerKey="anonymous-tracker"
+        definition={{
+          provider: "xunji",
+          displayName: "训记",
+          description: "Anonymous read-only training source",
+        }}
+        initialStatus={{
+          ...disconnected,
+          configured: true,
+          maskedKey: "••••••••",
+          sync: {
+            ...disconnected.sync,
+            status: "failed",
+            lastErrorCode: "rate_limited",
+            cooldown: {
+              kind: "rate_limited",
+              retryAvailableAt: "2026-08-06T00:00:30.000Z",
+              retryAfterMs: 30_000,
+              serverNow: "2026-08-06T00:00:00.000Z",
+            },
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/训记要求等待，约 30 秒后可重试/)).toBeTruthy();
+    expect(
+      (
+        screen.getByRole("button", {
+          name: /请等待 30 秒后重试/,
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(
+      screen.getByText(/无需处理，系统会在下一次定时同步时重试/),
+    ).toBeTruthy();
   });
 });
