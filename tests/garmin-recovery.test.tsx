@@ -432,4 +432,98 @@ describe("P5a-2b coordinated Garmin foreground recovery", () => {
       "/api/trackers/knee-rehab/integrations/xunji/recovery",
     ]);
   });
+
+  it("publishes Xunji running before the request and classifies automatic outcomes", async () => {
+    vi.spyOn(window.navigator, "onLine", "get").mockReturnValue(true);
+    const xunjiStatus = {
+      provider: "xunji",
+      configured: true,
+      maskedKey: "••••••••" as const,
+      verifiedAt: "2026-07-24T03:00:00.000Z",
+      updatedAt: "2026-07-24T03:00:00.000Z",
+      sync: {
+        status: "succeeded" as const,
+        lastAttemptAt: "2026-07-24T03:00:00.000Z",
+        lastSucceededAt: "2026-07-24T03:00:00.000Z",
+        lastSucceededDate: "2026-07-23",
+        nextCursor: null,
+        lastErrorCode: null,
+      },
+    };
+    const queryClient = new QueryClient();
+    const xunjiKey = integrationQueryKeys.providerStatus("knee-rehab", "xunji");
+    queryClient.setQueryData(xunjiKey, xunjiStatus);
+    let releaseXunji: ((response: Response) => void) | undefined;
+    const pendingXunji = new Promise<Response>((resolve) => {
+      releaseXunji = resolve;
+    });
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/xunji/recovery")) return pendingXunji;
+      if (url.endsWith("/garmin/wellness/recovery")) {
+        return Response.json({
+          status: "skipped",
+          reason: "not_due",
+          progress: wellnessProgress,
+        });
+      }
+      return Response.json({
+        status: "skipped",
+        reason: "not_due",
+        connection,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderRecovery(queryClient);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(queryClient.getQueryData(xunjiKey)).toMatchObject({
+      sync: { status: "running", lastOutcome: { kind: "in_progress" } },
+    });
+
+    releaseXunji?.(
+      Response.json({
+        status: "completed",
+        sync: {
+          provider: "xunji",
+          batch: { from: "2026-07-24", to: "2026-07-24" },
+          targetDate: "2026-07-24",
+          days: [
+            {
+              date: "2026-07-24",
+              status: "succeeded",
+              cached: false,
+              created: 1,
+              changed: 0,
+              unchanged: 0,
+              recordCount: 1,
+              syncedAt: "2026-07-24T03:00:00.000Z",
+            },
+          ],
+          summary: {
+            succeeded: 1,
+            failed: 0,
+            created: 1,
+            changed: 0,
+            unchanged: 0,
+          },
+          nextCursor: null,
+          complete: true,
+          lastSucceededDate: "2026-07-24",
+        },
+      }),
+    );
+    await waitFor(() =>
+      expect(queryClient.getQueryData(xunjiKey)).toMatchObject({
+        sync: {
+          status: "succeeded",
+          lastSucceededDate: "2026-07-24",
+          lastOutcome: { kind: "succeeded_with_records" },
+        },
+      }),
+    );
+  });
 });

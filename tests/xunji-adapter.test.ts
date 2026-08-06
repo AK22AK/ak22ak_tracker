@@ -141,6 +141,62 @@ describe("Xunji read-only adapter", () => {
     },
   );
 
+  it.each([
+    [30_000, 30_000],
+    [0, 0],
+    [86_400_000, 86_400_000],
+  ] as const)(
+    "preserves safe retry_after_ms=%s",
+    async (retryAfterMs, expected) => {
+      const adapter = createXunjiReadOnlyAdapter({
+        fetchImpl: vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              res: {
+                success: false,
+                error: { code: "too_frequent", retry_after_ms: retryAfterMs },
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        ),
+      });
+
+      await expect(
+        adapter.fetchTrainsForDate({
+          apiKey: "anonymous-fake-key",
+          date: "2026-07-19",
+        }),
+      ).rejects.toMatchObject({ code: "rate_limited", retryAfterMs: expected });
+    },
+  );
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, -1, 0.5, 86_400_001, "30000"])(
+    "drops unsafe retry_after_ms=%s",
+    async (retryAfterMs) => {
+      const adapter = createXunjiReadOnlyAdapter({
+        fetchImpl: vi.fn().mockResolvedValue(
+          new Response(
+            JSON.stringify({
+              res: {
+                success: false,
+                error: { code: "too_frequent", retry_after_ms: retryAfterMs },
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        ),
+      });
+
+      await expect(
+        adapter.fetchTrainsForDate({
+          apiKey: "anonymous-fake-key",
+          date: "2026-07-19",
+        }),
+      ).rejects.toMatchObject({ code: "rate_limited", retryAfterMs: null });
+    },
+  );
+
   it("rejects duplicate provider record ids instead of issuing conflicting writes", async () => {
     const adapter = createXunjiReadOnlyAdapter({
       fetchImpl: vi.fn().mockResolvedValue(

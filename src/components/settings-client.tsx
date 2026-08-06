@@ -35,10 +35,36 @@ function garminRowStatus(status: GarminConnectionStatus): RowStatus {
 
 function integrationRowStatus(status: IntegrationStatus): RowStatus {
   if (status.sync.status === "failed") {
-    return { detail: "需要处理", needsAttention: true };
+    const details: Record<string, string> = {
+      authentication: "连接已失效，请更新 API Key",
+      membership_required: "仅限 VIP 会员",
+      rate_limited: "请求过于频繁，请稍后重试",
+      invalid_response: "Provider 返回异常",
+      timeout: "同步超时，请稍后重试",
+      provider_unavailable: "Provider 暂时不可用",
+    };
+    return {
+      detail:
+        details[status.sync.lastErrorCode ?? ""] ?? "同步失败，请查看详情",
+      needsAttention: true,
+    };
   }
   if (status.sync.status === "running")
-    return { detail: "同步中", needsAttention: false };
+    return {
+      detail:
+        status.sync.lastOutcome?.kind === "in_progress"
+          ? "另一项同步进行中"
+          : "同步中",
+      needsAttention: false,
+    };
+  if (status.sync.status === "succeeded") {
+    if (status.sync.lastOutcome?.kind === "succeeded_with_records") {
+      return { detail: "同步成功，已发现记录", needsAttention: false };
+    }
+    if (status.sync.lastOutcome?.kind === "succeeded_empty") {
+      return { detail: "同步成功，当天无记录", needsAttention: false };
+    }
+  }
   if (status.configured) return { detail: "已连接", needsAttention: false };
   return { detail: "未连接", needsAttention: false };
 }

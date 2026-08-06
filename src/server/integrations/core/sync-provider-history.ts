@@ -6,6 +6,7 @@ import { IntegrationOperationInterruptedError } from "../credentials/operation-e
 import type { IntegrationProvider } from "./external-records";
 import {
   providerPublicErrorCode,
+  providerPublicRetryAfterMs,
   type ProviderDateSyncResult,
 } from "./sync-provider-date";
 
@@ -110,7 +111,12 @@ export async function syncProviderHistoryBatch(input: {
     .slice(0, input.batchSize);
   const results: Array<
     | ({ date: string; status: "succeeded" } & ProviderDateSyncResult)
-    | { date: string; status: "failed"; errorCode: string }
+    | {
+        date: string;
+        status: "failed";
+        errorCode: string;
+        retryAfterMs?: number;
+      }
   > = [];
 
   for (const date of batch) {
@@ -121,7 +127,13 @@ export async function syncProviderHistoryBatch(input: {
     } catch (error) {
       if (error instanceof IntegrationOperationInterruptedError) throw error;
       const errorCode = providerPublicErrorCode(error);
-      results.push({ date, status: "failed", errorCode });
+      const retryAfterMs = providerPublicRetryAfterMs(error);
+      results.push({
+        date,
+        status: "failed",
+        errorCode,
+        ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+      });
       states.set(date, { date, status: "failed" });
       break;
     }

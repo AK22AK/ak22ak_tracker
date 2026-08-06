@@ -57,6 +57,22 @@ export function providerPublicErrorCode(error: unknown): string {
   return "provider_unavailable";
 }
 
+export function providerPublicRetryAfterMs(error: unknown): number | undefined {
+  if (
+    typeof error !== "object" ||
+    error === null ||
+    !("retryAfterMs" in error) ||
+    typeof error.retryAfterMs !== "number" ||
+    !Number.isFinite(error.retryAfterMs) ||
+    !Number.isInteger(error.retryAfterMs) ||
+    error.retryAfterMs < 0 ||
+    error.retryAfterMs > 86_400_000
+  ) {
+    return undefined;
+  }
+  return error.retryAfterMs;
+}
+
 export async function syncProviderDate(input: {
   trackerId: string;
   provider: IntegrationProvider;

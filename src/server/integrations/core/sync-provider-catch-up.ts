@@ -6,6 +6,7 @@ import { IntegrationOperationInterruptedError } from "@/server/integrations/cred
 import type { IntegrationProvider } from "./external-records";
 import {
   providerPublicErrorCode,
+  providerPublicRetryAfterMs,
   type ProviderDateSyncResult,
 } from "./sync-provider-date";
 
@@ -39,7 +40,12 @@ export type ProviderCatchUpStore = {
 
 export type ProviderCatchUpDayResult =
   | ({ date: string; status: "succeeded" } & ProviderDateSyncResult)
-  | { date: string; status: "failed"; errorCode: string };
+  | {
+      date: string;
+      status: "failed";
+      errorCode: string;
+      retryAfterMs?: number;
+    };
 
 export type ProviderCatchUpResult = {
   provider: IntegrationProvider;
@@ -193,7 +199,13 @@ export async function syncProviderCatchUpBatch(input: {
     } catch (error) {
       if (error instanceof IntegrationOperationInterruptedError) throw error;
       const errorCode = providerPublicErrorCode(error);
-      days.push({ date, status: "failed", errorCode });
+      const retryAfterMs = providerPublicRetryAfterMs(error);
+      days.push({
+        date,
+        status: "failed",
+        errorCode,
+        ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
+      });
       states.set(date, { date, status: "failed" });
       break;
     }

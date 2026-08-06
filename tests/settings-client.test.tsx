@@ -163,4 +163,39 @@ describe("settings client data boundary", () => {
     expect(screen.getByRole("link", { name: /Garmin需要处理/ })).toBeTruthy();
     expect(screen.queryByText("全部正常")).toBeNull();
   });
+
+  it("shows the persisted Xunji reason on the first-level row", async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      return Promise.resolve(
+        jsonResponse(
+          url.includes("/xunji/")
+            ? {
+                ...integrationStatus,
+                configured: true,
+                maskedKey: "••••••••",
+                sync: {
+                  ...integrationStatus.sync,
+                  status: "failed",
+                  lastErrorCode: "membership_required",
+                },
+              }
+            : url.includes("/garmin/")
+              ? garminStatus
+              : url === "/api/mirror/status"
+                ? mirrorStatus
+                : url.includes("/deepseek/")
+                  ? deepSeekStatus
+                  : integrationStatus,
+        ),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderSettings();
+
+    expect(
+      await screen.findByRole("link", { name: /训记仅限 VIP 会员/ }),
+    ).toBeTruthy();
+    expect(screen.getByText("1 项需要处理")).toBeTruthy();
+  });
 });

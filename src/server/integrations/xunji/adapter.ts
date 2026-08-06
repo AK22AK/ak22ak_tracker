@@ -19,11 +19,16 @@ export type XunjiProviderErrorCode =
 
 export class XunjiProviderError extends Error {
   readonly code: XunjiProviderErrorCode;
+  readonly retryAfterMs: number | null;
 
-  constructor(code: XunjiProviderErrorCode, options?: ErrorOptions) {
+  constructor(
+    code: XunjiProviderErrorCode,
+    options?: ErrorOptions & { retryAfterMs?: number | null },
+  ) {
     super(`xunji_${code}`, options);
     this.name = "XunjiProviderError";
     this.code = code;
+    this.retryAfterMs = options?.retryAfterMs ?? null;
   }
 }
 
@@ -109,13 +114,28 @@ function knownBusinessErrorCode(
   return null;
 }
 
-function mapBusinessError(payload: unknown): ProviderBusinessErrorCode | null {
+const maxRetryAfterMs = 24 * 60 * 60 * 1_000;
+
+function safeRetryAfterMs(value: unknown) {
+  return typeof value === "number" &&
+    Number.isFinite(value) &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= maxRetryAfterMs
+    ? value
+    : null;
+}
+
+function mapBusinessError(payload: unknown): {
+  code: ProviderBusinessErrorCode;
+  retryAfterMs: number | null;
+} | null {
   const root = recordValue(payload);
   const candidates = [payload, root?.res];
   for (const candidate of candidates) {
     if (typeof candidate === "string") {
       const mapped = knownBusinessErrorCode([candidate]);
-      if (mapped) return mapped;
+      if (mapped) return { code: mapped, retryAfterMs: null };
       continue;
     }
     const value = recordValue(candidate);
@@ -129,7 +149,14 @@ function mapBusinessError(payload: unknown): ProviderBusinessErrorCode | null {
       error?.field,
       error?.message,
     ]);
-    if (mapped) return mapped;
+    if (mapped) {
+      return {
+        code: mapped,
+        retryAfterMs: safeRetryAfterMs(
+          value.retry_after_ms ?? error?.retry_after_ms,
+        ),
+      };
+    }
   }
   return null;
 }
@@ -178,7 +205,13 @@ export function createXunjiReadOnlyAdapter({
         throw new XunjiProviderError("authentication");
       }
       if (response.status === 429) {
-        throw new XunjiProviderError("rate_limited");
+        const retryAfterHeader = response.headers.get("retry-after");
+        throw new XunjiProviderError("rate_limited", {
+          retryAfterMs:
+            retryAfterHeader === null
+              ? null
+              : safeRetryAfterMs(Number(retryAfterHeader) * 1_000),
+        });
       }
       if (!response.ok) {
         throw new XunjiProviderError("provider_unavailable");
@@ -187,7 +220,11 @@ export function createXunjiReadOnlyAdapter({
       try {
         const payload: unknown = await response.json();
         const businessError = mapBusinessError(payload);
-        if (businessError) throw new XunjiProviderError(businessError);
+        if (businessError) {
+          throw new XunjiProviderError(businessError.code, {
+            retryAfterMs: businessError.retryAfterMs,
+          });
+        }
         const trains = xunjiTrainResponseSchema.parse(payload).res.trains;
         if (trains.some((train) => train.datestr !== date)) {
           throw new XunjiProviderError("invalid_response");

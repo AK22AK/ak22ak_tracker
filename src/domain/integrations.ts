@@ -2,6 +2,19 @@ import { z } from "zod";
 
 import { localDateSchema, schemaVersion } from "./schemas";
 
+const integrationSyncOutcomeSchema = z
+  .object({
+    kind: z.enum([
+      "succeeded_with_records",
+      "succeeded_empty",
+      "failed",
+      "in_progress",
+    ]),
+    errorCode: z.string().min(1).optional(),
+    retryAfterMs: z.number().int().min(0).max(86_400_000).optional(),
+  })
+  .strict();
+
 export const integrationStatusSchema = z.object({
   provider: z.string().min(1),
   configured: z.boolean(),
@@ -15,6 +28,7 @@ export const integrationStatusSchema = z.object({
     lastSucceededDate: localDateSchema.nullable(),
     nextCursor: localDateSchema.nullable().optional(),
     lastErrorCode: z.string().nullable(),
+    lastOutcome: integrationSyncOutcomeSchema.optional(),
   }),
 });
 
@@ -35,6 +49,7 @@ const failedSyncDaySchema = z.object({
   date: localDateSchema,
   status: z.literal("failed"),
   errorCode: z.string().min(1),
+  retryAfterMs: z.number().int().min(0).max(86_400_000).optional(),
 });
 
 export const integrationCatchUpResultSchema = z.object({

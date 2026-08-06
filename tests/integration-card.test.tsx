@@ -269,4 +269,139 @@ describe("provider-neutral integration card", () => {
       ).toBeTruthy(),
     );
   });
+
+  it("shows a persisted failure immediately and disables sync while another operation runs", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "sync_in_progress" }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <IntegrationCard
+        trackerKey="anonymous-tracker"
+        definition={{
+          provider: "xunji",
+          displayName: "训记",
+          description: "Anonymous read-only training source",
+        }}
+        initialStatus={{
+          ...disconnected,
+          configured: true,
+          maskedKey: "••••••••",
+          sync: {
+            ...disconnected.sync,
+            status: "failed",
+            lastErrorCode: "membership_required",
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/仅支持 VIP 会员使用/)).toBeTruthy();
+    const button = screen.getByRole("button", { name: "同步到今天" });
+    fireEvent.click(button);
+    await waitFor(() =>
+      expect(
+        screen.getByText("另一项训记同步正在进行，请稍后继续。"),
+      ).toBeTruthy(),
+    );
+    expect(
+      (
+        screen.getByRole("button", {
+          name: /另一项训记同步正在进行/,
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+  });
+
+  it("renders and enforces a safe retry_after_ms countdown", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        provider: "xunji",
+        batch: { from: "2026-07-03", to: "2026-07-03" },
+        targetDate: "2026-07-04",
+        days: [
+          {
+            date: "2026-07-03",
+            status: "failed",
+            errorCode: "rate_limited",
+            retryAfterMs: 30_000,
+          },
+        ],
+        summary: {
+          succeeded: 0,
+          failed: 1,
+          created: 0,
+          changed: 0,
+          unchanged: 0,
+        },
+        nextCursor: "2026-07-03",
+        complete: false,
+        lastSucceededDate: null,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <IntegrationCard
+        trackerKey="anonymous-tracker"
+        definition={{
+          provider: "xunji",
+          displayName: "训记",
+          description: "Anonymous read-only training source",
+        }}
+        initialStatus={{
+          ...disconnected,
+          configured: true,
+          maskedKey: "••••••••",
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "同步到今天" }));
+    await waitFor(() =>
+      expect(screen.getByText(/约 30 秒后重试/)).toBeTruthy(),
+    );
+    expect(
+      (
+        screen.getByRole("button", {
+          name: /请等待 (30|31) 秒/,
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+  });
+
+  it.each([
+    ["succeeded_with_records", "同步成功，已发现训练记录"],
+    ["succeeded_empty", "同步成功，当天没有训练记录"],
+    ["failed", "仅支持 VIP 会员使用"],
+  ] as const)("explains the initial automatic outcome %s", (kind, text) => {
+    render(
+      <IntegrationCard
+        trackerKey="anonymous-tracker"
+        definition={{
+          provider: "xunji",
+          displayName: "训记",
+          description: "Anonymous read-only training source",
+        }}
+        initialStatus={{
+          ...disconnected,
+          configured: true,
+          maskedKey: "••••••••",
+          sync: {
+            ...disconnected.sync,
+            status: kind === "failed" ? "failed" : "succeeded",
+            lastErrorCode: kind === "failed" ? "membership_required" : null,
+            lastOutcome:
+              kind === "failed"
+                ? { kind, errorCode: "membership_required" }
+                : { kind },
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText(new RegExp(text))).toBeTruthy();
+  });
 });

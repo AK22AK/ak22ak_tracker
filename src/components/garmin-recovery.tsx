@@ -159,6 +159,23 @@ export function GarminRecovery({ trackerKey }: { trackerKey: string }) {
 
     const recoverXunji = async () => {
       if (xunjiBlocked || sessionBlocked) return;
+      const xunjiStatusKey = integrationQueryKeys.providerStatus(
+        trackerKey,
+        "xunji",
+      );
+      queryClient.setQueryData(xunjiStatusKey, (current: unknown) => {
+        const status = integrationStatusSchema.safeParse(current);
+        return status.success
+          ? {
+              ...status.data,
+              sync: {
+                ...status.data.sync,
+                status: "running" as const,
+                lastOutcome: { kind: "in_progress" as const },
+              },
+            }
+          : current;
+      });
       try {
         const response = await fetch(
           `/api/trackers/${encodeURIComponent(trackerKey)}/integrations/xunji/recovery`,
@@ -174,38 +191,60 @@ export function GarminRecovery({ trackerKey }: { trackerKey: string }) {
         );
         if (!parsed.success || disposed) return;
         const recovery = parsed.data;
-        if (recovery.status !== "completed") return;
+        if (recovery.status !== "completed") {
+          void queryClient.invalidateQueries({
+            queryKey: xunjiStatusKey,
+            exact: true,
+          });
+          return;
+        }
         const authenticationFailed = recovery.sync.days.some(
           (day) =>
             day.status === "failed" && day.errorCode === "authentication",
         );
         if (authenticationFailed) xunjiBlocked = true;
-        queryClient.setQueryData(
-          integrationQueryKeys.providerStatus(trackerKey, "xunji"),
-          (current: unknown) => {
-            const status = integrationStatusSchema.safeParse(current);
-            if (!status.success) return current;
-            const failed = recovery.sync.days.find(
-              (day) => day.status === "failed",
-            );
-            return {
-              ...status.data,
-              sync: {
-                ...status.data.sync,
-                status: failed
-                  ? ("failed" as const)
-                  : recovery.sync.complete
-                    ? ("succeeded" as const)
-                    : ("running" as const),
-                lastSucceededDate:
-                  recovery.sync.lastSucceededDate ??
-                  status.data.sync.lastSucceededDate,
-                nextCursor: recovery.sync.nextCursor,
-                lastErrorCode: failed?.errorCode ?? null,
-              },
-            };
-          },
+        const failed = recovery.sync.days.find(
+          (day) => day.status === "failed",
         );
+        const recordCount = recovery.sync.days.reduce(
+          (total, day) =>
+            total + (day.status === "succeeded" ? day.recordCount : 0),
+          0,
+        );
+        queryClient.setQueryData(xunjiStatusKey, (current: unknown) => {
+          const status = integrationStatusSchema.safeParse(current);
+          if (!status.success) return current;
+          return {
+            ...status.data,
+            sync: {
+              ...status.data.sync,
+              status: failed
+                ? ("failed" as const)
+                : recovery.sync.complete
+                  ? ("succeeded" as const)
+                  : ("running" as const),
+              lastSucceededDate:
+                recovery.sync.lastSucceededDate ??
+                status.data.sync.lastSucceededDate,
+              nextCursor: recovery.sync.nextCursor,
+              lastErrorCode: failed?.errorCode ?? null,
+              lastOutcome: failed
+                ? {
+                    kind: "failed" as const,
+                    errorCode: failed.errorCode,
+                    ...(failed.retryAfterMs === undefined
+                      ? {}
+                      : { retryAfterMs: failed.retryAfterMs }),
+                  }
+                : {
+                    kind:
+                      recordCount > 0
+                        ? ("succeeded_with_records" as const)
+                        : ("succeeded_empty" as const),
+                  },
+            },
+          };
+        });
         const affectedDates = recovery.sync.days
           .filter((day) => day.status === "succeeded")
           .map((day) => day.date);
@@ -232,6 +271,10 @@ export function GarminRecovery({ trackerKey }: { trackerKey: string }) {
         ]).catch(() => undefined);
       } catch {
         // Xunji recovery is isolated from the protected App Shell.
+        void queryClient.invalidateQueries({
+          queryKey: xunjiStatusKey,
+          exact: true,
+        });
       }
     };
 

@@ -8,6 +8,7 @@ import {
   getIntegrationStatus,
   IntegrationTrackerNotFoundError,
 } from "@/server/integrations/credentials/repository";
+import { IntegrationOperationInterruptedError } from "@/server/integrations/credentials/operation-errors";
 import { isSupportedIntegrationProvider } from "@/server/integrations/providers";
 import { createDefaultGarminRuntime } from "@/server/integrations/garmin/runtime";
 import { XunjiProviderError } from "@/server/integrations/xunji/adapter";
@@ -53,7 +54,15 @@ function providerFailure(error: XunjiProviderError) {
         : error.code === "membership_required"
           ? 403
           : 502;
-  return Response.json({ error: error.code }, { status });
+  return Response.json(
+    {
+      error: error.code,
+      ...(error.retryAfterMs === null
+        ? {}
+        : { retryAfterMs: error.retryAfterMs }),
+    },
+    { status },
+  );
 }
 
 function deepSeekFailure(error: PlanAdvisorError) {
@@ -162,6 +171,12 @@ export async function PUT(
       return Response.json({ error: "invalid_request" }, { status: 400 });
     }
     if (error instanceof XunjiProviderError) return providerFailure(error);
+    if (error instanceof IntegrationOperationInterruptedError) {
+      return Response.json(
+        { error: "sync_in_progress" },
+        { status: 409, headers: { "Cache-Control": "no-store" } },
+      );
+    }
     if (error instanceof PlanAdvisorError) return deepSeekFailure(error);
     if (error instanceof IntegrationTrackerNotFoundError) {
       return Response.json({ error: error.message }, { status: 404 });
