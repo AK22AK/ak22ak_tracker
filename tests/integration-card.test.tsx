@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -372,9 +373,71 @@ describe("provider-neutral integration card", () => {
     ).toBe(true);
   });
 
+  it("stops the retry timer and re-enables sync when the countdown expires", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-04T08:00:00.000Z"));
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        provider: "xunji",
+        batch: { from: "2026-07-03", to: "2026-07-03" },
+        targetDate: "2026-07-04",
+        days: [
+          {
+            date: "2026-07-03",
+            status: "failed",
+            errorCode: "rate_limited",
+            retryAfterMs: 30_000,
+          },
+        ],
+        summary: {
+          succeeded: 0,
+          failed: 1,
+          created: 0,
+          changed: 0,
+          unchanged: 0,
+        },
+        nextCursor: "2026-07-03",
+        complete: false,
+        lastSucceededDate: null,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <IntegrationCard
+        trackerKey="anonymous-tracker"
+        definition={{
+          provider: "xunji",
+          displayName: "训记",
+          description: "Anonymous read-only training source",
+        }}
+        initialStatus={{
+          ...disconnected,
+          configured: true,
+          maskedKey: "••••••••",
+        }}
+      />,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "同步到今天" }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("button", { name: /请等待/ })).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    expect(
+      (screen.getByRole("button", { name: "同步到今天" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it.each([
     ["succeeded_with_records", "同步成功，已发现训练记录"],
-    ["succeeded_empty", "同步成功，当天没有训练记录"],
+    ["succeeded_empty", "同步成功，本次未读取到训练记录"],
     ["failed", "仅支持 VIP 会员使用"],
   ] as const)("explains the initial automatic outcome %s", (kind, text) => {
     render(

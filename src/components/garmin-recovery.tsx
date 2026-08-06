@@ -3,6 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
+import { fetchIntegrationStatus } from "@/client/integration-api";
 import { integrationQueryKeys, trackerQueryKeys } from "@/client/query-keys";
 import {
   integrationRecoveryResponseSchema,
@@ -163,6 +164,22 @@ export function GarminRecovery({ trackerKey }: { trackerKey: string }) {
         trackerKey,
         "xunji",
       );
+      const currentStatus = integrationStatusSchema.safeParse(
+        queryClient.getQueryData(xunjiStatusKey),
+      );
+      if (!currentStatus.success) {
+        try {
+          await queryClient.fetchQuery({
+            queryKey: xunjiStatusKey,
+            queryFn: ({ signal }) =>
+              fetchIntegrationStatus(trackerKey, "xunji", signal),
+            staleTime: 5 * 60_000,
+          });
+        } catch {
+          // The recovery request remains isolated; an active settings query can
+          // still refresh the canonical status after this best-effort prefetch.
+        }
+      }
       queryClient.setQueryData(xunjiStatusKey, (current: unknown) => {
         const status = integrationStatusSchema.safeParse(current);
         return status.success
@@ -176,6 +193,27 @@ export function GarminRecovery({ trackerKey }: { trackerKey: string }) {
             }
           : current;
       });
+      const refreshXunjiStatus = () => {
+        void queryClient.invalidateQueries({
+          queryKey: xunjiStatusKey,
+          exact: true,
+        });
+        queryClient.setQueryData(xunjiStatusKey, (current: unknown) => {
+          const status = integrationStatusSchema.safeParse(current);
+          if (!status.success) return current;
+          return {
+            ...status.data,
+            sync: {
+              ...status.data.sync,
+              status: "idle" as const,
+              lastOutcome:
+                status.data.sync.lastOutcome?.kind === "in_progress"
+                  ? undefined
+                  : status.data.sync.lastOutcome,
+            },
+          };
+        });
+      };
       try {
         const response = await fetch(
           `/api/trackers/${encodeURIComponent(trackerKey)}/integrations/xunji/recovery`,
@@ -183,13 +221,20 @@ export function GarminRecovery({ trackerKey }: { trackerKey: string }) {
         );
         if (response.status === 401 || response.status === 403) {
           sessionBlocked = true;
+          refreshXunjiStatus();
           return;
         }
-        if (!response.ok) return;
+        if (!response.ok) {
+          refreshXunjiStatus();
+          return;
+        }
         const parsed = integrationRecoveryResponseSchema.safeParse(
           await response.json(),
         );
-        if (!parsed.success || disposed) return;
+        if (!parsed.success || disposed) {
+          refreshXunjiStatus();
+          return;
+        }
         const recovery = parsed.data;
         if (recovery.status !== "completed") {
           void queryClient.invalidateQueries({

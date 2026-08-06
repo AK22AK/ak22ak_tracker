@@ -73,7 +73,37 @@ function completedSync(date: string) {
 
 const xunjiNotDue = { status: "skipped", reason: "not_due" } as const;
 
-function renderRecovery(queryClient = new QueryClient()) {
+const xunjiStatus = {
+  provider: "xunji" as const,
+  configured: true,
+  maskedKey: "••••••••" as const,
+  verifiedAt: "2026-07-24T03:00:00.000Z",
+  updatedAt: "2026-07-24T03:00:00.000Z",
+  sync: {
+    status: "succeeded" as const,
+    lastAttemptAt: "2026-07-24T03:00:00.000Z",
+    lastSucceededAt: "2026-07-24T03:00:00.000Z",
+    lastSucceededDate: "2026-07-23",
+    nextCursor: null,
+    lastErrorCode: null,
+  },
+};
+
+function renderRecovery(
+  queryClient = new QueryClient(),
+  seedXunjiStatus = true,
+) {
+  if (
+    seedXunjiStatus &&
+    !queryClient.getQueryData(
+      integrationQueryKeys.providerStatus("knee-rehab", "xunji"),
+    )
+  ) {
+    queryClient.setQueryData(
+      integrationQueryKeys.providerStatus("knee-rehab", "xunji"),
+      xunjiStatus,
+    );
+  }
   return render(
     <QueryClientProvider client={queryClient}>
       <GarminRecovery trackerKey="knee-rehab" />
@@ -526,4 +556,90 @@ describe("P5a-2b coordinated Garmin foreground recovery", () => {
       }),
     );
   });
+
+  it("fetches canonical Xunji status before publishing running when the cache is empty", async () => {
+    vi.spyOn(window.navigator, "onLine", "get").mockReturnValue(true);
+    const queryClient = new QueryClient();
+    const xunjiKey = integrationQueryKeys.providerStatus("knee-rehab", "xunji");
+    let releaseXunji: ((response: Response) => void) | undefined;
+    const pendingXunji = new Promise<Response>((resolve) => {
+      releaseXunji = resolve;
+    });
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/xunji/credential")) return Response.json(xunjiStatus);
+      if (url.endsWith("/xunji/recovery")) return pendingXunji;
+      if (url.endsWith("/garmin/wellness/recovery")) {
+        return Response.json({
+          status: "skipped",
+          reason: "not_due",
+          progress: wellnessProgress,
+        });
+      }
+      return Response.json({
+        status: "skipped",
+        reason: "not_due",
+        connection,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderRecovery(queryClient, false);
+
+    await waitFor(() =>
+      expect(queryClient.getQueryData(xunjiKey)).toMatchObject({
+        configured: true,
+        sync: { status: "running", lastOutcome: { kind: "in_progress" } },
+      }),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/trackers/knee-rehab/integrations/xunji/credential",
+      expect.objectContaining({ headers: { Accept: "application/json" } }),
+    );
+
+    releaseXunji?.(Response.json(xunjiNotDue));
+  });
+
+  it.each([401, 503])(
+    "refreshes canonical Xunji status after an automatic recovery HTTP %s",
+    async (status) => {
+      vi.spyOn(window.navigator, "onLine", "get").mockReturnValue(true);
+      const queryClient = new QueryClient();
+      const xunjiKey = integrationQueryKeys.providerStatus(
+        "knee-rehab",
+        "xunji",
+      );
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      const fetchMock = vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(
+          Response.json({
+            status: "skipped",
+            reason: "not_due",
+            connection,
+          }),
+        )
+        .mockResolvedValueOnce(
+          Response.json({
+            status: "skipped",
+            reason: "not_due",
+            progress: wellnessProgress,
+          }),
+        )
+        .mockResolvedValueOnce(new Response(null, { status }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      renderRecovery(queryClient);
+
+      await waitFor(() =>
+        expect(invalidate).toHaveBeenCalledWith({
+          queryKey: xunjiKey,
+          exact: true,
+        }),
+      );
+      expect(queryClient.getQueryData(xunjiKey)).not.toMatchObject({
+        sync: { status: "running" },
+      });
+    },
+  );
 });

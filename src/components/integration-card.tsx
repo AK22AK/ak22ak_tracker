@@ -98,7 +98,7 @@ function syncOutcomeMessage(
     return `${displayName}同步成功，已发现训练记录。`;
   }
   if (outcome.kind === "succeeded_empty") {
-    return `${displayName}同步成功，当天没有训练记录。`;
+    return `${displayName}同步成功，本次未读取到训练记录。`;
   }
   return syncFailureMessage(
     displayName,
@@ -148,7 +148,11 @@ export function IntegrationCard({
 
   useEffect(() => {
     if (retryAvailableAt === null) return;
-    const timer = window.setInterval(() => setClockNow(Date.now()), 1_000);
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      setClockNow(now);
+      if (now >= retryAvailableAt) setRetryAvailableAt(null);
+    }, 1_000);
     return () => window.clearInterval(timer);
   }, [retryAvailableAt]);
 
@@ -340,7 +344,7 @@ export function IntegrationCard({
           reachedTarget
             ? recordCount > 0
               ? `已同步到今天：成功 ${succeeded} 天，发现训练记录。`
-              : `已同步到今天：成功 ${succeeded} 天，当天无训练记录。`
+              : `已同步到今天：成功 ${succeeded} 天，本次未读取到训练记录。`
             : `本次已同步：成功 ${succeeded} 天，失败 ${failed} 天。请继续同步。`,
         );
       }
