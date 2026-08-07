@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 import { calendarMonthCells, shiftMonth } from "@/domain/calendar";
@@ -329,6 +329,7 @@ export function CalendarShell({
   const returnFocusPending = useRef(false);
   const todayDayRef = useRef<HTMLButtonElement>(null);
   const selectedDayRef = useRef<HTMLButtonElement>(null);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const online = useNetworkState();
   const writesDisabled = readOnlyOffline || !online;
   const refreshingFromLocal = online && readOnlyOffline;
@@ -646,11 +647,28 @@ export function CalendarShell({
                         {taskStatusLabels[task.status]}
                       </span>
                     </div>
-                    {task.description && <p>{task.description}</p>}
-                    <details>
-                      <summary>查看当天计划</summary>
-                      <CalendarPrescription task={task} />
-                    </details>
+                    <button
+                      className="text-button calendar-task-plan-toggle"
+                      type="button"
+                      aria-expanded={expandedTaskId === task.id}
+                      aria-controls={`calendar-task-plan-${task.id}`}
+                      onClick={() =>
+                        setExpandedTaskId((current) =>
+                          current === task.id ? null : task.id,
+                        )
+                      }
+                    >
+                      查看当天计划
+                    </button>
+                    {expandedTaskId === task.id ? (
+                      <div
+                        className="calendar-task-plan"
+                        id={`calendar-task-plan-${task.id}`}
+                      >
+                        {task.description ? <p>{task.description}</p> : null}
+                        <CalendarPrescription task={task} />
+                      </div>
+                    ) : null}
                     {(task.status !== "planned" ||
                       task.actual ||
                       task.subjectiveNote) && <ActualRecord task={task} />}
