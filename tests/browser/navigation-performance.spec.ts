@@ -2204,6 +2204,119 @@ for (const scenario of pendingSettingsEscapes) {
   });
 }
 
+for (const width of [320, 375, 390, 393, 430]) {
+  test(`UI-R7 Apple Fitness layout contract stays inside the viewport at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await mockPrivateReads(page, 0);
+    await page.goto("/");
+    await expect(page.locator("[data-today-workout]")).toBeVisible();
+    await expectMobileLayoutIntegrity(page);
+
+    const contract = await page.evaluate(() => {
+      const root = document.documentElement;
+      const workout = document.querySelector<HTMLElement>(
+        "[data-today-workout]",
+      );
+      const records = document.querySelector<HTMLElement>(
+        "[data-today-records]",
+      );
+      const feedback = document.querySelector<HTMLElement>(
+        "[data-today-feedback]",
+      );
+      const nav = document.querySelector<HTMLElement>(".bottom-nav");
+      const content = document.querySelector<HTMLElement>(
+        "[data-app-shell-content]",
+      );
+      const nestedSurface = Boolean(
+        document.querySelector(
+          ".today-task .surface-card, .today-task .today-section",
+        ),
+      );
+      const navRect = nav?.getBoundingClientRect();
+      const lastControl = [
+        ...document.querySelectorAll<HTMLElement>(
+          "main button, main a[href], main summary",
+        ),
+      ].at(-1);
+      const lastRect = lastControl?.getBoundingClientRect();
+      return {
+        background: getComputedStyle(root)
+          .getPropertyValue("--ak-background")
+          .trim(),
+        gutter: getComputedStyle(
+          document.querySelector<HTMLElement>(".app-shell")!,
+        ).paddingLeft,
+        order: [workout, records, feedback].map((node) =>
+          node?.getAttribute("aria-label"),
+        ),
+        siblings: Boolean(
+          workout &&
+          records &&
+          feedback &&
+          workout.parentElement === records.parentElement &&
+          records.parentElement === feedback.parentElement,
+        ),
+        nestedSurface,
+        navCoversLastControl: Boolean(
+          navRect &&
+          lastRect &&
+          lastRect.bottom > navRect.top &&
+          lastRect.top < navRect.bottom &&
+          content?.scrollHeight === content?.clientHeight,
+        ),
+      };
+    });
+
+    expect(contract.background).toBe("#f2f2f7");
+    expect(Number.parseFloat(contract.gutter)).toBeGreaterThanOrEqual(20);
+    expect(Number.parseFloat(contract.gutter)).toBeLessThanOrEqual(32);
+    expect(contract.order).toEqual(["今日训练", "训练记录", "身体反馈"]);
+    expect(contract.siblings).toBe(true);
+    expect(contract.nestedSurface).toBe(false);
+    expect(contract.navCoversLastControl).toBe(false);
+  });
+}
+
+for (const safetyLevel of ["yellow", "red"] as const) {
+  test(`UI-R7 ${safetyLevel} safety remains before workout content`, async ({
+    page,
+  }) => {
+    const unsafeToday = structuredClone(todayAggregate);
+    unsafeToday.day.feedbackCount = 1;
+    unsafeToday.day.feedbacks = [anonymousFeedback(safetyLevel)] as never[];
+    await mockPrivateReads(
+      page,
+      0,
+      planAdvice,
+      evaluationAggregate,
+      trendsAggregate,
+      {
+        today: unsafeToday,
+      },
+    );
+    await page.goto("/");
+    await expect(
+      page.getByRole("alert", {
+        name: new RegExp(`${safetyLevel === "red" ? "红灯" : "黄灯"}安全提示`),
+      }),
+    ).toBeVisible();
+
+    const order = await page.evaluate(() => {
+      const safety = document.querySelector(".safety-banner");
+      const workout = document.querySelector("[data-today-workout]");
+      return Boolean(
+        safety &&
+        workout &&
+        safety.compareDocumentPosition(workout) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+    });
+    expect(order).toBe(true);
+  });
+}
+
 test("a loaded settings error cannot cover a later Today intent", async ({
   page,
 }) => {
