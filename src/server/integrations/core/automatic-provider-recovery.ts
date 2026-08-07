@@ -1,7 +1,9 @@
 import "server-only";
 
 export type AutomaticProviderRecoveryClaimResult =
-  "claimed" | "not_due" | "in_progress";
+  | { status: "claimed"; priorLastSucceededAt: Date | null }
+  | "not_due"
+  | "in_progress";
 
 export type AutomaticProviderRecoveryClaimStore = {
   claim(input: {
@@ -20,7 +22,7 @@ export async function runAutomaticProviderRecovery<Result>(input: {
   minimumIntervalMs: number;
   leaseMs: number;
   store: AutomaticProviderRecoveryClaimStore;
-  recover: () => Promise<Result>;
+  recover: (priorLastSucceededAt: Date | null) => Promise<Result>;
 }): Promise<
   | { status: "skipped"; reason: "not_due" | "in_progress" }
   | { status: "completed"; result: Result }
@@ -32,8 +34,11 @@ export async function runAutomaticProviderRecovery<Result>(input: {
     minimumIntervalMs: input.minimumIntervalMs,
     leaseMs: input.leaseMs,
   });
-  if (claim !== "claimed") {
+  if (typeof claim === "string") {
     return { status: "skipped", reason: claim };
   }
-  return { status: "completed", result: await input.recover() };
+  return {
+    status: "completed",
+    result: await input.recover(claim.priorLastSucceededAt),
+  };
 }

@@ -280,6 +280,7 @@ export function createXunjiRuntime({
     operation: XunjiOperation,
     requestedAt: Date,
     batchSize = 5,
+    startDate?: string,
   ) {
     return syncProviderCatchUpBatch({
       trackerId: tracker.id,
@@ -288,6 +289,7 @@ export function createXunjiRuntime({
       today: localDateInTimeZone(requestedAt, tracker.planningTimeZone),
       now: requestedAt,
       batchSize,
+      ...(startDate ? { startDate } : {}),
       store: createCatchUpStore(),
       syncDate: (date) =>
         readDate({
@@ -406,12 +408,18 @@ export function createXunjiRuntime({
             minimumIntervalMs: automaticRecoveryMinimumIntervalMs,
             leaseMs: automaticRecoveryLeaseMs,
             store: automaticRecoveryStore,
-            recover: () =>
+            recover: (priorLastSucceededAt) =>
               syncCatchUpForTracker(
                 tracker,
                 operation,
                 input.now ?? now(),
                 input.batchSize ?? 5,
+                priorLastSucceededAt
+                  ? localDateInTimeZone(
+                      priorLastSucceededAt,
+                      tracker.planningTimeZone,
+                    )
+                  : tracker.startedOn,
               ),
           }),
         );

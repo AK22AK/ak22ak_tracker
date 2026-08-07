@@ -93,7 +93,10 @@ function fixture() {
   const catchUpStore = successfulCatchUpStore();
   const historyStore = successfulHistoryStore();
   const automaticRecoveryStore: AutomaticProviderRecoveryClaimStore = {
-    claim: vi.fn(async () => "claimed" as const),
+    claim: vi.fn(async () => ({
+      status: "claimed" as const,
+      priorLastSucceededAt: null,
+    })),
   };
   const store: XunjiCredentialStore = {
     requireTracker: vi.fn(async () => tracker),
@@ -173,6 +176,40 @@ function fixture() {
 }
 
 describe("Xunji shared provider operation lease", () => {
+  it("uses the frozen prior-success local date for automatic catch-up", async () => {
+    const test = fixture();
+    vi.mocked(test.automaticRecoveryStore.claim).mockResolvedValueOnce({
+      status: "claimed",
+      priorLastSucceededAt: new Date("2026-08-05T06:36:00.000Z"),
+    });
+    vi.mocked(test.catchUpStore.loadProgress).mockResolvedValueOnce({
+      cursorDate: null,
+      overallStatus: "running",
+      states: [],
+    });
+
+    const recovery = test.runtime.recoverHistory({
+      trackerKey: "anonymous-tracker",
+      now: new Date("2026-08-06T00:27:00.000Z"),
+      batchSize: 5,
+    });
+    await test.providerEntered;
+    test.releaseProvider();
+
+    await expect(recovery).resolves.toMatchObject({
+      status: "completed",
+      result: {
+        batch: { from: "2026-08-05", to: "2026-08-06" },
+        complete: true,
+      },
+    });
+    expect(
+      vi
+        .mocked(test.adapter.fetchTrainsForDate)
+        .mock.calls.map(([input]) => input.date),
+    ).toEqual(["2026-08-05", "2026-08-06"]);
+  });
+
   it("blocks manual catch-up while automatic recovery owns the provider I/O", async () => {
     const test = fixture();
     const recovery = test.runtime.recoverHistory({

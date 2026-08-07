@@ -56,8 +56,16 @@ export function createNeonAutomaticProviderRecoveryClaimStore(
             ),
           ),
         })
-        .returning({ id: integrationSyncState.id });
-      if (claimed) return "claimed";
+        .returning({
+          id: integrationSyncState.id,
+          priorLastSucceededAt: integrationSyncState.lastSucceededAt,
+        });
+      if (claimed) {
+        return {
+          status: "claimed" as const,
+          priorLastSucceededAt: claimed.priorLastSucceededAt,
+        };
+      }
 
       const [current] = await database
         .select({

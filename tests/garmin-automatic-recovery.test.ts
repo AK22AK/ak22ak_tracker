@@ -7,8 +7,12 @@ import {
 
 describe("P3b-2d automatic Provider recovery", () => {
   it("runs at most one bounded recovery after an atomic claim", async () => {
+    const priorLastSucceededAt = new Date("2026-07-23T06:36:00.000Z");
     const store: AutomaticProviderRecoveryClaimStore = {
-      claim: vi.fn(async () => "claimed" as const),
+      claim: vi.fn(async () => ({
+        status: "claimed" as const,
+        priorLastSucceededAt,
+      })),
     };
     const recover = vi.fn(async () => ({ complete: false }));
 
@@ -24,6 +28,7 @@ describe("P3b-2d automatic Provider recovery", () => {
       }),
     ).resolves.toEqual({ status: "completed", result: { complete: false } });
     expect(recover).toHaveBeenCalledTimes(1);
+    expect(recover).toHaveBeenCalledWith(priorLastSucceededAt);
   });
 
   it.each(["not_due", "in_progress"] as const)(
@@ -53,7 +58,10 @@ describe("P3b-2d automatic Provider recovery", () => {
     const store: AutomaticProviderRecoveryClaimStore = {
       claim: vi
         .fn()
-        .mockResolvedValueOnce("claimed")
+        .mockResolvedValueOnce({
+          status: "claimed" as const,
+          priorLastSucceededAt: null,
+        })
         .mockResolvedValueOnce("in_progress"),
     };
     const recover = vi.fn(async () => ({ complete: true }));

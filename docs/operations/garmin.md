@@ -231,6 +231,10 @@ Garmin activity 与 daily wellness 均使用通用的日期同步、追赶游标
   队列。它固定只处理 `knee-rehab` 的 activity 与 daily wellness，按顺序最多推进
   activity 两天、wellness 一天，使总 Provider 日期调用仍不超过三次并落在 Route 45 秒
   上限内；任一 scope 的某日失败立即停该批，不在同一次 Cron 中重试。
+- 每次 automatic claim 在 Provider 读取前冻结该 scope 的 prior lastSucceededAt，按
+  Tracker 计划时区从对应本地日期（含该日）追到今天；首次无成功时从 startedOn 开始，
+  持久失败或有界批次 cursor 优先。该 automatic 起点不使用固定两天 overlap；手动追赶、
+  单日同步和 7/14/30 天历史补录仍按各自既有入口语义运行。
 - GitHub 镜像与 Garmin 使用两个独立 Cron，并安排在不同 UTC 小时。Garmin Cron 通过
   Vercel 现有 `CRON_SECRET` 的 Bearer Header 鉴权，在任何数据库、凭证或 Provider
   读取前失败关闭；它不使用用户 Session。
@@ -247,6 +251,10 @@ Vercel Hobby 当前每项目最多 100 个 Cron，但单个 Cron 最多每日一
 Vercel Hobby 不会替失败的 Cron 调用自动重试。单次失败由日期状态和 cursor 保留，下一
 天的同一 Cron 从持久 cursor 续跑；在此之前使用者可以通过设置页手动同步兜底。平台重试
 边界不改变 Provider lease、幂等键、30 秒 provider-level cooldown 或有界批次语义。
+
+2026-08-07 的一次性边界：此前错误运行可能已把 lastSucceededAt 推进到当天，代码修复
+不会凭空恢复前一日遗漏的 Provider 数据。使用者需通过现有单日同步或历史补录入口补齐
+2026-08-06；发布验收不会自动调用 Provider 或写入生产训练/健康数据。
 
 参考：[Vercel Cron 使用与计费](https://vercel.com/docs/cron-jobs/usage-and-pricing)、
 [Vercel Cron 管理与鉴权](https://vercel.com/docs/cron-jobs/manage-cron-jobs)。

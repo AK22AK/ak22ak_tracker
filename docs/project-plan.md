@@ -875,6 +875,25 @@ P5a-2c“恢复趋势与 DeepSeek 背景证据”均已于 2026-07-27 由项目�
   recovery POST、GitHub recovery 仍存在，以及两条 Cron schedule、Garmin activity+wellness
   协调器、训记有界批次和安全鉴权响应。
 
+#### P5b-2a：每日 Cron 从上次成功日期追赶修复
+
+状态：实现完成，待项目经理复核；本切片不调用真实 Garmin、训记或其他 Provider，
+不创建生产健康/训练数据。
+
+- automatic claim 在 Provider I/O 前冻结各 scope 的 prior `lastSucceededAt`；按
+  Tracker `planningTimeZone` 转成本地日期并含该日追赶到今天。无 prior success 时从
+  `startedOn` 开始；持久失败或有界批次 `nextCursor` 始终优先。
+- Garmin activity、Garmin wellness 与训记分别使用自己的 claim/prior/cursor；Garmin
+  仍共享 Provider operation lease，训记仍保持 provider cooldown。activity 每日最多两日、
+  wellness 每日最多一日、训记每批保持原上限；空记录日算成功，失败日停下并保留 cursor。
+- automatic path 不再以固定两天 overlap 作为产品起点；显式 7/14/30 天历史补录、人工
+  单日同步和常规手动追赶保持既有语义。外部记录继续按 Provider 稳定 ID、content hash
+  和 source version 幂等复用。
+- RED/GREEN 锁定 claim→catch-up 真实调用链、`Asia/Shanghai` 边界、长间隔多轮 cursor、
+  首次无 success、失败日续跑、零记录、三 scope 隔离、lease/cooldown 语义。此次修复
+  不包含回填已被错误推进到今天的生产状态；当前 2026-08-06 需要使用者通过现有单日
+  或历史补录入口一次性补录。
+
 #### P5c：康复计划入口与康复助手重构
 
 状态：独立验收返修完成、等待项目经理复核。

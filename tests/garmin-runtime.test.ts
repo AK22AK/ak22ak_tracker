@@ -27,7 +27,7 @@ const credential: GarminCredential = {
   }),
 };
 
-function fixture() {
+function fixture(nowValue = new Date("2026-07-24T02:00:00.000Z")) {
   let plaintext: string | null = null;
   let verifiedAt: Date | null = null;
   let lastErrorCode: string | null = null;
@@ -174,7 +174,10 @@ function fixture() {
     saveProgress: vi.fn(async () => undefined),
   };
   const automaticRecoveryStore: AutomaticProviderRecoveryClaimStore = {
-    claim: vi.fn(async () => "claimed" as const),
+    claim: vi.fn(async () => ({
+      status: "claimed" as const,
+      priorLastSucceededAt: null,
+    })),
   };
   const runtime = createGarminRuntime({
     store,
@@ -182,7 +185,7 @@ function fixture() {
     createDateSyncStore: () => dateSyncStore,
     createCatchUpStore: () => catchUpStore,
     automaticRecoveryStore,
-    now: () => new Date("2026-07-24T02:00:00.000Z"),
+    now: () => nowValue,
     assertEncryptionConfigured: vi.fn(),
   });
   return {
@@ -423,32 +426,80 @@ describe("P3b-2a Garmin token-only runtime", () => {
     expect(automaticRecoveryStore.claim).toHaveBeenCalledOnce();
   });
 
+  it("starts automatic recovery at the frozen prior success date even after claim marks it running", async () => {
+    const { runtime, client, catchUpStore, automaticRecoveryStore } = fixture(
+      new Date("2026-07-23T20:27:00.000Z"),
+    );
+    await runtime.importCredential({ trackerKey: "knee-rehab", credential });
+    await runtime.previewActivities({
+      trackerKey: "knee-rehab",
+      date: "2026-07-24",
+    });
+    vi.mocked(client.fetchActivitiesForDate).mockClear();
+    vi.mocked(automaticRecoveryStore.claim).mockResolvedValueOnce({
+      status: "claimed",
+      priorLastSucceededAt: new Date("2026-07-23T06:36:00.000Z"),
+    } as never);
+    vi.mocked(catchUpStore.loadProgress).mockResolvedValueOnce({
+      cursorDate: null,
+      overallStatus: "running",
+      states: [],
+    });
+    vi.mocked(client.fetchActivitiesForDate).mockImplementation(async () => ({
+      activities: [],
+      refreshedCredential: credential,
+    }));
+
+    const result = await runtime.recoverActivityHistory({
+      trackerKey: "knee-rehab",
+      profile: "daily_cron",
+    });
+
+    expect(result).toMatchObject({
+      status: "completed",
+      sync: { batch: { from: "2026-07-23", to: "2026-07-24" } },
+    });
+    expect(
+      vi
+        .mocked(client.fetchActivitiesForDate)
+        .mock.calls.map(([input]) => input.date),
+    ).toEqual(["2026-07-23", "2026-07-24"]);
+  });
+
   it("bounds the wellness part of the coordinated daily Cron to one day", async () => {
-    const { runtime, client, automaticRecoveryStore } = fixture();
+    const { runtime, client, automaticRecoveryStore } = fixture(
+      new Date("2026-07-23T20:27:00.000Z"),
+    );
     await runtime.importCredential({ trackerKey: "knee-rehab", credential });
     await runtime.previewActivities({
       trackerKey: "knee-rehab",
       date: "2026-07-24",
     });
     vi.mocked(client.fetchWellnessForDate).mockClear();
-    vi.mocked(client.fetchWellnessForDate).mockResolvedValue({
-      wellness: {
-        localDate: "2026-07-18",
-        steps: { status: "missing", totalSteps: null, stepGoal: null },
-        sleep: {
-          status: "missing",
-          sleepStart: null,
-          sleepEnd: null,
-          totalSleepSeconds: null,
-          deepSleepSeconds: null,
-          lightSleepSeconds: null,
-          remSleepSeconds: null,
-          awakeSleepSeconds: null,
-          sleepScore: null,
+    vi.mocked(automaticRecoveryStore.claim).mockResolvedValueOnce({
+      status: "claimed",
+      priorLastSucceededAt: new Date("2026-07-23T06:36:00.000Z"),
+    } as never);
+    vi.mocked(client.fetchWellnessForDate).mockImplementation(
+      async ({ date }) => ({
+        wellness: {
+          localDate: date,
+          steps: { status: "missing", totalSteps: null, stepGoal: null },
+          sleep: {
+            status: "missing",
+            sleepStart: null,
+            sleepEnd: null,
+            totalSleepSeconds: null,
+            deepSleepSeconds: null,
+            lightSleepSeconds: null,
+            remSleepSeconds: null,
+            awakeSleepSeconds: null,
+            sleepScore: null,
+          },
         },
-      },
-      refreshedCredential: credential,
-    });
+        refreshedCredential: credential,
+      }),
+    );
 
     const result = await runtime.recoverWellnessHistory({
       trackerKey: "knee-rehab",
@@ -458,8 +509,8 @@ describe("P3b-2a Garmin token-only runtime", () => {
     expect(result).toMatchObject({
       status: "completed",
       sync: {
-        batch: { from: "2026-07-18", to: "2026-07-18" },
-        nextCursor: "2026-07-19",
+        batch: { from: "2026-07-23", to: "2026-07-23" },
+        nextCursor: "2026-07-24",
         summary: { succeeded: 1, failed: 0 },
       },
     });

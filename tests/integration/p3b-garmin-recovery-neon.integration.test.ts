@@ -49,16 +49,28 @@ integration("P3b-2d Garmin automatic recovery claim", () => {
       claim(firstAttemptAt),
       claim(firstAttemptAt),
     ]);
-    expect(concurrent.sort()).toEqual(["claimed", "in_progress"]);
+    expect(
+      concurrent
+        .map((result) => (typeof result === "string" ? result : result.status))
+        .sort(),
+    ).toEqual(["claimed", "in_progress"]);
     const wellnessConcurrent = await Promise.all([
       claim(firstAttemptAt, "garmin_wellness"),
       claim(firstAttemptAt, "garmin_wellness"),
     ]);
-    expect(wellnessConcurrent.sort()).toEqual(["claimed", "in_progress"]);
+    expect(
+      wellnessConcurrent
+        .map((result) => (typeof result === "string" ? result : result.status))
+        .sort(),
+    ).toEqual(["claimed", "in_progress"]);
 
     await database
       .update(integrationSyncState)
-      .set({ status: "succeeded", lastAttemptAt: firstAttemptAt })
+      .set({
+        status: "succeeded",
+        lastAttemptAt: firstAttemptAt,
+        lastSucceededAt: firstAttemptAt,
+      })
       .where(
         and(
           eq(integrationSyncState.trackerId, trackerId),
@@ -68,16 +80,22 @@ integration("P3b-2d Garmin automatic recovery claim", () => {
     await expect(claim(new Date("2026-07-24T03:10:00.000Z"))).resolves.toBe(
       "not_due",
     );
-    await expect(claim(new Date("2026-07-24T03:31:00.000Z"))).resolves.toBe(
-      "claimed",
-    );
+    await expect(
+      claim(new Date("2026-07-24T03:31:00.000Z")),
+    ).resolves.toMatchObject({
+      status: "claimed",
+      priorLastSucceededAt: firstAttemptAt,
+    });
 
     await expect(claim(new Date("2026-07-24T03:32:00.000Z"))).resolves.toBe(
       "in_progress",
     );
-    await expect(claim(new Date("2026-07-24T03:34:00.000Z"))).resolves.toBe(
-      "claimed",
-    );
+    await expect(
+      claim(new Date("2026-07-24T03:34:00.000Z")),
+    ).resolves.toMatchObject({
+      status: "claimed",
+      priorLastSucceededAt: firstAttemptAt,
+    });
   }, 20_000);
 
   it("keeps activity and wellness catch-up cursors independent", async () => {

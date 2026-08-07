@@ -102,6 +102,7 @@ function resolveStartDate(input: {
   overallStatus: "idle" | "running" | "succeeded" | "failed";
   states: Map<string, ProviderCatchUpState>;
   overlapDays: number;
+  startDate?: string;
 }) {
   if (input.startedOn > input.targetDate) return null;
 
@@ -115,6 +116,12 @@ function resolveStartDate(input: {
       cursor = shiftDate(cursor, 1);
     }
     if (cursor <= input.targetDate) return cursor;
+  }
+
+  if (input.startDate) {
+    const startDate =
+      input.startDate < input.startedOn ? input.startedOn : input.startDate;
+    return startDate <= input.targetDate ? startDate : null;
   }
 
   if (input.overallStatus === "succeeded") {
@@ -146,6 +153,7 @@ export async function syncProviderCatchUpBatch(input: {
   syncDate: (date: string) => Promise<ProviderDateSyncResult>;
   batchSize?: number;
   overlapDays?: number;
+  startDate?: string;
 }): Promise<ProviderCatchUpResult> {
   const batchSize = input.batchSize ?? 5;
   const overlapDays = input.overlapDays ?? 2;
@@ -157,7 +165,8 @@ export async function syncProviderCatchUpBatch(input: {
     batchSize > 31 ||
     !Number.isInteger(overlapDays) ||
     overlapDays < 0 ||
-    overlapDays > 31
+    overlapDays > 31 ||
+    (input.startDate !== undefined && !isLocalDate(input.startDate))
   ) {
     throw new Error("invalid_catch_up_sync_input");
   }
@@ -174,6 +183,7 @@ export async function syncProviderCatchUpBatch(input: {
     (date) => states.get(date)?.status === "succeeded",
   );
   const overlapRun =
+    input.startDate !== undefined ||
     coverageWasComplete ||
     (!progress.cursorDate && progress.overallStatus === "succeeded");
   const startDate = resolveStartDate({
@@ -183,6 +193,7 @@ export async function syncProviderCatchUpBatch(input: {
     overallStatus: progress.overallStatus,
     states,
     overlapDays,
+    startDate: input.startDate,
   });
   const candidateDates = startDate ? datesBetween(startDate, input.today) : [];
   const batchDates = (

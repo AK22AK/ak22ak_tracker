@@ -95,6 +95,108 @@ describe("provider-neutral catch-up sync", () => {
     });
   });
 
+  it("uses the automatic prior-success date inclusively while the claim state is running", async () => {
+    const store = createStore({
+      overallStatus: "running",
+      states: [{ date: "2026-08-06", status: "succeeded" }],
+    });
+    const syncDate = vi.fn(async (date: string) => synced(date));
+
+    const result = await syncProviderCatchUpBatch({
+      trackerId,
+      provider: "garmin",
+      startedOn: "2026-08-01",
+      today: "2026-08-07",
+      now: new Date("2026-08-07T00:27:00.000Z"),
+      batchSize: 2,
+      startDate: "2026-08-06",
+      store,
+      syncDate,
+    });
+
+    expect(syncDate.mock.calls.map(([date]) => date)).toEqual([
+      "2026-08-06",
+      "2026-08-07",
+    ]);
+    expect(result).toMatchObject({
+      nextCursor: null,
+      complete: true,
+    });
+  });
+
+  it("keeps a persisted cursor ahead of a newer automatic prior-success date", async () => {
+    const store = createStore({
+      cursorDate: "2026-08-02",
+      overallStatus: "running",
+      states: [],
+    });
+    const syncDate = vi.fn(async (date: string) => synced(date));
+
+    await syncProviderCatchUpBatch({
+      trackerId,
+      provider: "xunji",
+      startedOn: "2026-08-01",
+      today: "2026-08-07",
+      now: new Date("2026-08-07T00:27:00.000Z"),
+      batchSize: 1,
+      startDate: "2026-08-06",
+      store,
+      syncDate,
+    });
+
+    expect(syncDate).toHaveBeenCalledWith("2026-08-02");
+  });
+
+  it("completes a long automatic gap over multiple bounded cursor rounds", async () => {
+    let cursorDate: string | null = null;
+    let overallStatus: "running" | "succeeded" = "running";
+    const states = new Map<
+      string,
+      { date: string; status: "running" | "succeeded" | "failed" }
+    >();
+    const store: ProviderCatchUpStore = {
+      loadProgress: vi.fn(async () => ({
+        cursorDate,
+        overallStatus,
+        states: [...states.values()],
+      })),
+      saveProgress: vi.fn(async (input) => {
+        cursorDate = input.cursorDate;
+        overallStatus = input.status;
+      }),
+    };
+    const syncDate = vi.fn(async (date: string) => {
+      states.set(date, { date, status: "succeeded" });
+      return synced(date);
+    });
+
+    for (let round = 0; round < 4; round += 1) {
+      await syncProviderCatchUpBatch({
+        trackerId,
+        provider: "xunji",
+        startedOn: "2026-08-01",
+        today: "2026-08-07",
+        now: new Date("2026-08-07T00:27:00.000Z"),
+        batchSize: 2,
+        startDate: "2026-08-01",
+        store,
+        syncDate,
+      });
+    }
+
+    expect(syncDate.mock.calls.map(([date]) => date)).toEqual([
+      "2026-08-01",
+      "2026-08-02",
+      "2026-08-03",
+      "2026-08-04",
+      "2026-08-05",
+      "2026-08-06",
+      "2026-08-07",
+    ]);
+    expect(cursorDate).toBeNull();
+    expect(overallStatus).toBe("succeeded");
+  });
+
   it("recovers from persisted date states instead of repeating an interrupted batch", async () => {
     const store = createStore({
       cursorDate: "2026-07-01",

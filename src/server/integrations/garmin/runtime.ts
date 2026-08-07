@@ -461,6 +461,7 @@ export function createGarminRuntime({
     tracker: Tracker,
     batchSize: 1 | 2 | 3 | 5,
     operation: GarminOperation,
+    startDate?: string,
   ) {
     const requestedAt = now();
     const today = localDateInTimeZone(requestedAt, tracker.planningTimeZone);
@@ -471,7 +472,7 @@ export function createGarminRuntime({
       today,
       now: requestedAt,
       batchSize,
-      overlapDays: 2,
+      ...(startDate ? { startDate } : { overlapDays: 2 }),
       store: createCatchUpStore(),
       syncDate: (date) =>
         syncTrackerDate({ tracker, date, requestedAt: now(), operation }),
@@ -482,6 +483,7 @@ export function createGarminRuntime({
     tracker: Tracker,
     operation: GarminOperation,
     batchSize: 1 | 2 | 3 | 5 = 5,
+    startDate?: string,
   ) {
     const requestedAt = now();
     const today = localDateInTimeZone(requestedAt, tracker.planningTimeZone);
@@ -493,7 +495,7 @@ export function createGarminRuntime({
       today,
       now: requestedAt,
       batchSize,
-      overlapDays: 2,
+      ...(startDate ? { startDate } : { overlapDays: 2 }),
       store: createCatchUpStore(),
       syncDate: (date) =>
         syncWellnessDate({ tracker, date, requestedAt: now(), operation }),
@@ -713,11 +715,17 @@ export function createGarminRuntime({
             minimumIntervalMs: automaticRecoveryMinimumIntervalMs,
             leaseMs: automaticRecoveryLeaseMs,
             store: automaticRecoveryStore,
-            recover: () =>
+            recover: (priorLastSucceededAt) =>
               syncWellnessHistoryForTracker(
                 tracker,
                 operation,
                 input.profile === "daily_cron" ? 1 : 5,
+                priorLastSucceededAt
+                  ? localDateInTimeZone(
+                      priorLastSucceededAt,
+                      tracker.planningTimeZone,
+                    )
+                  : tracker.startedOn,
               ),
           }),
         );
@@ -789,11 +797,17 @@ export function createGarminRuntime({
             minimumIntervalMs: automaticRecoveryMinimumIntervalMs,
             leaseMs: automaticRecoveryLeaseMs,
             store: automaticRecoveryStore,
-            recover: () =>
+            recover: (priorLastSucceededAt) =>
               syncActivityHistoryForTracker(
                 tracker,
                 input.profile === "daily_cron" ? 2 : 5,
                 operation,
+                priorLastSucceededAt
+                  ? localDateInTimeZone(
+                      priorLastSucceededAt,
+                      tracker.planningTimeZone,
+                    )
+                  : tracker.startedOn,
               ),
           }),
         );
