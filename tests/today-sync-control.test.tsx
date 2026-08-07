@@ -53,6 +53,9 @@ describe("Today latest-record sync control", () => {
     render(
       <TodaySyncControl trackerKey="knee-rehab" onCompleted={onCompleted} />,
     );
+    expect(screen.getByText("训练记录", { exact: true })).toBeTruthy();
+    expect(screen.getByText("尚未检查新记录", { exact: true })).toBeTruthy();
+    expect(screen.queryByText("同步状态", { exact: true })).toBeNull();
     const button = screen.getByRole("button", { name: "同步训练记录" });
 
     fireEvent.click(button);
@@ -68,6 +71,11 @@ describe("Today latest-record sync control", () => {
     expect(await screen.findByText("有记录")).toBeTruthy();
     expect(screen.getByText("本次无新记录")).toBeTruthy();
     expect(screen.getByText("需更新凭证")).toBeTruthy();
+    expect(screen.getByText("训练记录", { exact: true })).toBeTruthy();
+    expect(
+      screen.getByText("已更新 1 条，部分来源未完成", { exact: true }),
+    ).toBeTruthy();
+    expect(screen.queryByText("同步状态", { exact: true })).toBeNull();
     expect(onCompleted).toHaveBeenCalledTimes(1);
   });
 

@@ -57,6 +57,18 @@ export function TodaySyncControl({
   const recordCount =
     result?.sources.reduce((total, source) => total + source.recordCount, 0) ??
     0;
+  const hasIncompleteSource = result?.sources.some(
+    (source) => source.status !== "records" && source.status !== "no_records",
+  );
+  const syncStatus = result
+    ? hasIncompleteSource
+      ? recordCount > 0
+        ? `已更新 ${recordCount} 条，部分来源未完成`
+        : "部分来源未完成"
+      : recordCount > 0
+        ? `已更新 ${recordCount} 条`
+        : "没有新的训练记录"
+    : "尚未检查新记录";
 
   async function sync() {
     if (syncing || !online) return;
@@ -78,14 +90,8 @@ export function TodaySyncControl({
     <div className="today-sync-control">
       <div className="today-sync-heading">
         <div>
-          <strong>
-            {result
-              ? recordCount > 0
-                ? `已更新 ${recordCount} 条`
-                : "没有新的训练记录"
-              : "同步状态"}
-          </strong>
-          <p>补齐 Garmin 和训记中的最新记录。</p>
+          <strong>训练记录</strong>
+          <p>{syncing ? "正在同步" : syncStatus}</p>
         </div>
         <button
           className="secondary-button today-sync-button"

@@ -221,7 +221,9 @@ describe("today background refresh", () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText("今天还剩 1 项")).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { name: "Anonymous task", level: 2 }),
+    ).toBeTruthy();
     expect(screen.queryByText("当前在线")).toBeNull();
     expect(screen.queryByText("正常模式")).toBeNull();
     expect(screen.queryByText("康复计划 v1")).toBeNull();
@@ -314,7 +316,10 @@ describe("today background refresh", () => {
       </QueryClientProvider>,
     );
 
-    await screen.findByText("今天还剩 1 项");
+    await screen.findByRole("heading", {
+      name: "Anonymous task",
+      level: 2,
+    });
     expect(idleCallback).not.toBeNull();
     act(() => idleCallback?.());
 
@@ -686,7 +691,9 @@ describe("today background refresh", () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText("今天还剩 1 项")).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { name: "Anonymous task", level: 2 }),
+    ).toBeTruthy();
     expect(screen.getByText("Anonymous movement · 2 × 8")).toBeTruthy();
     expect(screen.getByText("待完成")).toBeTruthy();
 

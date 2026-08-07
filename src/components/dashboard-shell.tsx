@@ -168,12 +168,16 @@ function TodayTask({
   onUpdated,
   localDate,
   planVersion,
+  showStatus = true,
+  showTitle = true,
 }: {
   task: DashboardTask;
   records: ExternalTrainingRecord[];
   onUpdated: (task: DashboardTask) => void;
   localDate: string;
   planVersion: number | null;
+  showStatus?: boolean;
+  showTitle?: boolean;
 }) {
   const githubUserId = usePrivateOfflineIdentity();
   const { commands, confirmedCommandIds, enqueue, ready } =
@@ -311,16 +315,18 @@ function TodayTask({
           }
         >
           <span className="task-summary-copy">
-            <strong>{displayTitle}</strong>
+            {showTitle ? <strong>{displayTitle}</strong> : null}
             <span>{taskDoseSummary(task)}</span>
           </span>
           <span className="task-expand-icon" aria-hidden="true">
             {taskExpanded ? "⌃" : "⌄"}
           </span>
         </button>
-        <StatusPill tone={status.tone} icon={status.icon}>
-          {status.label}
-        </StatusPill>
+        {showStatus ? (
+          <StatusPill tone={status.tone} icon={status.icon}>
+            {status.label}
+          </StatusPill>
+        ) : null}
       </div>
       {records.length > 0 ? (
         <div className="task-linked-source-summary">
@@ -688,7 +694,12 @@ export function DashboardShell({
         : remainingCount > 0
           ? `今天还剩 ${remainingCount} 项`
           : "今天的任务已处理";
-  const renderTask = (task: DashboardTask) => {
+  const singleTask = tasks.length === 1 ? tasks[0] : null;
+  const renderTask = (
+    task: DashboardTask,
+    showStatus = true,
+    showTitle = true,
+  ) => {
     const taskRecords = confirmedRecords.filter(
       (record) => taskIdForRecord(record, tasks) === task.id,
     );
@@ -700,6 +711,8 @@ export function DashboardShell({
         onUpdated={onTaskUpdated}
         localDate={localDate}
         planVersion={planVersion}
+        showStatus={showStatus}
+        showTitle={showTitle}
       />
     );
   };
@@ -880,9 +893,16 @@ export function DashboardShell({
       >
         <SectionHeading
           eyebrow="今日训练"
-          title={planTitle}
+          title={singleTask ? userFacingTaskTitle(singleTask.title) : planTitle}
           aside={
-            tasks.length > 0 ? (
+            singleTask ? (
+              <StatusPill
+                tone={taskStatusPresentation[singleTask.status].tone}
+                icon={taskStatusPresentation[singleTask.status].icon}
+              >
+                {taskStatusPresentation[singleTask.status].label}
+              </StatusPill>
+            ) : tasks.length > 1 ? (
               <span className="count-badge">
                 {completedCount} / {tasks.length}
               </span>
@@ -908,9 +928,11 @@ export function DashboardShell({
         ) : null}
         {tasks.length > 0 ? (
           tasks.length === 1 ? (
-            renderTask(tasks[0]!)
+            renderTask(tasks[0]!, false, false)
           ) : (
-            <div className="task-list">{tasks.map(renderTask)}</div>
+            <div className="task-list">
+              {tasks.map((task) => renderTask(task))}
+            </div>
           )
         ) : null}
         {!adjustmentException ? (

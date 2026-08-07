@@ -1022,6 +1022,24 @@ test("UI-R5 production Today information architecture stays flat and actionable"
           .querySelector(".today-task")
           ?.parentElement?.matches("[data-today-workout]"),
       ),
+      singleTaskHeading: workout?.querySelector("h2")?.textContent?.trim(),
+      singleTaskCountBadge:
+        workout?.querySelector(".count-badge")?.textContent?.trim() ?? null,
+      singleTaskStatusPills: [
+        ...(workout?.querySelectorAll(".today-task-summary > .status-pill") ??
+          []),
+      ].map((pill) => pill.textContent?.trim()),
+      singleTaskVisibleTitleCount: workout?.querySelectorAll(
+        ".today-task-summary > .task-summary-copy > strong",
+      ).length,
+      hasLegacyRemainingHeading:
+        document.body.innerText.includes("今天还剩 1 项"),
+      recordsHeading: records
+        ?.querySelector(".today-sync-heading strong")
+        ?.textContent?.trim(),
+      recordsStatus: records
+        ?.querySelector(".today-sync-heading p")
+        ?.textContent?.trim(),
       mergedTargetCount: (
         document.body.innerText.match(/累计慢跑 12 分钟/g) ?? []
       ).length,
@@ -1044,6 +1062,14 @@ test("UI-R5 production Today information architecture stays flat and actionable"
   expect.soft(structure.feedbackIsSibling).toBe(true);
   expect.soft(structure.recordsInsideWorkout).toBe(false);
   expect.soft(structure.singleTaskIsWorkoutBody).toBe(true);
+  expect.soft(structure.singleTaskHeading).toBe("较长轻松跑");
+  expect.soft(structure.singleTaskCountBadge).toBeNull();
+  expect.soft(structure.singleTaskStatusPills).toEqual([]);
+  expect.soft(structure.singleTaskVisibleTitleCount).toBe(0);
+  expect.soft(structure.hasLegacyRemainingHeading).toBe(false);
+  expect.soft(structure.recordsHeading).toBe("训练记录");
+  expect.soft(structure.recordsHeading).not.toBe("同步状态");
+  expect.soft(structure.recordsStatus).toBe("尚未检查新记录");
   expect.soft(structure.mergedTargetCount).toBe(1);
   expect.soft(structure.nestedTaskCard).toBe(false);
   expect.soft(structure.templateDescriptionVisible).toBe(false);
@@ -1181,9 +1207,9 @@ for (const width of [320, 375, 390, 393, 430]) {
       task.getByRole("button", { name: "收起 Anonymous task" }),
     ).toBeVisible();
     await expect(task.locator(".today-task-details")).toBeVisible();
-    await expect(task.locator(".task-summary-copy strong")).toHaveText(
-      "Anonymous task",
-    );
+    await expect(
+      task.getByRole("button", { name: "收起 Anonymous task" }),
+    ).toBeVisible();
     const taskBeforeSync = await page.evaluate(() => {
       const task = document.querySelector(".today-task");
       const sync = document.querySelector("[data-today-records]");
@@ -2406,9 +2432,7 @@ test("persistent tabs keep DOM, active state and browser history URLs aligned", 
   await expectActiveTab(page, "/plan", "/plan");
   await page.getByRole("link", { name: /今日/ }).click();
   await expect(
-    page
-      .locator('[data-tab-panel="today"] .today-task-summary')
-      .getByText("Anonymous task", { exact: true }),
+    page.getByRole("button", { name: "收起 Anonymous task" }),
   ).toBeVisible();
   await expectActiveTab(page, "/", "/");
 
@@ -2425,9 +2449,7 @@ test("persistent tabs keep DOM, active state and browser history URLs aligned", 
   await expectActiveTab(page, "/plan", "/plan");
   await page.goForward();
   await expect(
-    page
-      .locator('[data-tab-panel="today"] .today-task-summary')
-      .getByText("Anonymous task", { exact: true }),
+    page.getByRole("button", { name: "收起 Anonymous task" }),
   ).toBeVisible();
   await expectActiveTab(page, "/", "/");
 });
