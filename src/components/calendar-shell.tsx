@@ -356,7 +356,7 @@ export function CalendarShell({
     <main className="app-shell calendar-shell">
       <header className="calendar-topbar">
         <div>
-          <p className="eyebrow">AK Tracker</p>
+          <p className="eyebrow">训练日历</p>
           <h1>训练日历</h1>
         </div>
         <div className="calendar-topbar-actions">

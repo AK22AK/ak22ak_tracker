@@ -43,7 +43,7 @@ export function PlanWorkspaceClient() {
     >
       <header className="trend-page-header">
         <div>
-          <p className="eyebrow">康复安排</p>
+          <p className="eyebrow">康复助手与训练安排</p>
           <h1>计划</h1>
         </div>
       </header>

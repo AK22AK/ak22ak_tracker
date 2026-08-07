@@ -259,7 +259,7 @@ export function SettingsClient() {
     >
       <header className="topbar">
         <div>
-          <p className="eyebrow">AK Tracker</p>
+          <p className="eyebrow">训练与恢复</p>
           <h1>设置</h1>
         </div>
       </header>

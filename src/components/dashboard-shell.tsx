@@ -722,8 +722,9 @@ export function DashboardShell({
       <header className="today-header">
         <div className="today-title-row">
           <div>
-            <p className="eyebrow">AK Tracker</p>
-            <h1>{today}</h1>
+            <p className="eyebrow">今日训练</p>
+            <h1>今天</h1>
+            <p className="today-date">{today}</p>
           </div>
           <button
             className="refresh-button"
