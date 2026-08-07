@@ -231,7 +231,7 @@ describe("today background refresh", () => {
       screen.getByRole("link", { name: "告诉康复助手" }).getAttribute("href"),
     ).toBe("/plan/conversation?date=2026-07-19");
     expect(
-      within(screen.getByLabelText("今日计划")).getByRole("button", {
+      within(screen.getByLabelText("今日训练")).getByRole("button", {
         name: "调整今天",
       }),
     ).toBeTruthy();
@@ -690,7 +690,7 @@ describe("today background refresh", () => {
     expect(screen.getByText("Anonymous movement · 2 × 8")).toBeTruthy();
     expect(screen.getByText("待完成")).toBeTruthy();
 
-    const plan = screen.getByRole("region", { name: "今日计划" });
+    const plan = screen.getByRole("region", { name: "今日训练" });
     const feedback = screen.getByRole("region", { name: "身体反馈" });
     expect(screen.queryByRole("region", { name: "待处理来源" })).toBeNull();
     expect(
@@ -701,7 +701,9 @@ describe("today background refresh", () => {
       name: "Anonymous task",
     }) as HTMLInputElement;
     expect(checkbox.checked).toBe(false);
-    expect(screen.getByText("训练内容")).toBeTruthy();
+    expect(
+      screen.getByText("Anonymous movement", { exact: true }),
+    ).toBeTruthy();
     expect(commandHarness.enqueue).not.toHaveBeenCalled();
 
     fireEvent.click(
@@ -711,7 +713,9 @@ describe("today background refresh", () => {
     await waitFor(() =>
       expect(commandHarness.enqueue).toHaveBeenCalledTimes(1),
     );
-    expect(screen.queryByText("训练内容")).toBeNull();
+    expect(
+      screen.queryByText("Anonymous movement", { exact: true }),
+    ).toBeNull();
   });
 
   it("shows a planned task prescription before the latest-record sync block", async () => {
@@ -735,9 +739,11 @@ describe("today background refresh", () => {
     expect(
       within(task).getByRole("button", { name: "收起 较长轻松跑" }),
     ).toBeTruthy();
-    expect(within(task).getByText("训练内容")).toBeTruthy();
+    expect(
+      within(task).getByText("Anonymous movement", { exact: true }),
+    ).toBeTruthy();
     expect(screen.queryByText(/第 5 周 ·/)).toBeNull();
-    const sync = screen.getByRole("region", { name: "同步最新记录" });
+    const sync = screen.getByRole("region", { name: "训练记录" });
     expect(
       task.compareDocumentPosition(sync) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();

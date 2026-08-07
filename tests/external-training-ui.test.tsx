@@ -303,7 +303,7 @@ describe("external training association UI", () => {
 
     await waitFor(() =>
       expect(
-        view.container.querySelector(".today-page .pending-sources-card"),
+        view.container.querySelector(".today-page .today-records-section"),
       ).toBeTruthy(),
     );
     const todayPage = view.container.querySelector<HTMLElement>(".today-page");
@@ -468,7 +468,7 @@ describe("external training association UI", () => {
     expect(
       await screen.findByText("训练内容已更新，请重新确认关联。"),
     ).toBeTruthy();
-    expect(screen.getByLabelText("待处理来源")).toBeTruthy();
+    expect(screen.getByLabelText("训练记录")).toBeTruthy();
     expect(
       (
         screen.getByRole("checkbox", {

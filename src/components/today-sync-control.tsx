@@ -29,7 +29,7 @@ function sourceStatusLabel(source: TodaySyncSource) {
 
 function SourceResults({ result }: { result: TodaySyncResult }) {
   return (
-    <ul className="today-sync-results" aria-label="最新记录同步结果">
+    <ul className="today-sync-results" aria-label="来源同步结果">
       {result.sources.map((source) => (
         <li key={source.source} data-sync-source={source.source}>
           <span>{sourceNames[source.source]}</span>
@@ -51,6 +51,12 @@ export function TodaySyncControl({
   const [result, setResult] = useState<TodaySyncResult | null>(null);
   const [failed, setFailed] = useState(false);
   const online = useNetworkState();
+  const hasContinuation = result?.sources.some(
+    (source) => source.continueAvailable,
+  );
+  const recordCount =
+    result?.sources.reduce((total, source) => total + source.recordCount, 0) ??
+    0;
 
   async function sync() {
     if (syncing || !online) return;
@@ -69,11 +75,17 @@ export function TodaySyncControl({
   }
 
   return (
-    <section className="today-sync-control" aria-label="同步最新记录">
+    <div className="today-sync-control">
       <div className="today-sync-heading">
         <div>
-          <strong>最新记录</strong>
-          <p>补齐各来源尚未同步的记录。</p>
+          <strong>
+            {result
+              ? recordCount > 0
+                ? `已更新 ${recordCount} 条`
+                : "没有新的训练记录"
+              : "同步状态"}
+          </strong>
+          <p>补齐 Garmin 和训记中的最新记录。</p>
         </div>
         <button
           className="secondary-button today-sync-button"
@@ -81,11 +93,17 @@ export function TodaySyncControl({
           disabled={syncing || !online}
           onClick={() => void sync()}
         >
-          {syncing ? "同步中…" : online ? "同步最新记录" : "联网后同步"}
+          {syncing
+            ? "正在同步…"
+            : online
+              ? hasContinuation
+                ? "继续同步"
+                : "同步训练记录"
+              : "联网后同步"}
         </button>
       </div>
       {syncing ? (
-        <ul className="today-sync-results" aria-label="最新记录同步结果">
+        <ul className="today-sync-results" aria-label="来源同步结果">
           {Object.entries(sourceNames).map(([source, name]) => (
             <li key={source} data-sync-source={source}>
               <span>{name}</span>
@@ -100,6 +118,6 @@ export function TodaySyncControl({
           暂时无法同步，请稍后再试。
         </p>
       ) : null}
-    </section>
+    </div>
   );
 }

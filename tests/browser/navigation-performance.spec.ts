@@ -869,7 +869,7 @@ async function expectMobileLayoutIntegrity(page: Page) {
         window.getComputedStyle(element).display !== "inline",
     );
     const cardSelector =
-      ".surface-card, .feedback-card, .feedback-compact, .today-plan-card, .task-card, .settings-list-group, .calendar-day-detail, .feedback-safety-preview";
+      ".surface-card, .today-section, .today-task, .settings-list-group, .calendar-day-detail, .feedback-safety-preview";
     const errors = [
       ...controls.flatMap((control) => {
         const rect = control.getBoundingClientRect();
@@ -954,6 +954,102 @@ async function expectMobileLayoutIntegrity(page: Page) {
   expect(layout.lastControlCoveredByBottomNav).toBe(false);
 }
 
+test("UI-R5 production Today information architecture stays flat and actionable", async ({
+  page,
+}) => {
+  const fixture = structuredClone(todayAggregate);
+  Object.assign(fixture.day.tasks[0], {
+    title: "较长轻松跑",
+    description: "周五下班后执行；当前限制以膝部组织耐受为准。",
+    prescription: {
+      warmup: "快走 5 分钟",
+      main: "慢跑 2 分钟 + 步行 1 分钟，循环 6 次",
+      target: "累计慢跑 12 分钟",
+      cooldown: "快走 5 分钟",
+      gate: "仅在本周此前跑步和力量训练均为绿灯时执行",
+    },
+  });
+  await mockPrivateReads(
+    page,
+    0,
+    planAdvice,
+    evaluationAggregate,
+    trendsAggregate,
+    { today: fixture },
+  );
+  await page.goto("/");
+  await expect(page.getByRole("region", { name: "今日训练" })).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "训练记录", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByRole("article", { name: "较长轻松跑" })).toBeVisible();
+  await expect(page.getByText("热身", { exact: true })).toBeVisible();
+  await expect(page.getByText("主训练", { exact: true })).toBeVisible();
+  await expect(page.getByText("结束", { exact: true })).toBeVisible();
+  await expect(page.getByText("训练内容", { exact: true })).toHaveCount(0);
+  await page.screenshot({
+    path: "/tmp/ak22ak-ui-r5-after.png",
+    fullPage: true,
+  });
+
+  const structure = await page.evaluate(() => {
+    const workout = document.querySelector<HTMLElement>("[data-today-workout]");
+    const records = document.querySelector<HTMLElement>("[data-today-records]");
+    const feedback = document.querySelector<HTMLElement>(
+      "[data-today-feedback]",
+    );
+    return {
+      todaySections: [workout, records, feedback].map((section) =>
+        section?.getAttribute("aria-label"),
+      ),
+      recordsIsSibling: Boolean(
+        workout &&
+        records &&
+        workout.parentElement === records.parentElement &&
+        workout.compareDocumentPosition(records) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+      feedbackIsSibling: Boolean(
+        records &&
+        feedback &&
+        records.parentElement === feedback.parentElement &&
+        records.compareDocumentPosition(feedback) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+      recordsInsideWorkout: Boolean(workout?.contains(records)),
+      singleTaskIsWorkoutBody: Boolean(
+        document
+          .querySelector(".today-task")
+          ?.parentElement?.matches("[data-today-workout]"),
+      ),
+      mergedTargetCount: (
+        document.body.innerText.match(/累计慢跑 12 分钟/g) ?? []
+      ).length,
+      nestedTaskCard: Boolean(
+        document.querySelector(".today-plan-card .task-card"),
+      ),
+      templateDescriptionVisible: document.body.innerText.includes(
+        "周五下班后执行；当前限制以膝部组织耐受为准。",
+      ),
+      executionConditionVisible: document.body.innerText.includes(
+        "仅在本周此前跑步和力量训练均为绿灯时执行",
+      ),
+    };
+  });
+
+  expect
+    .soft(structure.todaySections)
+    .toEqual(["今日训练", "训练记录", "身体反馈"]);
+  expect.soft(structure.recordsIsSibling).toBe(true);
+  expect.soft(structure.feedbackIsSibling).toBe(true);
+  expect.soft(structure.recordsInsideWorkout).toBe(false);
+  expect.soft(structure.singleTaskIsWorkoutBody).toBe(true);
+  expect.soft(structure.mergedTargetCount).toBe(1);
+  expect.soft(structure.nestedTaskCard).toBe(false);
+  expect.soft(structure.templateDescriptionVisible).toBe(false);
+  expect.soft(structure.executionConditionVisible).toBe(false);
+});
+
 for (const width of [320, 375, 390, 430]) {
   test(`today feedback action remains in flow at ${width}px`, async ({
     page,
@@ -979,7 +1075,9 @@ for (const width of [320, 375, 390, 430]) {
       const feedbackAction = feedbackCard?.querySelector<HTMLElement>(
         'a[href="/feedback"]',
       );
-      const planCard = document.querySelector<HTMLElement>(".today-plan-card");
+      const planCard = document.querySelector<HTMLElement>(
+        ".today-training-section",
+      );
       const adjustment = [
         ...document.querySelectorAll<HTMLButtonElement>("button"),
       ].find((button) => button.textContent?.trim() === "调整今天");
@@ -1078,17 +1176,17 @@ for (const width of [320, 375, 390, 393, 430]) {
     );
     await page.goto("/");
 
-    const task = page.locator(".task-card").first();
+    const task = page.locator(".today-task").first();
     await expect(
       task.getByRole("button", { name: "收起 Anonymous task" }),
     ).toBeVisible();
-    await expect(task.locator(".task-card-details")).toBeVisible();
+    await expect(task.locator(".today-task-details")).toBeVisible();
     await expect(task.locator(".task-summary-copy strong")).toHaveText(
       "Anonymous task",
     );
     const taskBeforeSync = await page.evaluate(() => {
-      const task = document.querySelector(".task-card");
-      const sync = document.querySelector('[aria-label="同步最新记录"]');
+      const task = document.querySelector(".today-task");
+      const sync = document.querySelector("[data-today-records]");
       return task && sync
         ? Boolean(
             task.compareDocumentPosition(sync) &
@@ -1098,9 +1196,11 @@ for (const width of [320, 375, 390, 393, 430]) {
     });
     expect(taskBeforeSync).toBe(true);
 
-    const syncButton = page.getByRole("button", { name: "同步最新记录" });
+    const syncButton = page.getByRole("button", { name: "同步训练记录" });
     await syncButton.dblclick();
-    await expect(page.getByRole("button", { name: "同步中…" })).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "正在同步…" }),
+    ).toBeDisabled();
     expect(requests).toBe(1);
     release();
 
@@ -1986,7 +2086,7 @@ const pendingSettingsEscapes = [
     detailName: /Garmin/,
     rootHref: "/",
     rootName: /今日/,
-    rootSelector: '[data-tab-panel="today"] .task-card-summary',
+    rootSelector: '[data-tab-panel="today"] .today-task-summary',
     settleDelayMs: 0,
   },
   {
@@ -2013,7 +2113,7 @@ const pendingSettingsEscapes = [
     detailName: /账号/,
     rootHref: "/",
     rootName: /今日/,
-    rootSelector: '[data-tab-panel="today"] .task-card-summary',
+    rootSelector: '[data-tab-panel="today"] .today-task-summary',
     settleDelayMs: 120,
   },
 ] as const;
@@ -2095,7 +2195,7 @@ test("a loaded settings error cannot cover a later Today intent", async ({
 
   await page.getByRole("link", { name: /今日/ }).click();
   await expect(
-    page.locator('[data-tab-panel="today"] .task-card-summary'),
+    page.locator('[data-tab-panel="today"] .today-task-summary'),
   ).toBeVisible();
   await expectActiveTab(page, "/", "/");
   await expect(page.locator(".settings-detail-page:visible")).toHaveCount(0);
@@ -2307,7 +2407,7 @@ test("persistent tabs keep DOM, active state and browser history URLs aligned", 
   await page.getByRole("link", { name: /今日/ }).click();
   await expect(
     page
-      .locator('[data-tab-panel="today"] .task-card-summary')
+      .locator('[data-tab-panel="today"] .today-task-summary')
       .getByText("Anonymous task", { exact: true }),
   ).toBeVisible();
   await expectActiveTab(page, "/", "/");
@@ -2326,7 +2426,7 @@ test("persistent tabs keep DOM, active state and browser history URLs aligned", 
   await page.goForward();
   await expect(
     page
-      .locator('[data-tab-panel="today"] .task-card-summary')
+      .locator('[data-tab-panel="today"] .today-task-summary')
       .getByText("Anonymous task", { exact: true }),
   ).toBeVisible();
   await expectActiveTab(page, "/", "/");
@@ -2353,7 +2453,7 @@ for (const width of [320, 375, 390, 430]) {
     await page.goto("/");
 
     const todayPanel = page.locator('[data-tab-panel="today"]');
-    await expect(todayPanel.getByLabel("待处理来源")).toBeVisible();
+    await expect(todayPanel.getByLabel("外部活动与训练记录")).toBeVisible();
     await expect(todayPanel.getByRole("heading", { name: "步行" })).toHaveCount(
       0,
     );
@@ -2372,7 +2472,7 @@ for (const width of [320, 375, 390, 430]) {
     await expect(
       todayPanel.getByText("已关联 1 条来源 · Garmin"),
     ).toBeVisible();
-    await expect(todayPanel.getByLabel("待处理来源")).toHaveCount(0);
+    await expect(todayPanel.getByLabel("外部活动与训练记录")).toHaveCount(0);
     await expect(taskCheckbox).not.toBeChecked();
     await expect.poll(() => counters.association).toBe(1);
 

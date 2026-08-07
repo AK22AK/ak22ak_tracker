@@ -53,12 +53,12 @@ describe("Today latest-record sync control", () => {
     render(
       <TodaySyncControl trackerKey="knee-rehab" onCompleted={onCompleted} />,
     );
-    const button = screen.getByRole("button", { name: "同步最新记录" });
+    const button = screen.getByRole("button", { name: "同步训练记录" });
 
     fireEvent.click(button);
     fireEvent.click(button);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: "同步中…" })).toHaveProperty(
+    expect(screen.getByRole("button", { name: "正在同步…" })).toHaveProperty(
       "disabled",
       true,
     );
@@ -84,7 +84,7 @@ describe("Today latest-record sync control", () => {
     vi.spyOn(window.navigator, "onLine", "get").mockReturnValue(true);
     fireEvent(window, new Event("online"));
 
-    expect(screen.getByRole("button", { name: "同步最新记录" })).toHaveProperty(
+    expect(screen.getByRole("button", { name: "同步训练记录" })).toHaveProperty(
       "disabled",
       false,
     );

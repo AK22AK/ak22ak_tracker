@@ -2967,11 +2967,32 @@ summary:focus-visible {
   line-height: 1.375rem;
 }
 
-.today-plan-card,
-.feedback-card,
-.pending-sources-card {
+.today-section {
   margin: 0;
   padding: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.today-training-section {
+  padding-bottom: 0.75rem;
+}
+
+.today-records-section {
+  padding: 0.75rem;
+}
+
+.today-records-review {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.today-records-review .external-training-section {
+  margin-top: 0;
 }
 
 .empty-state-copy,
@@ -2983,29 +3004,32 @@ summary:focus-visible {
 }
 
 .task-list {
-  gap: 0.75rem;
-  margin-top: 1rem;
+  display: grid;
+  gap: 0;
+  margin-top: 0.75rem;
 }
 
-.task-card {
-  padding: 0;
-  overflow: clip;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-card);
-  background: var(--color-surface);
+.today-task {
+  min-width: 0;
+  padding: 0.25rem 0 0.75rem;
   color: var(--color-ink);
 }
 
-.task-card.completed {
+.today-task + .today-task {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.today-task.completed {
   background: var(--color-success-soft);
 }
 
-.task-card.skipped {
+.today-task.skipped {
   background: var(--color-surface-soft);
   opacity: 1;
 }
 
-.task-card-summary {
+.today-task-summary {
   display: grid;
   grid-template-columns: 2.75rem minmax(0, 1fr) max-content;
   align-items: start;
@@ -3101,22 +3125,22 @@ summary:focus-visible {
   font-size: 1rem;
 }
 
-.task-card-summary > .status-pill {
+.today-task-summary > .status-pill {
   margin-top: 0.25rem;
 }
 
-.task-card-details {
+.today-task-details {
   display: grid;
   gap: 1rem;
   padding: 0 1rem 1rem;
   border-top: 1px solid var(--color-border);
 }
 
-.task-detail-block {
+.today-task-prescription {
   padding-top: 1rem;
 }
 
-.task-detail-block h3,
+.today-task-notes,
 .manual-entry-content > strong {
   margin: 0;
   color: var(--color-ink);
@@ -3124,41 +3148,69 @@ summary:focus-visible {
   line-height: 1.25rem;
 }
 
-.task-description {
-  margin: 0.5rem 0 0;
-  color: var(--color-muted);
-  font-size: 0.875rem;
-  line-height: 1.375rem;
-}
-
-.prescription {
-  gap: 0.625rem;
+.today-task-notes {
   margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.today-task-notes summary {
+  min-height: var(--control-height);
+  padding: 0.625rem 0;
+  color: var(--color-brand);
+  font-size: 0.8125rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.today-task-notes p {
+  margin-top: 0.5rem;
   color: var(--color-muted);
   font-size: 0.875rem;
   line-height: 1.375rem;
 }
 
-.prescription p strong,
-.prescription li strong {
+.today-prescription {
+  display: grid;
+  gap: 0.625rem;
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  line-height: 1.375rem;
+}
+
+.today-prescription p {
+  display: grid;
+  gap: 0.125rem;
+}
+
+.today-prescription p strong,
+.today-prescription li strong {
   color: var(--color-ink);
 }
 
-.prescription li {
+.today-prescription ul {
+  display: grid;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.today-prescription li {
+  display: grid;
+  gap: 0.125rem;
   align-items: baseline;
   padding: 0.5rem 0;
   border-bottom: 1px solid var(--color-border);
 }
 
-.prescription li:last-child {
+.today-prescription li:last-child {
   border-bottom: 0;
 }
 
 .manual-entry-fallback {
-  overflow: hidden;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-surface-soft);
+  margin-top: 0.25rem;
+  border-top: 1px solid var(--color-border);
 }
 
 .manual-entry-toggle {
@@ -3181,7 +3233,7 @@ summary:focus-visible {
 .manual-entry-content {
   display: grid;
   gap: 0.875rem;
-  padding: 0 0.75rem 0.75rem;
+  padding: 0 0 0.75rem;
 }
 
 .task-actual,
@@ -3607,7 +3659,7 @@ summary:focus-visible {
   line-height: 1.125rem;
 }
 
-.pending-sources-card > .external-training-section {
+.today-records-review > .external-training-section {
   margin-top: 1rem;
   padding-top: 1rem;
   border-top: 1px solid var(--color-border);
@@ -4781,11 +4833,11 @@ html[data-ak-shell-geometry-ready="false"]
     width: 100%;
   }
 
-  .task-card-summary {
+  .today-task-summary {
     grid-template-columns: 2.75rem minmax(0, 1fr);
   }
 
-  .task-card-summary > .status-pill {
+  .today-task-summary > .status-pill {
     grid-column: 2;
     justify-self: start;
     margin-top: 0;
@@ -5362,7 +5414,7 @@ html[data-ak-shell-geometry-ready="false"]
 
 @media (prefers-contrast: more) {
   .surface-card,
-  .task-card,
+  .today-task,
   .external-training-card,
   input,
   select,

@@ -78,7 +78,7 @@ function taskDoseSummary(task: DashboardTask) {
     const summary = valueText(task.prescription[key]);
     if (summary) return summary;
   }
-  return task.description ?? "查看任务详情";
+  return "查看训练详情";
 }
 
 const taskStatusPresentation: Record<
@@ -128,24 +128,23 @@ function Prescription({
   const exercises = prescriptionExercises(prescription);
   const summaryKeys = [
     ["warmup", "热身"],
-    ["effort", "强度"],
     ["main", "主训练"],
-    ["target", "目标"],
     ["cooldown", "结束"],
-    ["gate", "执行条件"],
-    ["progression", "进阶"],
-    ["substitution", "替换规则"],
-    ["note", "说明"],
   ] as const;
+  const target = valueText(prescription.target);
 
   return (
-    <div className="prescription">
+    <div className="today-prescription">
       {summaryKeys.map(([key, label]) => {
         const text = valueText(prescription[key]);
-        return text ? (
+        const displayText =
+          key === "main" && text && target && target !== text
+            ? `${text}（目标：${target}）`
+            : text;
+        return displayText ? (
           <p key={key}>
             <strong>{label}</strong>
-            {text}
+            {displayText}
           </p>
         ) : null;
       })}
@@ -163,7 +162,7 @@ function Prescription({
   );
 }
 
-function TaskCard({
+function TodayTask({
   task,
   records,
   onUpdated,
@@ -279,11 +278,11 @@ function TaskCard({
 
   return (
     <article
-      className={`task-card ${task.status}`}
+      className={`today-task ${task.status}`}
       data-status={task.status}
       aria-label={displayTitle}
     >
-      <div className="task-card-summary">
+      <div className="today-task-summary">
         <label className="task-check" title={`标记${displayTitle}完成`}>
           <input
             type="checkbox"
@@ -341,14 +340,17 @@ function TaskCard({
         </div>
       ) : null}
       {taskExpanded ? (
-        <div className="task-card-details" id={detailsId}>
-          <div className="task-detail-block">
-            <h3>训练内容</h3>
-            {task.description ? (
-              <p className="task-description">{task.description}</p>
-            ) : null}
+        <div className="today-task-details" id={detailsId}>
+          <div className="today-task-prescription">
             <Prescription prescription={task.prescription} />
           </div>
+
+          {task.description ? (
+            <details className="today-task-notes">
+              <summary>查看训练说明</summary>
+              <p>{task.description}</p>
+            </details>
+          ) : null}
 
           <div className="manual-entry-fallback">
             <button
@@ -686,6 +688,21 @@ export function DashboardShell({
         : remainingCount > 0
           ? `今天还剩 ${remainingCount} 项`
           : "今天的任务已处理";
+  const renderTask = (task: DashboardTask) => {
+    const taskRecords = confirmedRecords.filter(
+      (record) => taskIdForRecord(record, tasks) === task.id,
+    );
+    return (
+      <TodayTask
+        key={task.id}
+        task={task}
+        records={taskRecords}
+        onUpdated={onTaskUpdated}
+        localDate={localDate}
+        planVersion={planVersion}
+      />
+    );
+  };
 
   return (
     <main className="app-shell today-page" data-today-content-visible="true">
@@ -856,9 +873,13 @@ export function DashboardShell({
         </section>
       ) : null}
 
-      <SurfaceCard className="today-plan-card" aria-label="今日计划">
+      <section
+        className="today-section today-training-section"
+        aria-label="今日训练"
+        data-today-workout
+      >
         <SectionHeading
-          eyebrow="今日计划"
+          eyebrow="今日训练"
           title={planTitle}
           aside={
             tasks.length > 0 ? (
@@ -886,28 +907,12 @@ export function DashboardShell({
           </p>
         ) : null}
         {tasks.length > 0 ? (
-          <div className="task-list">
-            {tasks.map((task) => {
-              const taskRecords = confirmedRecords.filter(
-                (record) => taskIdForRecord(record, tasks) === task.id,
-              );
-              return (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  records={taskRecords}
-                  onUpdated={onTaskUpdated}
-                  localDate={localDate}
-                  planVersion={planVersion}
-                />
-              );
-            })}
-          </div>
+          tasks.length === 1 ? (
+            renderTask(tasks[0]!)
+          ) : (
+            <div className="task-list">{tasks.map(renderTask)}</div>
+          )
         ) : null}
-        <TodaySyncControl
-          trackerKey="knee-rehab"
-          onCompleted={onLatestSyncCompleted}
-        />
         {!adjustmentException ? (
           <div className="today-adjustment-entry">
             <button
@@ -921,7 +926,40 @@ export function DashboardShell({
             </button>
           </div>
         ) : null}
-      </SurfaceCard>
+      </section>
+
+      <section
+        className="today-section today-records-section"
+        aria-label="训练记录"
+        data-today-records
+      >
+        <TodaySyncControl
+          trackerKey="knee-rehab"
+          onCompleted={onLatestSyncCompleted}
+        />
+        {pendingRecords.length > 0 ? (
+          <div className="today-records-review">
+            <SectionHeading
+              eyebrow="待确认"
+              title={`${pendingRecords.length} 条来源记录`}
+              aside={
+                <StatusPill tone="attention" icon="!">
+                  待处理
+                </StatusPill>
+              }
+            />
+            <ExternalTrainingSection
+              trackerKey="knee-rehab"
+              records={pendingRecords}
+              tasks={tasks}
+              heading="来源详情"
+              onUpdated={handleExternalTrainingUpdated}
+              onConflict={onExternalTrainingConflict}
+              readOnly={writesDisabled}
+            />
+          </div>
+        ) : null}
+      </section>
 
       {adjustmentPanelOpen ? (
         <div id={adjustmentPanelId} className="today-adjustment-panel">
@@ -950,31 +988,12 @@ export function DashboardShell({
         </div>
       ) : null}
 
-      {pendingRecords.length > 0 ? (
-        <SurfaceCard className="pending-sources-card" aria-label="待处理来源">
-          <SectionHeading
-            eyebrow="活动与训练来源"
-            title={`${pendingRecords.length} 条需要确认`}
-            aside={
-              <StatusPill tone="attention" icon="!">
-                待处理
-              </StatusPill>
-            }
-          />
-          <ExternalTrainingSection
-            trackerKey="knee-rehab"
-            records={pendingRecords}
-            tasks={tasks}
-            heading="需要确认的来源记录"
-            onUpdated={handleExternalTrainingUpdated}
-            onConflict={onExternalTrainingConflict}
-            readOnly={writesDisabled}
-          />
-        </SurfaceCard>
-      ) : null}
-
       {currentSafety && currentSafety !== "green" ? (
-        <SurfaceCard className="feedback-card" aria-label="身体反馈">
+        <section
+          className="today-section feedback-card"
+          aria-label="身体反馈"
+          data-today-feedback
+        >
           <SectionHeading
             eyebrow="身体反馈"
             title={
@@ -1002,9 +1021,13 @@ export function DashboardShell({
               告诉康复助手
             </Link>
           </div>
-        </SurfaceCard>
+        </section>
       ) : (
-        <section className="feedback-compact" aria-label="身体反馈">
+        <section
+          className="today-section feedback-compact"
+          aria-label="身体反馈"
+          data-today-feedback
+        >
           <div className="feedback-compact-copy">
             <strong>身体反馈</strong>
             <span>
