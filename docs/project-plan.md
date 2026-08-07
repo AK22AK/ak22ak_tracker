@@ -877,9 +877,11 @@ P5a-2c“恢复趋势与 DeepSeek 背景证据”均已于 2026-07-27 由项目�
 
 #### P5b-2a：每日 Cron 从上次成功日期追赶修复
 
-状态：实现完成，待项目经理复核；本切片不调用真实 Garmin、训记或其他 Provider，
+状态：项目经理验收通过；本切片不调用真实 Garmin、训记或其他 Provider，
 不创建生产健康/训练数据。
 
+- 项目经理独立复核确认代码、Production READY/正式 alias、health/database、三条 Cron
+  匿名 401 和 Cron schedule 均符合契约；真实下一次自然 Cron 仍待使用者观察。
 - automatic claim 在 Provider I/O 前冻结各 scope 的 prior `lastSucceededAt`；按
   Tracker `planningTimeZone` 转成本地日期并含该日追赶到今天。无 prior success 时从
   `startedOn` 开始；持久失败或有界批次 `nextCursor` 始终优先。
@@ -891,8 +893,8 @@ P5a-2c“恢复趋势与 DeepSeek 背景证据”均已于 2026-07-27 由项目�
   和 source version 幂等复用。
 - RED/GREEN 锁定 claim→catch-up 真实调用链、`Asia/Shanghai` 边界、长间隔多轮 cursor、
   首次无 success、失败日续跑、零记录、三 scope 隔离、lease/cooldown 语义。此次修复
-  不包含回填已被错误推进到今天的生产状态；当前 2026-08-06 需要使用者通过现有单日
-  或历史补录入口一次性补录。
+  不包含回填已被旧错误推进到今天的生产状态；当前 2026-08-06 需要使用者通过现有
+  单日或历史补录入口一次性补录。生产验收未调用真实 Provider。
 
 #### P5c：康复计划入口与康复助手重构
 
