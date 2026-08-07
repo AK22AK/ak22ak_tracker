@@ -20,9 +20,16 @@ vi.mock("@/server/integrations/xunji/runtime", () => ({
   recoverXunjiHistory: harness.recoverXunjiHistory,
 }));
 
-import { POST } from "@/app/api/trackers/[trackerKey]/integrations/sync-latest/route";
+import {
+  maxDuration,
+  POST,
+} from "@/app/api/trackers/[trackerKey]/integrations/sync-latest/route";
 
 describe("Today latest-record sync route", () => {
+  it("allows enough time for the bounded three-source foreground catch-up", () => {
+    expect(maxDuration).toBe(45);
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     harness.getAuthorizedSession.mockResolvedValue({ user: { githubId: "1" } });

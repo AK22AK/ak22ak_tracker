@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { syncLatestIntegrationRecords } from "@/client/integration-api";
+import { useNetworkState } from "@/client/use-network-state";
 import type { TodaySyncResult, TodaySyncSource } from "@/domain/today-sync";
 
 const sourceNames: Record<TodaySyncSource["source"], string> = {
@@ -16,7 +17,9 @@ function sourceStatusLabel(source: TodaySyncSource) {
     return source.continueAvailable ? "有记录 · 继续同步" : "有记录";
   }
   if (source.status === "no_records") {
-    return source.continueAvailable ? "无记录 · 继续同步" : "无记录";
+    return source.continueAvailable
+      ? "本次无新记录 · 继续同步"
+      : "本次无新记录";
   }
   if (source.status === "temporarily_failed") return "暂时失败";
   if (source.status === "needs_credentials") return "需更新凭证";
@@ -47,9 +50,10 @@ export function TodaySyncControl({
   const [syncing, setSyncing] = useState(false);
   const [result, setResult] = useState<TodaySyncResult | null>(null);
   const [failed, setFailed] = useState(false);
+  const online = useNetworkState();
 
   async function sync() {
-    if (syncing || !navigator.onLine) return;
+    if (syncing || !online) return;
     setSyncing(true);
     setFailed(false);
     setResult(null);
@@ -69,19 +73,15 @@ export function TodaySyncControl({
       <div className="today-sync-heading">
         <div>
           <strong>最新记录</strong>
-          <p>一次更新今天已连接的活动、睡眠、步数和训记。</p>
+          <p>补齐各来源尚未同步的记录。</p>
         </div>
         <button
           className="secondary-button today-sync-button"
           type="button"
-          disabled={syncing || !navigator.onLine}
+          disabled={syncing || !online}
           onClick={() => void sync()}
         >
-          {syncing
-            ? "同步中…"
-            : navigator.onLine
-              ? "同步最新记录"
-              : "联网后同步"}
+          {syncing ? "同步中…" : online ? "同步最新记录" : "联网后同步"}
         </button>
       </div>
       {syncing ? (

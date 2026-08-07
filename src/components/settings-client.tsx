@@ -18,7 +18,7 @@ import type { IntegrationStatus } from "@/domain/integrations";
 
 const trackerKey = "knee-rehab";
 
-type RowStatus = { detail: string; needsAttention: boolean };
+type RowStatus = { detail?: string; needsAttention: boolean };
 
 const actionableIntegrationErrorCodes = new Set([
   "authentication",
@@ -51,8 +51,7 @@ function garminRowStatus(status: GarminConnectionStatus): RowStatus {
   if (syncErrorCode === "invalid_response") {
     return { detail: "响应异常，将自动重试", needsAttention: false };
   }
-  if (status.state === "connected")
-    return { detail: "无需处理", needsAttention: false };
+  if (status.state === "connected") return { needsAttention: false };
   return { detail: "尚未连接", needsAttention: false };
 }
 
@@ -113,13 +112,13 @@ function integrationRowStatus(
     };
   if (status.sync.status === "succeeded") {
     if (status.sync.lastOutcome?.kind === "succeeded_with_records") {
-      return { detail: "无需处理", needsAttention: false };
+      return { needsAttention: false };
     }
     if (status.sync.lastOutcome?.kind === "succeeded_empty") {
-      return { detail: "无需处理", needsAttention: false };
+      return { needsAttention: false };
     }
   }
-  if (status.configured) return { detail: "无需处理", needsAttention: false };
+  if (status.configured) return { needsAttention: false };
   return { detail: "尚未连接", needsAttention: false };
 }
 
@@ -127,8 +126,7 @@ function deepSeekRowStatus(status: DeepSeekConnectionStatus): RowStatus {
   if (status.state === "needs_update" || status.state === "unavailable") {
     return { detail: "需要处理", needsAttention: true };
   }
-  if (status.state === "connected")
-    return { detail: "无需处理", needsAttention: false };
+  if (status.state === "connected") return { needsAttention: false };
   return { detail: "尚未连接", needsAttention: false };
 }
 
@@ -143,8 +141,7 @@ function mirrorRowStatus(status: GitHubMirrorStatus): RowStatus {
   if (status.processingCount > 0 || status.pendingCount > 0) {
     return { detail: "备份中", needsAttention: false };
   }
-  if (status.configuration === "configured")
-    return { detail: "无需处理", needsAttention: false };
+  if (status.configuration === "configured") return { needsAttention: false };
   return { detail: "尚未设置", needsAttention: false };
 }
 
@@ -156,7 +153,7 @@ function SettingsRow({
 }: {
   href: string;
   name: string;
-  detail: string;
+  detail?: string;
   needsAttention?: boolean;
 }) {
   return (
@@ -167,7 +164,7 @@ function SettingsRow({
     >
       <span className="settings-row-copy">
         <strong>{name}</strong>
-        <small>{detail}</small>
+        {detail ? <small>{detail}</small> : null}
       </span>
       <span aria-hidden="true" className="settings-row-disclosure">
         ›

@@ -517,11 +517,9 @@ describe("external training association UI", () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: "展开 Anonymous strength task",
-      }),
-    );
+    await screen.findByRole("button", {
+      name: "收起 Anonymous strength task",
+    });
     expect(
       screen.getByRole("heading", { name: "Anonymous session" }),
     ).toBeTruthy();
@@ -600,11 +598,9 @@ describe("external training association UI", () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: "展开 Anonymous strength task",
-      }),
-    );
+    await screen.findByRole("button", {
+      name: "收起 Anonymous strength task",
+    });
 
     expect(screen.getByText(/已关联/)).toBeTruthy();
     expect(screen.getByText("训练内容已更新，请重新确认关联。")).toBeTruthy();
@@ -675,11 +671,9 @@ describe("external training association UI", () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: "展开 Anonymous strength task",
-      }),
-    );
+    await screen.findByRole("button", {
+      name: "收起 Anonymous strength task",
+    });
     expect(screen.getAllByText("Anonymous session").length).toBeGreaterThan(0);
     const heading = screen.getAllByRole("heading", { name: "跑步" })[0]!;
     const card = heading.closest("article");

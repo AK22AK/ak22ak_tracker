@@ -130,6 +130,7 @@ describe("settings client data boundary", () => {
     expect(screen.getByRole("link", { name: /GitHub 数据备份/ })).toBeTruthy();
     expect(screen.getByRole("link", { name: /本机数据/ })).toBeTruthy();
     expect(screen.getByRole("link", { name: /账号/ })).toBeTruthy();
+    expect(screen.queryByText("无需处理")).toBeNull();
     expect(screen.queryByLabelText("API Key")).toBeNull();
     expect(screen.queryByLabelText("DeepSeek API Key")).toBeNull();
     expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual(

@@ -66,8 +66,27 @@ describe("Today latest-record sync control", () => {
 
     resolve(response(result));
     expect(await screen.findByText("有记录")).toBeTruthy();
-    expect(screen.getByText("无记录")).toBeTruthy();
+    expect(screen.getByText("本次无新记录")).toBeTruthy();
     expect(screen.getByText("需更新凭证")).toBeTruthy();
     expect(onCompleted).toHaveBeenCalledTimes(1);
+  });
+
+  it("reacts when the network returns after an offline render", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    vi.spyOn(window.navigator, "onLine", "get").mockReturnValue(false);
+
+    render(<TodaySyncControl trackerKey="knee-rehab" onCompleted={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "联网后同步" })).toHaveProperty(
+      "disabled",
+      true,
+    );
+    vi.spyOn(window.navigator, "onLine", "get").mockReturnValue(true);
+    fireEvent(window, new Event("online"));
+
+    expect(screen.getByRole("button", { name: "同步最新记录" })).toHaveProperty(
+      "disabled",
+      false,
+    );
   });
 });

@@ -447,11 +447,11 @@ const planWorkspace = {
   localDate,
   calendarWeek: 5,
   plan: todayAggregate.plan,
-  goals: ["Anonymous rehabilitation goal"],
+  goals: [],
   nextTraining: {
     localDate: nextLocalDate,
     taskCount: 1,
-    titles: ["Anonymous next training"],
+    titles: ["第 5 周 · Anonymous next training"],
   },
   pendingAdviceCount: 0,
   profileVersion: 2,
@@ -869,7 +869,7 @@ async function expectMobileLayoutIntegrity(page: Page) {
         window.getComputedStyle(element).display !== "inline",
     );
     const cardSelector =
-      ".surface-card, .feedback-card, .today-plan-card, .task-card, .settings-list-group, .calendar-day-detail, .feedback-safety-preview";
+      ".surface-card, .feedback-card, .feedback-compact, .today-plan-card, .task-card, .settings-list-group, .calendar-day-detail, .feedback-safety-preview";
     const errors = [
       ...controls.flatMap((control) => {
         const rect = control.getBoundingClientRect();
@@ -962,7 +962,7 @@ for (const width of [320, 375, 390, 430]) {
     await mockPrivateReads(page, 0);
     await page.goto("/");
 
-    const feedbackAction = page.getByRole("link", { name: "添加反馈" });
+    const feedbackAction = page.getByRole("link", { name: "记录身体反馈" });
     await expect(feedbackAction).toBeVisible();
     const adjustment = page.getByRole("button", { name: "调整今天" });
     await expect(adjustment).toBeVisible();
@@ -974,10 +974,8 @@ for (const width of [320, 375, 390, 430]) {
 
     const layout = await page.evaluate(() => {
       const feedbackCard =
-        document.querySelector<HTMLElement>(".feedback-card");
-      const supportingCopy = document.querySelector<HTMLElement>(
-        ".feedback-supporting-copy",
-      );
+        document.querySelector<HTMLElement>(".feedback-compact");
+      const safetyCard = document.querySelector<HTMLElement>(".feedback-card");
       const feedbackAction = feedbackCard?.querySelector<HTMLElement>(
         'a[href="/feedback"]',
       );
@@ -986,25 +984,20 @@ for (const width of [320, 375, 390, 430]) {
         ...document.querySelectorAll<HTMLButtonElement>("button"),
       ].find((button) => button.textContent?.trim() === "调整今天");
       const feedbackCardRect = feedbackCard?.getBoundingClientRect();
-      const supportingCopyRect = supportingCopy?.getBoundingClientRect();
       const feedbackActionRect = feedbackAction?.getBoundingClientRect();
       return {
         feedbackCardRect,
-        supportingCopyRect,
+        hasSafetyCard: Boolean(safetyCard),
         feedbackActionRect,
         actionHeight: feedbackActionRect?.height ?? 0,
-        supportingCopyClipped:
-          (supportingCopy?.scrollHeight ?? 0) >
-          (supportingCopy?.clientHeight ?? 0),
         adjustmentInPlanCard: Boolean(planCard?.contains(adjustment ?? null)),
       };
     });
 
-    expect(layout.supportingCopyClipped).toBe(false);
-    expect(layout.supportingCopyRect).toBeFalsy();
+    expect(layout.hasSafetyCard).toBe(false);
     expect(layout.actionHeight).toBeGreaterThanOrEqual(44);
     expect(layout.feedbackActionRect?.top).toBeGreaterThanOrEqual(
-      (layout.feedbackCardRect?.top ?? Number.POSITIVE_INFINITY) + 12,
+      (layout.feedbackCardRect?.top ?? Number.POSITIVE_INFINITY) + 10,
     );
     expect(layout.feedbackActionRect?.left).toBeGreaterThanOrEqual(
       layout.feedbackCardRect?.left ?? Number.POSITIVE_INFINITY,
@@ -1028,7 +1021,24 @@ for (const width of [320, 375, 390, 393, 430]) {
     page,
   }) => {
     await page.setViewportSize({ width, height: 844 });
-    await mockPrivateReads(page, 0);
+    const todayWithSchedulePrefix = {
+      ...todayAggregate,
+      day: {
+        ...todayAggregate.day,
+        tasks: todayAggregate.day.tasks.map((task) => ({
+          ...task,
+          title: "第 5 周 · Anonymous task",
+        })),
+      },
+    };
+    await mockPrivateReads(
+      page,
+      0,
+      planAdvice,
+      evaluationAggregate,
+      trendsAggregate,
+      { today: todayWithSchedulePrefix },
+    );
     let requests = 0;
     let release!: () => void;
     const responseReleased = new Promise<void>((resolve) => {
@@ -1067,6 +1077,26 @@ for (const width of [320, 375, 390, 393, 430]) {
       },
     );
     await page.goto("/");
+
+    const task = page.locator(".task-card").first();
+    await expect(
+      task.getByRole("button", { name: "收起 Anonymous task" }),
+    ).toBeVisible();
+    await expect(task.locator(".task-card-details")).toBeVisible();
+    await expect(task.locator(".task-summary-copy strong")).toHaveText(
+      "Anonymous task",
+    );
+    const taskBeforeSync = await page.evaluate(() => {
+      const task = document.querySelector(".task-card");
+      const sync = document.querySelector('[aria-label="同步最新记录"]');
+      return task && sync
+        ? Boolean(
+            task.compareDocumentPosition(sync) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+          )
+        : false;
+    });
+    expect(taskBeforeSync).toBe(true);
 
     const syncButton = page.getByRole("button", { name: "同步最新记录" });
     await syncButton.dblclick();
@@ -1394,7 +1424,12 @@ for (const width of [320, 375, 390, 430]) {
         await expect(
           page.getByRole("link", { name: "打开完整对话" }),
         ).toBeVisible();
-        await expect(page.getByText("按当前安排继续")).toBeVisible();
+        await expect(page.getByText("Anonymous next training")).toBeVisible();
+        await expect(page.getByText(/第 5 周 ·/)).toHaveCount(0);
+        await expect(page.getByText("当前目标")).toHaveCount(0);
+        await expect(
+          page.getByText(/日历周|不等于|正式康复计划从|每个计划周/),
+        ).toHaveCount(0);
         await expect(page.getByText("版本 1", { exact: true })).toHaveCount(0);
       }
       await expectMobileLayoutIntegrity(page);
@@ -2124,6 +2159,7 @@ test("direct settings detail survives reload and returns from another root tab",
   await page.getByRole("link", { name: /设置/ }).click();
   await expect(page.getByRole("heading", { name: "设置" })).toBeVisible();
   await expect(page.locator(".settings-row")).toHaveCount(7);
+  await expect(page.getByText("无需处理")).toHaveCount(0);
   await expectActiveTab(page, "/settings", "/settings");
 });
 

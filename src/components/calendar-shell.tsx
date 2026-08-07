@@ -9,6 +9,7 @@ import type {
   TodayDashboard,
 } from "@/server/dashboard";
 import type { ExternalRecordAssociation } from "@/domain/external-training";
+import { userFacingTaskTitle } from "@/domain/task-title";
 
 import { ExternalTrainingSection } from "./external-training-section";
 import { RecoveryReferenceCard } from "./recovery-reference-card";
@@ -631,7 +632,7 @@ export function CalendarShell({
                     key={task.id}
                   >
                     <div className="calendar-task-heading">
-                      <strong>{task.title}</strong>
+                      <strong>{userFacingTaskTitle(task.title)}</strong>
                       <span
                         className="status-pill"
                         data-tone={

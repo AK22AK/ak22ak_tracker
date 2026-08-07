@@ -6,6 +6,7 @@ import Link from "next/link";
 
 import { trackerQueryKeys } from "@/client/query-keys";
 import { fetchPlanWorkspace } from "@/client/tracker-api";
+import { userFacingTaskTitle } from "@/domain/task-title";
 
 const trackerKey = "knee-rehab";
 const CompactRehabAssistant = dynamic(
@@ -58,35 +59,31 @@ export function PlanWorkspaceClient() {
           <p>可以稍后重试；今天的任务和已保存记录不受影响。</p>
         </section>
       ) : null}
-      {data ? (
+      {data && (data.goals.length > 0 || data.nextTraining) ? (
         <section className="surface-card plan-workspace-summary">
-          <div className="plan-workspace-heading-row">
+          {data.goals.length > 0 ? (
             <div>
-              <p className="eyebrow">当前计划</p>
-              <h2>{data.plan ? "按当前安排继续" : "尚未开始"}</h2>
+              <strong>当前目标</strong>
+              <p>{data.goals[0]}</p>
             </div>
-          </div>
-          <div>
-            <strong>当前目标</strong>
-            <p>{data.goals[0] ?? "尚未填写康复目标"}</p>
-          </div>
-          <div>
-            <strong>下一次训练</strong>
-            {data.nextTraining ? (
-              <>
+          ) : null}
+          {data.nextTraining ? (
+            <div>
+              <p className="eyebrow">下一次训练</p>
+              <h2>
+                {shortDate(data.nextTraining.localDate)} ·{" "}
+                {data.nextTraining.taskCount} 项训练
+              </h2>
+              {data.nextTraining.titles.length > 0 ? (
                 <p>
-                  {shortDate(data.nextTraining.localDate)} ·{" "}
-                  {data.nextTraining.taskCount} 项训练
+                  {data.nextTraining.titles.map(userFacingTaskTitle).join("、")}
                 </p>
-                {data.nextTraining.titles.length > 0 ? (
-                  <p>{data.nextTraining.titles.join("、")}</p>
-                ) : null}
-              </>
-            ) : (
-              <p>当前计划里没有后续训练</p>
-            )}
-          </div>
-          <Link href="/calendar">打开训练日历</Link>
+              ) : null}
+            </div>
+          ) : null}
+          {data.nextTraining ? (
+            <Link href="/calendar">打开训练日历</Link>
+          ) : null}
         </section>
       ) : null}
 

@@ -226,7 +226,7 @@ describe("today background refresh", () => {
     expect(screen.queryByText("正常模式")).toBeNull();
     expect(screen.queryByText("康复计划 v1")).toBeNull();
     expect(screen.queryByRole("button", { name: "退出" })).toBeNull();
-    expect(screen.getByRole("link", { name: "添加反馈" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "记录身体反馈" })).toBeTruthy();
     expect(
       screen.getByRole("link", { name: "告诉康复助手" }).getAttribute("href"),
     ).toBe("/plan/conversation?date=2026-07-19");
@@ -482,9 +482,7 @@ describe("today background refresh", () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "展开 Anonymous task" }),
-    );
+    await screen.findByRole("button", { name: "收起 Anonymous task" });
     fireEvent.click(
       screen.getByRole("button", { name: "没有同步记录？手工记录" }),
     );
@@ -508,6 +506,9 @@ describe("today background refresh", () => {
       initialUpdatedAt ?? 0,
     );
     expect(await screen.findByText("已完成")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "展开 Anonymous task" }),
+    );
 
     expect(
       (screen.getByLabelText("实际训练与主观感受") as HTMLTextAreaElement)
@@ -566,9 +567,7 @@ describe("today background refresh", () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "展开 Anonymous task" }),
-    );
+    await screen.findByRole("button", { name: "收起 Anonymous task" });
     fireEvent.click(
       screen.getByRole("button", { name: "没有同步记录？手工记录" }),
     );
@@ -701,10 +700,6 @@ describe("today background refresh", () => {
     const checkbox = screen.getByRole("checkbox", {
       name: "Anonymous task",
     }) as HTMLInputElement;
-    fireEvent.click(
-      screen.getByRole("button", { name: "展开 Anonymous task" }),
-    );
-
     expect(checkbox.checked).toBe(false);
     expect(screen.getByText("训练内容")).toBeTruthy();
     expect(commandHarness.enqueue).not.toHaveBeenCalled();
@@ -717,6 +712,35 @@ describe("today background refresh", () => {
       expect(commandHarness.enqueue).toHaveBeenCalledTimes(1),
     );
     expect(screen.queryByText("训练内容")).toBeNull();
+  });
+
+  it("shows a planned task prescription before the latest-record sync block", async () => {
+    const data = aggregate("planned", 0);
+    data.day.tasks[0]!.title = "第 5 周 · 较长轻松跑";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(data)));
+
+    render(
+      <QueryClientProvider
+        client={
+          new QueryClient({
+            defaultOptions: { queries: { retry: false } },
+          })
+        }
+      >
+        <TodayClient />
+      </QueryClientProvider>,
+    );
+
+    const task = await screen.findByRole("article", { name: "较长轻松跑" });
+    expect(
+      within(task).getByRole("button", { name: "收起 较长轻松跑" }),
+    ).toBeTruthy();
+    expect(within(task).getByText("训练内容")).toBeTruthy();
+    expect(screen.queryByText(/第 5 周 ·/)).toBeNull();
+    const sync = screen.getByRole("region", { name: "同步最新记录" });
+    expect(
+      task.compareDocumentPosition(sync) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("renders completed and skipped tasks as distinct visual states", async () => {

@@ -33,14 +33,6 @@ function daysBetween(from: string, through: string) {
   );
 }
 
-function goalsFromPlan(notes: string | undefined) {
-  return (notes ?? "")
-    .split(/\n+/)
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .slice(0, 3);
-}
-
 export async function getPlanWorkspace({
   trackerKey,
   now = new Date(),
@@ -144,7 +136,7 @@ export async function getPlanWorkspace({
       : null,
     goals: profileRows[0]
       ? rehabProfileDocumentSchema.parse(profileRows[0].document).goals
-      : goalsFromPlan(plan?.notes),
+      : [],
     nextTraining: nextDate
       ? {
           localDate: nextDate,

@@ -3460,6 +3460,58 @@ summary:focus-visible {
   text-align: center;
 }
 
+.feedback-compact {
+  display: grid;
+  gap: 0.625rem;
+  margin-top: 0.25rem;
+  padding: 0.75rem 0.25rem;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.feedback-compact-copy {
+  display: grid;
+  min-width: 0;
+  gap: 0.2rem;
+}
+
+.feedback-compact-copy strong {
+  color: var(--color-ink);
+  font-size: 0.9375rem;
+  line-height: 1.25rem;
+}
+
+.feedback-compact-copy span {
+  color: var(--color-muted);
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.feedback-compact-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.feedback-compact-actions .primary-button,
+.feedback-compact-actions .text-button {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 350px) {
+  .feedback-compact-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .plan-secondary-entry {
   display: grid;
   gap: 0.75rem;

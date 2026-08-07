@@ -149,7 +149,7 @@ describe("P2 offline snapshot UI", () => {
         }) as HTMLInputElement
       ).disabled,
     ).toBe(false);
-    expect(screen.getByRole("link", { name: "添加反馈" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "记录身体反馈" })).toBeTruthy();
   });
 
   it("distinguishes an online Today snapshot refresh from a true offline state", async () => {

@@ -12,6 +12,7 @@ import type {
   ExternalTrainingRecord,
 } from "@/domain/external-training";
 import type { TaskActual } from "@/domain/schemas";
+import { userFacingTaskTitle } from "@/domain/task-title";
 import type { DashboardTask, TodayDashboard } from "@/server/dashboard";
 import type { ExecutionContextToday } from "@/domain/execution-context";
 import { useNetworkState } from "@/client/use-network-state";
@@ -180,7 +181,9 @@ function TaskCard({
     useOfflineCommands();
   const [note, setNote] = useState(task.subjectiveNote ?? "");
   const [actual, setActual] = useState(() => initialTaskActual(task));
-  const [expanded, setExpanded] = useState(false);
+  const [expansion, setExpansion] = useState<
+    "default-open" | "closed" | "open"
+  >(() => (task.status === "planned" ? "default-open" : "closed"));
   const [manualEntryOpen, setManualEntryOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
@@ -268,19 +271,23 @@ function TaskCard({
   }
 
   const status = taskStatusPresentation[task.status];
+  const displayTitle = userFacingTaskTitle(task.title);
+  const taskExpanded =
+    expansion !== "closed" &&
+    (task.status === "planned" || expansion === "open");
   const detailsId = `task-details-${task.id}`;
 
   return (
     <article
       className={`task-card ${task.status}`}
       data-status={task.status}
-      aria-label={task.title}
+      aria-label={displayTitle}
     >
       <div className="task-card-summary">
-        <label className="task-check" title={`标记${task.title}完成`}>
+        <label className="task-check" title={`标记${displayTitle}完成`}>
           <input
             type="checkbox"
-            aria-label={task.title}
+            aria-label={displayTitle}
             checked={task.status === "completed"}
             disabled={saving || !ready}
             onChange={(event) =>
@@ -292,17 +299,24 @@ function TaskCard({
         <button
           className="task-summary-button"
           type="button"
-          aria-expanded={expanded}
+          aria-expanded={taskExpanded}
           aria-controls={detailsId}
-          aria-label={`${expanded ? "收起" : "展开"} ${task.title}`}
-          onClick={() => setExpanded((value) => !value)}
+          aria-label={`${taskExpanded ? "收起" : "展开"} ${displayTitle}`}
+          onClick={() =>
+            setExpansion((value) => {
+              if (task.status === "planned") {
+                return value === "closed" ? "open" : "closed";
+              }
+              return value === "open" ? "closed" : "open";
+            })
+          }
         >
           <span className="task-summary-copy">
-            <strong>{task.title}</strong>
+            <strong>{displayTitle}</strong>
             <span>{taskDoseSummary(task)}</span>
           </span>
           <span className="task-expand-icon" aria-hidden="true">
-            {expanded ? "⌃" : "⌄"}
+            {taskExpanded ? "⌃" : "⌄"}
           </span>
         </button>
         <StatusPill tone={status.tone} icon={status.icon}>
@@ -326,7 +340,7 @@ function TaskCard({
           </Link>
         </div>
       ) : null}
-      {expanded ? (
+      {taskExpanded ? (
         <div className="task-card-details" id={detailsId}>
           <div className="task-detail-block">
             <h3>训练内容</h3>
@@ -656,7 +670,7 @@ export function DashboardShell({
     setAssociationFeedback(
       association.status === "unrelated"
         ? `${source}已标记与计划无关，已从今日待处理移除；可在日历当天修改。`
-        : `${source}已关联到“${task?.title ?? "计划任务"}”；任务完成状态未改变，可在日历当天修改。`,
+        : `${source}已关联到“${task ? userFacingTaskTitle(task.title) : "计划任务"}”；任务完成状态未改变，可在日历当天修改。`,
     );
     await onExternalTrainingUpdated(recordId, association);
   };
@@ -854,10 +868,6 @@ export function DashboardShell({
             ) : null
           }
         />
-        <TodaySyncControl
-          trackerKey="knee-rehab"
-          onCompleted={onLatestSyncCompleted}
-        />
         {missing ? (
           <p className="empty-state-copy">
             还没有训练计划。完成设置后，今天的安排会显示在这里。
@@ -894,6 +904,10 @@ export function DashboardShell({
             })}
           </div>
         ) : null}
+        <TodaySyncControl
+          trackerKey="knee-rehab"
+          onCompleted={onLatestSyncCompleted}
+        />
         {!adjustmentException ? (
           <div className="today-adjustment-entry">
             <button
@@ -959,43 +973,59 @@ export function DashboardShell({
         </SurfaceCard>
       ) : null}
 
-      <SurfaceCard className="feedback-card" aria-label="身体反馈">
-        <SectionHeading
-          eyebrow="身体反馈"
-          title={
-            feedbackCount > 0
-              ? `今天已记录 ${feedbackCount} 次`
-              : "今天还没有记录"
-          }
-          aside={
-            currentSafety && currentSafety !== "green" ? (
+      {currentSafety && currentSafety !== "green" ? (
+        <SurfaceCard className="feedback-card" aria-label="身体反馈">
+          <SectionHeading
+            eyebrow="身体反馈"
+            title={
+              feedbackCount > 0
+                ? `今天已记录 ${feedbackCount} 次`
+                : "今天还没有记录"
+            }
+            aside={
               <StatusPill tone={safetyTone(currentSafety)} icon="!">
                 {safetyLabel(currentSafety)}
               </StatusPill>
-            ) : (
-              <StatusPill tone="attention" icon="!">
-                待反馈
-              </StatusPill>
-            )
-          }
-        />
-        {currentSafety && currentSafety !== "green" ? (
+            }
+          />
           <p className={`safety-message ${currentSafety}`}>
             {safetyGuidance(currentSafety)}
           </p>
-        ) : null}
-        <div className="button-row">
-          <Link className="primary-button" href="/feedback" scroll={false}>
-            {feedbackCount > 0 ? "再次反馈" : "添加反馈"}
-          </Link>
-          <Link
-            className="secondary-button"
-            href={`/plan/conversation?date=${encodeURIComponent(localDate)}`}
-          >
-            告诉康复助手
-          </Link>
-        </div>
-      </SurfaceCard>
+          <div className="button-row">
+            <Link className="primary-button" href="/feedback" scroll={false}>
+              {feedbackCount > 0 ? "再次反馈" : "记录身体反馈"}
+            </Link>
+            <Link
+              className="secondary-button"
+              href={`/plan/conversation?date=${encodeURIComponent(localDate)}`}
+            >
+              告诉康复助手
+            </Link>
+          </div>
+        </SurfaceCard>
+      ) : (
+        <section className="feedback-compact" aria-label="身体反馈">
+          <div className="feedback-compact-copy">
+            <strong>身体反馈</strong>
+            <span>
+              {feedbackCount > 0
+                ? `今天已记录 ${feedbackCount} 次`
+                : "今天还没有记录"}
+            </span>
+          </div>
+          <div className="feedback-compact-actions">
+            <Link className="primary-button" href="/feedback" scroll={false}>
+              {feedbackCount > 0 ? "再次反馈" : "记录身体反馈"}
+            </Link>
+            <Link
+              className="text-button"
+              href={`/plan/conversation?date=${encodeURIComponent(localDate)}`}
+            >
+              告诉康复助手
+            </Link>
+          </div>
+        </section>
+      )}
 
       {initialDashboard.recoveryReference ? (
         <RecoveryReferenceCard reference={initialDashboard.recoveryReference} />

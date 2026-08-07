@@ -76,7 +76,7 @@ describe("plan workspace", () => {
 
     const page = screen.getByRole("main", { name: "计划页面" });
     expect(within(page).getByText("正在整理计划…")).toBeTruthy();
-    expect(await within(page).findByText("按当前安排继续")).toBeTruthy();
+    expect(await within(page).findByText("下一次训练")).toBeTruthy();
     expect(within(page).queryByText("起算后第 3 个日历周")).toBeNull();
     expect(within(page).queryByText("日历周不等于有效训练阶段。")).toBeNull();
     expect(within(page).getByText("逐步恢复稳定训练")).toBeTruthy();
@@ -87,6 +87,24 @@ describe("plan workspace", () => {
       "/api/trackers/knee-rehab/plan-workspace",
       expect.objectContaining({ headers: { Accept: "application/json" } }),
     );
+  });
+
+  it("hides the goal block when no structured user goal exists", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ ...workspace, goals: [], nextTraining: null }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWorkspace();
+
+    const page = screen.getByRole("main", { name: "计划页面" });
+    await within(page).findByText("说说最近的训练和身体感受");
+    expect(within(page).queryByText("当前目标")).toBeNull();
+    expect(within(page).queryByText("按当前安排继续")).toBeNull();
   });
 
   it("exposes the assistant, review, version, evaluation, profile and memory entry points", async () => {
@@ -139,7 +157,7 @@ describe("plan workspace", () => {
     );
 
     renderWorkspace();
-    await screen.findByText("按当前安排继续");
+    await screen.findByText("下一次训练");
 
     expect(await screen.findByText("最近一次回复。")).toBeTruthy();
     expect(screen.getByLabelText("训练、身体感受或计划问题")).toBeTruthy();

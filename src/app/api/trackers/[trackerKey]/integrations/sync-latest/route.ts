@@ -3,6 +3,8 @@ import { createDefaultGarminRuntime } from "@/server/integrations/garmin/runtime
 import { coordinateLatestSync } from "@/server/integrations/today-sync-coordinator";
 import { recoverXunjiHistory } from "@/server/integrations/xunji/runtime";
 
+export const maxDuration = 45;
+
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ trackerKey: string }> },
