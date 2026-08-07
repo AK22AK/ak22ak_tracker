@@ -38,6 +38,7 @@ const day = {
     {
       id: taskId,
       title: "Anonymous task",
+      description: "匿名模板说明",
       category: "general",
       prescription: {
         exercises: [{ name: "Anonymous movement", dose: "2 × 8" }],
@@ -2278,6 +2279,162 @@ for (const width of [320, 375, 390, 393, 430]) {
     expect(contract.navCoversLastControl).toBe(false);
   });
 }
+
+test("UI-R7 final cascade keeps token-backed styles after legacy rules", async ({
+  page,
+}) => {
+  await mockPrivateReads(page, 0);
+  await page.goto("/");
+  await expect(page.locator("[data-today-workout]")).toBeVisible();
+
+  const cascade = await page.evaluate(() => {
+    const root = document.documentElement;
+    const rootStyle = getComputedStyle(root);
+    const probe = document.createElement("div");
+    probe.style.background = "var(--ak-material-background)";
+    probe.style.boxShadow = "var(--ak-material-shadow)";
+    document.body.append(probe);
+    const probeStyle = getComputedStyle(probe);
+    const nav = document.querySelector<HTMLElement>(".bottom-nav");
+    const title = document.querySelector<HTMLElement>(".today-title-row h1");
+    const surfaces = [
+      ...document.querySelectorAll<HTMLElement>(".today-section, .today-task"),
+    ];
+    const navStyle = nav ? getComputedStyle(nav) : null;
+    const titleStyle = title ? getComputedStyle(title) : null;
+    const materialBackground = probeStyle.backgroundColor;
+    const materialShadow = probeStyle.boxShadow;
+    const surfaceBackground = rootStyle.getPropertyValue("--ak-surface").trim();
+    const tokenShadow = rootStyle
+      .getPropertyValue("--ak-material-shadow")
+      .trim();
+    probe.remove();
+    return {
+      navBackground: navStyle?.backgroundColor,
+      navShadow: navStyle?.boxShadow,
+      materialBackground,
+      materialShadow,
+      titleSize: titleStyle?.fontSize,
+      surfaceBackground,
+      surfaces: surfaces.map(
+        (surface) => getComputedStyle(surface).backgroundColor,
+      ),
+      tokenShadow,
+    };
+  });
+
+  expect(cascade.navBackground).toBe(cascade.materialBackground);
+  expect(cascade.navShadow).toBe(cascade.materialShadow);
+  expect(cascade.navBackground).not.toBe("rgba(244, 246, 242, 0.96)");
+  expect(cascade.titleSize).toBe("34px");
+  expect(cascade.surfaces).toEqual(
+    cascade.surfaces.map(() => "rgb(255, 255, 255)"),
+  );
+  expect(cascade.surfaceBackground).toBe("#fff");
+  expect(cascade.tokenShadow).toContain("24px");
+});
+
+for (const rootPage of [
+  {
+    path: "/",
+    heading: ".today-title-row h1",
+    surface: ".today-section",
+  },
+  {
+    path: "/calendar",
+    heading: ".calendar-topbar h1",
+    surface: ".calendar-card",
+  },
+  {
+    path: "/plan",
+    heading: ".trend-page-header h1",
+    surface: ".plan-assistant-entry",
+  },
+  {
+    path: "/settings",
+    heading: ".settings-shell .topbar h1",
+    surface: ".settings-list-group",
+  },
+] as const) {
+  test(`UI-R7 final token cascade covers ${rootPage.path}`, async ({
+    page,
+  }) => {
+    await mockPrivateReads(page, 0);
+    await page.goto(rootPage.path);
+    await expect(page.locator(rootPage.heading)).toBeVisible();
+    await expect(page.locator(rootPage.surface).first()).toBeVisible();
+
+    const values = await page.evaluate(({ heading, surface }) => {
+      const rootStyle = getComputedStyle(document.documentElement);
+      const probe = document.createElement("div");
+      probe.style.background = "var(--ak-surface)";
+      document.body.append(probe);
+      const probeBackground = getComputedStyle(probe).backgroundColor;
+      const header = document.querySelector<HTMLElement>(heading);
+      const surfaceElement = document.querySelector<HTMLElement>(surface);
+      const nav = document.querySelector<HTMLElement>(".bottom-nav");
+      const navStyle = nav ? getComputedStyle(nav) : null;
+      const navProbe = document.createElement("div");
+      navProbe.style.background = "var(--ak-material-background)";
+      document.body.append(navProbe);
+      const navProbeBackground = getComputedStyle(navProbe).backgroundColor;
+      const result = {
+        headerSize: header ? getComputedStyle(header).fontSize : null,
+        surfaceBackground: surfaceElement
+          ? getComputedStyle(surfaceElement).backgroundColor
+          : null,
+        probeBackground,
+        navBackground: navStyle?.backgroundColor ?? null,
+        navProbeBackground,
+        titleToken: rootStyle.getPropertyValue("--ak-title-size").trim(),
+      };
+      probe.remove();
+      navProbe.remove();
+      return result;
+    }, rootPage);
+
+    expect(values.headerSize).toBe("34px");
+    expect(values.titleToken).toBe("34px");
+    expect(values.surfaceBackground).toBe(values.probeBackground);
+    expect(values.navBackground).toBe(values.navProbeBackground);
+  });
+}
+
+test("UI-R7 captures anonymous 390x844 root-page review screenshots", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockPrivateReads(page, 0);
+  const pages = [
+    ["today", "/", "[data-today-workout]"],
+    ["calendar", "/calendar", ".calendar-shell"],
+    ["plan", "/plan", ".plan-workspace-page"],
+    ["settings", "/settings", ".settings-shell"],
+  ] as const;
+
+  for (const [name, path, selector] of pages) {
+    await page.goto(path);
+    await expect(page.locator(selector)).toBeVisible();
+    await page.screenshot({
+      path: `/private/tmp/ak22ak-ui-r7-${name}-390x844.png`,
+      fullPage: false,
+    });
+  }
+});
+
+test("UI-R7 Calendar keeps task descriptions behind the existing secondary disclosure", async ({
+  page,
+}) => {
+  await mockPrivateReads(page, 0);
+  await page.goto("/calendar");
+  await expect(page.locator(".calendar-task")).toHaveCount(1);
+
+  await expect(page.getByText("匿名模板说明", { exact: true })).toHaveCount(0);
+  const disclosure = page.getByRole("button", { name: "查看当天计划" });
+  await expect(disclosure).toHaveCount(1);
+  await disclosure.click();
+  await expect(page.getByText("匿名模板说明", { exact: true })).toBeVisible();
+});
 
 for (const safetyLevel of ["yellow", "red"] as const) {
   test(`UI-R7 ${safetyLevel} safety remains before workout content`, async ({
