@@ -2339,21 +2339,25 @@ for (const rootPage of [
     path: "/",
     heading: ".today-title-row h1",
     surface: ".today-section",
+    backgroundToken: "--ak-surface",
   },
   {
     path: "/calendar",
     heading: ".calendar-topbar h1",
     surface: ".calendar-card",
+    backgroundToken: "--ak-surface",
   },
   {
     path: "/plan",
     heading: ".trend-page-header h1",
-    surface: ".plan-assistant-entry",
+    surface: ".plan-workspace-summary",
+    backgroundToken: "--ak-accent",
   },
   {
     path: "/settings",
     heading: ".settings-shell .topbar h1",
     surface: ".settings-list-group",
+    backgroundToken: "--ak-surface",
   },
 ] as const) {
   test(`UI-R7 final token cascade covers ${rootPage.path}`, async ({
@@ -2364,39 +2368,87 @@ for (const rootPage of [
     await expect(page.locator(rootPage.heading)).toBeVisible();
     await expect(page.locator(rootPage.surface).first()).toBeVisible();
 
-    const values = await page.evaluate(({ heading, surface }) => {
-      const rootStyle = getComputedStyle(document.documentElement);
-      const probe = document.createElement("div");
-      probe.style.background = "var(--ak-surface)";
-      document.body.append(probe);
-      const probeBackground = getComputedStyle(probe).backgroundColor;
-      const header = document.querySelector<HTMLElement>(heading);
-      const surfaceElement = document.querySelector<HTMLElement>(surface);
-      const nav = document.querySelector<HTMLElement>(".bottom-nav");
-      const navStyle = nav ? getComputedStyle(nav) : null;
-      const navProbe = document.createElement("div");
-      navProbe.style.background = "var(--ak-material-background)";
-      document.body.append(navProbe);
-      const navProbeBackground = getComputedStyle(navProbe).backgroundColor;
-      const result = {
-        headerSize: header ? getComputedStyle(header).fontSize : null,
-        surfaceBackground: surfaceElement
-          ? getComputedStyle(surfaceElement).backgroundColor
-          : null,
-        probeBackground,
-        navBackground: navStyle?.backgroundColor ?? null,
-        navProbeBackground,
-        titleToken: rootStyle.getPropertyValue("--ak-title-size").trim(),
-      };
-      probe.remove();
-      navProbe.remove();
-      return result;
-    }, rootPage);
+    const values = await page.evaluate(
+      ({ heading, surface, backgroundToken }) => {
+        const rootStyle = getComputedStyle(document.documentElement);
+        const probe = document.createElement("div");
+        probe.style.background = `var(${backgroundToken})`;
+        document.body.append(probe);
+        const probeBackground = getComputedStyle(probe).backgroundColor;
+        const header = document.querySelector<HTMLElement>(heading);
+        const surfaceElement = document.querySelector<HTMLElement>(surface);
+        const nav = document.querySelector<HTMLElement>(".bottom-nav");
+        const navStyle = nav ? getComputedStyle(nav) : null;
+        const navProbe = document.createElement("div");
+        navProbe.style.background = "var(--ak-material-background)";
+        document.body.append(navProbe);
+        const navProbeBackground = getComputedStyle(navProbe).backgroundColor;
+        const result = {
+          headerSize: header ? getComputedStyle(header).fontSize : null,
+          surfaceBackground: surfaceElement
+            ? getComputedStyle(surfaceElement).backgroundColor
+            : null,
+          probeBackground,
+          navBackground: navStyle?.backgroundColor ?? null,
+          navProbeBackground,
+          titleToken: rootStyle.getPropertyValue("--ak-title-size").trim(),
+        };
+        probe.remove();
+        navProbe.remove();
+        return result;
+      },
+      rootPage,
+    );
 
     expect(values.headerSize).toBe("34px");
     expect(values.titleToken).toBe("34px");
     expect(values.surfaceBackground).toBe(values.probeBackground);
     expect(values.navBackground).toBe(values.navProbeBackground);
+  });
+}
+
+for (const colorScheme of ["light", "dark"] as const) {
+  test(`UI-R7 Plan next-training Hero has visible contrast in ${colorScheme}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme });
+    await mockPrivateReads(page, 0);
+    await page.goto("/plan");
+    const hero = page.locator(".plan-workspace-summary");
+    await expect(hero).toBeVisible();
+    await expect(hero.getByText("下一次训练", { exact: true })).toBeVisible();
+    await expect(
+      hero.getByText("Anonymous next training", { exact: true }),
+    ).toBeVisible();
+
+    const contrast = await hero.evaluate((element) => {
+      const heroStyle = getComputedStyle(element);
+      const heading = element.querySelector<HTMLElement>("h2");
+      const copy = element.querySelector<HTMLElement>("p");
+      const headingStyle = heading ? getComputedStyle(heading) : null;
+      const copyStyle = copy ? getComputedStyle(copy) : null;
+      const headingRect = heading?.getBoundingClientRect();
+      const copyRect = copy?.getBoundingClientRect();
+      return {
+        background: heroStyle.backgroundColor,
+        headingColor: headingStyle?.color,
+        copyColor: copyStyle?.color,
+        headingText: heading?.textContent,
+        headingVisible: Boolean(
+          headingRect && headingRect.width > 0 && headingRect.height > 0,
+        ),
+        copyVisible: Boolean(
+          copyRect && copyRect.width > 0 && copyRect.height > 0,
+        ),
+      };
+    });
+
+    expect(contrast.background).not.toBe("rgb(255, 255, 255)");
+    expect(contrast.background).not.toBe(contrast.headingColor);
+    expect(contrast.background).not.toBe(contrast.copyColor);
+    expect(contrast.headingText).toContain("项训练");
+    expect(contrast.headingVisible).toBe(true);
+    expect(contrast.copyVisible).toBe(true);
   });
 }
 
@@ -2414,7 +2466,16 @@ test("UI-R7 captures anonymous 390x844 root-page review screenshots", async ({
 
   for (const [name, path, selector] of pages) {
     await page.goto(path);
-    await expect(page.locator(selector)).toBeVisible();
+    await expect(page.locator(selector).first()).toBeVisible();
+    if (name === "plan") {
+      const planHero = page.locator(".plan-workspace-summary");
+      await expect(
+        planHero.getByText("下一次训练", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        planHero.getByText("Anonymous next training", { exact: true }),
+      ).toBeVisible();
+    }
     await page.screenshot({
       path: `/private/tmp/ak22ak-ui-r7-${name}-390x844.png`,
       fullPage: false,
@@ -2461,16 +2522,24 @@ for (const safetyLevel of ["yellow", "red"] as const) {
     ).toBeVisible();
 
     const order = await page.evaluate(() => {
-      const safety = document.querySelector(".safety-banner");
+      const safety = document.querySelector<HTMLElement>(".safety-banner");
       const workout = document.querySelector("[data-today-workout]");
-      return Boolean(
-        safety &&
-        workout &&
-        safety.compareDocumentPosition(workout) &
+      if (!safety || !workout) {
+        return { followsWorkout: false, background: null, color: null };
+      }
+      const style = getComputedStyle(safety);
+      return {
+        followsWorkout: Boolean(
+          safety.compareDocumentPosition(workout) &
           Node.DOCUMENT_POSITION_FOLLOWING,
-      );
+        ),
+        background: style.backgroundColor,
+        color: style.color,
+      };
     });
-    expect(order).toBe(true);
+    expect(order.followsWorkout).toBe(true);
+    expect(order.background).not.toBe("rgb(255, 255, 255)");
+    expect(order.background).not.toBe(order.color);
   });
 }
 

@@ -31,4 +31,17 @@ describe("production UI primitive contract", () => {
       expect(consumers).toMatch(new RegExp(`\\b${name}\\b`));
     }
   });
+
+  it("does not let the final cascade blanket semantic tone surfaces", () => {
+    const css = readFileSync(
+      path.join(process.cwd(), "src/app/globals.css"),
+      "utf8",
+    );
+    const finalLayer = css.slice(
+      css.lastIndexOf("/* UI-R7 final cascade contract."),
+    );
+
+    expect(finalLayer).not.toMatch(/\.surface-card\s*,/);
+    expect(finalLayer).toContain(".plan-workspace-summary");
+  });
 });
