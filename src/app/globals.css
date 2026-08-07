@@ -2685,6 +2685,7 @@ summary:focus-visible {
   --ak-label-tertiary: #98989d;
   --ak-separator: rgba(60, 60, 67, 0.18);
   --ak-accent: #0a84ff;
+  --ak-on-accent: #fff;
   --ak-accent-soft: #e5f1ff;
   --ak-success: #248a3d;
   --ak-success-soft: #e7f5eb;
@@ -3089,7 +3090,7 @@ body {
   border: 0;
   border-radius: var(--ak-surface-radius);
   background: var(--ak-accent);
-  color: #fff;
+  color: var(--ak-on-accent);
 }
 
 .plan-workspace-summary h2,
@@ -6073,7 +6074,6 @@ body {
   letter-spacing: -0.04em;
 }
 
-.surface-card,
 .feedback-card,
 .today-section,
 .calendar-card,
@@ -6087,6 +6087,17 @@ body {
   border-radius: var(--ak-surface-radius);
   background: var(--ak-surface);
   box-shadow: none;
+}
+
+.plan-workspace-summary {
+  background: var(--ak-accent);
+  color: var(--ak-on-accent);
+}
+
+.plan-workspace-summary h2,
+.plan-workspace-summary p,
+.plan-workspace-summary .eyebrow {
+  color: inherit;
 }
 
 .today-task,
