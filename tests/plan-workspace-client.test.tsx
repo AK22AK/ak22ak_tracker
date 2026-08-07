@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PlanWorkspaceClient } from "@/components/plan-workspace-client";
@@ -56,7 +62,7 @@ describe("plan workspace", () => {
     vi.unstubAllGlobals();
   });
 
-  it("answers the current week, goal, next training and pending action from one read-only aggregate", async () => {
+  it("answers the current goal, next training and pending action from one read-only aggregate", async () => {
     const fetchMock = vi.fn(
       async () =>
         new Response(JSON.stringify(workspace), {
@@ -70,8 +76,9 @@ describe("plan workspace", () => {
 
     const page = screen.getByRole("main", { name: "计划页面" });
     expect(within(page).getByText("正在整理计划…")).toBeTruthy();
-    expect(await within(page).findByText("起算后第 3 个日历周")).toBeTruthy();
-    expect(within(page).getByText("日历周不等于有效训练阶段。")).toBeTruthy();
+    expect(await within(page).findByText("按当前安排继续")).toBeTruthy();
+    expect(within(page).queryByText("起算后第 3 个日历周")).toBeNull();
+    expect(within(page).queryByText("日历周不等于有效训练阶段。")).toBeNull();
     expect(within(page).getByText("逐步恢复稳定训练")).toBeTruthy();
     expect(within(page).getByText("8月5日 · 2 项训练")).toBeTruthy();
     expect(within(page).getByText("匿名力量训练、匿名步行训练")).toBeTruthy();
@@ -132,12 +139,13 @@ describe("plan workspace", () => {
     );
 
     renderWorkspace();
-    await screen.findByText("起算后第 3 个日历周");
+    await screen.findByText("按当前安排继续");
 
     expect(await screen.findByText("最近一次回复。")).toBeTruthy();
     expect(screen.getByLabelText("训练、身体感受或计划问题")).toBeTruthy();
     expect(screen.queryByText("版本 2")).toBeNull();
 
+    fireEvent.click(screen.getByText("更多计划信息"));
     const links = screen.getAllByRole("link");
     expect(links.map((link) => link.getAttribute("href"))).toEqual(
       expect.arrayContaining([

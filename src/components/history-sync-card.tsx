@@ -241,9 +241,7 @@ export function HistorySyncCard({ trackerKey }: { trackerKey: string }) {
           {busy ? "正在同步…" : `同步过去 ${days} 天`}
         </button>
       </div>
-      <p className="integration-action-help">
-        这不会改变正式计划开始日，也不会影响日常自动同步。
-      </p>
+      <p className="integration-action-help">这不会改变正式计划开始日。</p>
       {overviewQuery.isPending ? (
         <p className="integration-action-help" role="status">
           正在读取最近一次补录结果…

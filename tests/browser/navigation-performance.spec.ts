@@ -1001,9 +1001,10 @@ for (const width of [320, 375, 390, 430]) {
     });
 
     expect(layout.supportingCopyClipped).toBe(false);
+    expect(layout.supportingCopyRect).toBeFalsy();
     expect(layout.actionHeight).toBeGreaterThanOrEqual(44);
     expect(layout.feedbackActionRect?.top).toBeGreaterThanOrEqual(
-      (layout.supportingCopyRect?.bottom ?? Number.POSITIVE_INFINITY) + 12,
+      (layout.feedbackCardRect?.top ?? Number.POSITIVE_INFINITY) + 12,
     );
     expect(layout.feedbackActionRect?.left).toBeGreaterThanOrEqual(
       layout.feedbackCardRect?.left ?? Number.POSITIVE_INFINITY,
@@ -1019,6 +1020,64 @@ for (const width of [320, 375, 390, 430]) {
     await adjustment.click();
     await expect(adjustment).toHaveAttribute("aria-expanded", "true");
     await expect(page.locator("#today-adjustments")).toBeVisible();
+  });
+}
+
+for (const width of [320, 375, 390, 393, 430]) {
+  test(`today latest-record sync stays bounded and readable at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await mockPrivateReads(page, 0);
+    let requests = 0;
+    let release!: () => void;
+    const responseReleased = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(
+      "**/api/trackers/knee-rehab/integrations/sync-latest",
+      async (route) => {
+        requests += 1;
+        await responseReleased;
+        await route.fulfill({
+          contentType: "application/json",
+          body: JSON.stringify({
+            sources: [
+              {
+                source: "garmin_activity",
+                status: "records",
+                recordCount: 1,
+                continueAvailable: true,
+              },
+              {
+                source: "garmin_wellness",
+                status: "temporarily_failed",
+                recordCount: 0,
+                continueAvailable: false,
+              },
+              {
+                source: "xunji_training",
+                status: "needs_credentials",
+                recordCount: 0,
+                continueAvailable: false,
+              },
+            ],
+          }),
+        });
+      },
+    );
+    await page.goto("/");
+
+    const syncButton = page.getByRole("button", { name: "同步最新记录" });
+    await syncButton.dblclick();
+    await expect(page.getByRole("button", { name: "同步中…" })).toBeDisabled();
+    expect(requests).toBe(1);
+    release();
+
+    await expect(page.getByText("有记录 · 继续同步")).toBeVisible();
+    await expect(page.getByText("暂时失败")).toBeVisible();
+    await expect(page.getByText("需更新凭证")).toBeVisible();
+    await expectMobileLayoutIntegrity(page);
   });
 }
 
@@ -1335,7 +1394,7 @@ for (const width of [320, 375, 390, 430]) {
         await expect(
           page.getByRole("link", { name: "打开完整对话" }),
         ).toBeVisible();
-        await expect(page.getByText("起算后第 5 个日历周")).toBeVisible();
+        await expect(page.getByText("按当前安排继续")).toBeVisible();
         await expect(page.getByText("版本 1", { exact: true })).toHaveCount(0);
       }
       await expectMobileLayoutIntegrity(page);

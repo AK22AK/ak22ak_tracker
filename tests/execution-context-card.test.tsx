@@ -93,7 +93,7 @@ describe("execution context card", () => {
       />,
     );
 
-    expect(screen.getByText("正常计划")).toBeTruthy();
+    expect(screen.getByText("按当前安排")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "安排出差或器械受限" }));
     fireEvent.change(screen.getByLabelText("开始日期"), {
       target: { value: "2026-07-20" },

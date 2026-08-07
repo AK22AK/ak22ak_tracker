@@ -151,9 +151,7 @@ export function PendingCommandCenter({ trackerKey }: { trackerKey: string }) {
             <strong>{relevant.length} 条本机记录</strong>
             <p>最早一条处理完成后，后面的记录会继续同步。</p>
           </div>
-          <StatusPill tone={online ? "success" : "warning"}>
-            {online ? "当前在线" : "当前离线"}
-          </StatusPill>
+          {!online ? <StatusPill tone="warning">当前离线</StatusPill> : null}
         </section>
       ) : null}
 

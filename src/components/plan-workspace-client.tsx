@@ -63,12 +63,7 @@ export function PlanWorkspaceClient() {
           <div className="plan-workspace-heading-row">
             <div>
               <p className="eyebrow">当前计划</p>
-              <h2>
-                {data.calendarWeek
-                  ? `起算后第 ${data.calendarWeek} 个日历周`
-                  : "尚未开始"}
-              </h2>
-              {data.calendarWeek ? <p>日历周不等于有效训练阶段。</p> : null}
+              <h2>{data.plan ? "按当前安排继续" : "尚未开始"}</h2>
             </div>
           </div>
           <div>
@@ -109,14 +104,17 @@ export function PlanWorkspaceClient() {
         </Link>
       ) : null}
 
-      <nav className="plan-workspace-links" aria-label="计划工具">
-        <Link href="/plan/review">近期回顾</Link>
-        <Link href="/plan/advice">调整方案</Link>
-        <Link href="/plan/evaluation">阶段评估</Link>
-        <Link href="/plan/versions">计划版本</Link>
-        <Link href="/plan/profile">康复档案</Link>
-        <Link href="/plan/memories">助手记忆</Link>
-      </nav>
+      <details className="plan-secondary-entry">
+        <summary>更多计划信息</summary>
+        <nav className="plan-workspace-links" aria-label="更多计划信息">
+          <Link href="/plan/review">近期回顾</Link>
+          <Link href="/plan/advice">调整方案</Link>
+          <Link href="/plan/evaluation">阶段评估</Link>
+          <Link href="/plan/versions">计划版本</Link>
+          <Link href="/plan/profile">康复档案</Link>
+          <Link href="/plan/memories">助手记忆</Link>
+        </nav>
+      </details>
     </main>
   );
 }

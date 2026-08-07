@@ -421,7 +421,7 @@ function ExecutionContextCardState({
       <SurfaceCard className="execution-context-card" aria-label="训练条件">
         <SectionHeading
           eyebrow="训练条件"
-          title="正常计划"
+          title="按当前安排"
           aside={<StatusPill tone="neutral">未启用临时模式</StatusPill>}
         />
         <p className="execution-supporting-copy">

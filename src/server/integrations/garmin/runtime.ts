@@ -694,6 +694,8 @@ export function createGarminRuntime({
       trackerKey: string;
       profile?: GarminAutomaticRecoveryProfile;
     }) {
+      const recoveryMinimumIntervalMs =
+        input.profile === "foreground" ? 0 : automaticRecoveryMinimumIntervalMs;
       const connection = connectionStatus(
         await store.getStatus(input.trackerKey),
       );
@@ -712,7 +714,7 @@ export function createGarminRuntime({
             trackerId: tracker.id,
             provider: "garmin_wellness",
             now: now(),
-            minimumIntervalMs: automaticRecoveryMinimumIntervalMs,
+            minimumIntervalMs: recoveryMinimumIntervalMs,
             leaseMs: automaticRecoveryLeaseMs,
             store: automaticRecoveryStore,
             recover: (priorLastSucceededAt) =>
@@ -776,6 +778,8 @@ export function createGarminRuntime({
       trackerKey: string;
       profile?: GarminAutomaticRecoveryProfile;
     }) {
+      const recoveryMinimumIntervalMs =
+        input.profile === "foreground" ? 0 : automaticRecoveryMinimumIntervalMs;
       const initialConnection = connectionStatus(
         await store.getStatus(input.trackerKey),
       );
@@ -794,7 +798,7 @@ export function createGarminRuntime({
             trackerId: tracker.id,
             provider: "garmin",
             now: now(),
-            minimumIntervalMs: automaticRecoveryMinimumIntervalMs,
+            minimumIntervalMs: recoveryMinimumIntervalMs,
             leaseMs: automaticRecoveryLeaseMs,
             store: automaticRecoveryStore,
             recover: (priorLastSucceededAt) =>

@@ -79,7 +79,9 @@ describe("Garmin token-only settings flow", () => {
     ).toBeTruthy();
     expect((maintenance as HTMLDetailsElement).open).toBe(false);
     expect(screen.getAllByText("最近成功处理日期：暂无")).toHaveLength(2);
-    expect(screen.getAllByText(/不代表当天一定读取到记录/)).toHaveLength(2);
+    expect(
+      screen.getAllByText(/每次处理一小批；完成后会显示结果和是否可以继续。/),
+    ).toHaveLength(2);
   });
 
   it("restores the persisted wellness cursor after the settings page reloads", () => {

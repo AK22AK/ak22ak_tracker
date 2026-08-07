@@ -52,8 +52,8 @@ function garminRowStatus(status: GarminConnectionStatus): RowStatus {
     return { detail: "响应异常，将自动重试", needsAttention: false };
   }
   if (status.state === "connected")
-    return { detail: "已连接", needsAttention: false };
-  return { detail: "未连接", needsAttention: false };
+    return { detail: "无需处理", needsAttention: false };
+  return { detail: "尚未连接", needsAttention: false };
 }
 
 function integrationRowStatus(
@@ -113,14 +113,14 @@ function integrationRowStatus(
     };
   if (status.sync.status === "succeeded") {
     if (status.sync.lastOutcome?.kind === "succeeded_with_records") {
-      return { detail: "同步成功，已发现记录", needsAttention: false };
+      return { detail: "无需处理", needsAttention: false };
     }
     if (status.sync.lastOutcome?.kind === "succeeded_empty") {
-      return { detail: "同步成功，当天无记录", needsAttention: false };
+      return { detail: "无需处理", needsAttention: false };
     }
   }
-  if (status.configured) return { detail: "已连接", needsAttention: false };
-  return { detail: "未连接", needsAttention: false };
+  if (status.configured) return { detail: "无需处理", needsAttention: false };
+  return { detail: "尚未连接", needsAttention: false };
 }
 
 function deepSeekRowStatus(status: DeepSeekConnectionStatus): RowStatus {
@@ -128,8 +128,8 @@ function deepSeekRowStatus(status: DeepSeekConnectionStatus): RowStatus {
     return { detail: "需要处理", needsAttention: true };
   }
   if (status.state === "connected")
-    return { detail: "已连接", needsAttention: false };
-  return { detail: "未连接", needsAttention: false };
+    return { detail: "无需处理", needsAttention: false };
+  return { detail: "尚未连接", needsAttention: false };
 }
 
 function mirrorRowStatus(status: GitHubMirrorStatus): RowStatus {
@@ -144,8 +144,8 @@ function mirrorRowStatus(status: GitHubMirrorStatus): RowStatus {
     return { detail: "备份中", needsAttention: false };
   }
   if (status.configuration === "configured")
-    return { detail: "已就绪", needsAttention: false };
-  return { detail: "未设置", needsAttention: false };
+    return { detail: "无需处理", needsAttention: false };
+  return { detail: "尚未设置", needsAttention: false };
 }
 
 function SettingsRow({

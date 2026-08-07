@@ -256,6 +256,18 @@ export function TodayClient() {
     });
   };
 
+  const refreshAfterLatestSync = async () => {
+    await Promise.all([
+      query.refetch(),
+      queryClient.invalidateQueries({
+        queryKey: trackerQueryKeys.day(trackerKey, localDate),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: trackerQueryKeys.calendar(trackerKey, localDate.slice(0, 7)),
+      }),
+    ]);
+  };
+
   const updateDay = (
     update: (day: TodayAggregate["day"]) => TodayAggregate["day"],
   ) => {
@@ -302,6 +314,7 @@ export function TodayClient() {
       readOnlyOffline={readOnlyOffline}
       offlineSavedAt={readOnlyOffline ? (snapshotData?.savedAt ?? null) : null}
       onRefresh={() => query.refetch()}
+      onLatestSyncCompleted={refreshAfterLatestSync}
       onRetryPending={replayNow}
       pendingSummary={projected?.pending ?? null}
       onExecutionChanged={() => query.refetch()}

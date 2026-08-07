@@ -393,7 +393,10 @@ export function createXunjiRuntime({
       trackerKey: string;
       now?: Date;
       batchSize?: number;
+      profile?: "foreground" | "daily_cron";
     }) {
+      const recoveryMinimumIntervalMs =
+        input.profile === "foreground" ? 0 : automaticRecoveryMinimumIntervalMs;
       const tracker = await store.requireTracker(input.trackerKey);
       const status = await store.getStatus(tracker.key);
       if (!publicStatus(status).configured) {
@@ -405,7 +408,7 @@ export function createXunjiRuntime({
             trackerId: tracker.id,
             provider: "xunji",
             now: input.now ?? now(),
-            minimumIntervalMs: automaticRecoveryMinimumIntervalMs,
+            minimumIntervalMs: recoveryMinimumIntervalMs,
             leaseMs: automaticRecoveryLeaseMs,
             store: automaticRecoveryStore,
             recover: (priorLastSucceededAt) =>
@@ -662,6 +665,7 @@ export async function recoverXunjiHistory(input: {
   now?: Date;
   database?: Database;
   batchSize?: number;
+  profile?: "foreground" | "daily_cron";
 }) {
   return createDefaultXunjiRuntime(input.database).recoverHistory(input);
 }

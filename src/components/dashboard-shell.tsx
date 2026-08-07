@@ -21,6 +21,7 @@ import { usePrivateOfflineIdentity } from "@/offline/private-offline-context";
 
 import { ExternalTrainingSection } from "./external-training-section";
 import { RecoveryReferenceCard } from "./recovery-reference-card";
+import { TodaySyncControl } from "./today-sync-control";
 import {
   ExecutionContextCard,
   ExecutionPauseCard,
@@ -574,6 +575,7 @@ export function DashboardShell({
   initialDashboard,
   execution,
   onRefresh,
+  onLatestSyncCompleted,
   onExecutionChanged,
   onTaskUpdated,
   onExternalTrainingUpdated,
@@ -590,6 +592,7 @@ export function DashboardShell({
   initialDashboard: TodayDashboard;
   execution: ExecutionContextToday;
   onRefresh: () => Promise<unknown>;
+  onLatestSyncCompleted: () => Promise<unknown>;
   onExecutionChanged: () => Promise<unknown>;
   onTaskUpdated: (task: DashboardTask) => void;
   onExternalTrainingUpdated: (
@@ -851,6 +854,10 @@ export function DashboardShell({
             ) : null
           }
         />
+        <TodaySyncControl
+          trackerKey="knee-rehab"
+          onCompleted={onLatestSyncCompleted}
+        />
         {missing ? (
           <p className="empty-state-copy">
             还没有训练计划。完成设置后，今天的安排会显示在这里。
@@ -929,6 +936,29 @@ export function DashboardShell({
         </div>
       ) : null}
 
+      {pendingRecords.length > 0 ? (
+        <SurfaceCard className="pending-sources-card" aria-label="待处理来源">
+          <SectionHeading
+            eyebrow="活动与训练来源"
+            title={`${pendingRecords.length} 条需要确认`}
+            aside={
+              <StatusPill tone="attention" icon="!">
+                待处理
+              </StatusPill>
+            }
+          />
+          <ExternalTrainingSection
+            trackerKey="knee-rehab"
+            records={pendingRecords}
+            tasks={tasks}
+            heading="需要确认的来源记录"
+            onUpdated={handleExternalTrainingUpdated}
+            onConflict={onExternalTrainingConflict}
+            readOnly={writesDisabled}
+          />
+        </SurfaceCard>
+      ) : null}
+
       <SurfaceCard className="feedback-card" aria-label="身体反馈">
         <SectionHeading
           eyebrow="身体反馈"
@@ -954,9 +984,6 @@ export function DashboardShell({
             {safetyGuidance(currentSafety)}
           </p>
         ) : null}
-        <p className="feedback-supporting-copy">
-          可提交训练前后、次日反应或突发情况；每天至少记录一次。
-        </p>
         <div className="button-row">
           <Link className="primary-button" href="/feedback" scroll={false}>
             {feedbackCount > 0 ? "再次反馈" : "添加反馈"}
@@ -972,29 +999,6 @@ export function DashboardShell({
 
       {initialDashboard.recoveryReference ? (
         <RecoveryReferenceCard reference={initialDashboard.recoveryReference} />
-      ) : null}
-
-      {pendingRecords.length > 0 ? (
-        <SurfaceCard className="pending-sources-card" aria-label="待处理来源">
-          <SectionHeading
-            eyebrow="活动与训练来源"
-            title={`${pendingRecords.length} 条需要确认`}
-            aside={
-              <StatusPill tone="attention" icon="!">
-                待处理
-              </StatusPill>
-            }
-          />
-          <ExternalTrainingSection
-            trackerKey="knee-rehab"
-            records={pendingRecords}
-            tasks={tasks}
-            heading="需要确认的来源记录"
-            onUpdated={handleExternalTrainingUpdated}
-            onConflict={onExternalTrainingConflict}
-            readOnly={writesDisabled}
-          />
-        </SurfaceCard>
       ) : null}
     </main>
   );

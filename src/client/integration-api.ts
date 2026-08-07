@@ -8,6 +8,7 @@ import {
   providerHistoryOverviewSchema,
 } from "@/domain/integrations";
 import { deepSeekConnectionStatusSchema } from "@/domain/deepseek";
+import { todaySyncResultSchema } from "@/domain/today-sync";
 
 async function getJson(url: string, signal?: AbortSignal) {
   const response = await fetch(url, {
@@ -83,4 +84,16 @@ export async function fetchProviderHistoryOverview(
       signal,
     ),
   );
+}
+
+export async function syncLatestIntegrationRecords(trackerKey: string) {
+  const response = await fetch(
+    `/api/trackers/${encodeURIComponent(trackerKey)}/integrations/sync-latest`,
+    {
+      method: "POST",
+      headers: { Accept: "application/json" },
+    },
+  );
+  if (!response.ok) throw new Error("latest_sync_unavailable");
+  return todaySyncResultSchema.parse(await response.json());
 }

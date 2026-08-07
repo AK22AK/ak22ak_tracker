@@ -558,7 +558,7 @@ export function GarminIntegrationCard({
         </p>
       </div>
       <p className="integration-action-help">
-        每次只追赶一批；范围和下一步会在完成后显示。不代表当天一定读取到记录。
+        每次处理一小批；完成后会显示结果和是否可以继续。
       </p>
       <div className="integration-subsection">
         <div>
@@ -605,7 +605,7 @@ export function GarminIntegrationCard({
           </p>
         </div>
         <p className="integration-action-help">
-          每次只追赶一批；范围和下一步会在完成后显示。不代表当天一定读取到记录。
+          每次处理一小批；完成后会显示结果和是否可以继续。
         </p>
         {wellnessCatchUpResult?.batch ? (
           <div className="integration-progress" aria-label="恢复数据同步进度">
