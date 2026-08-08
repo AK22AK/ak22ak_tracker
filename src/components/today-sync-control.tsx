@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { syncLatestIntegrationRecords } from "@/client/integration-api";
 import { useNetworkState } from "@/client/use-network-state";
@@ -40,12 +40,81 @@ function SourceResults({ result }: { result: TodaySyncResult }) {
   );
 }
 
+type TodaySyncController = {
+  syncing: boolean;
+  result: TodaySyncResult | null;
+  failed: boolean;
+  online: boolean;
+  hasContinuation: boolean | undefined;
+  syncStatus: string | null;
+  sync: () => void;
+};
+
+function TodaySyncButton({ controller }: { controller: TodaySyncController }) {
+  const { syncing, online, hasContinuation, sync } = controller;
+
+  return (
+    <button
+      className="secondary-button today-sync-button"
+      type="button"
+      aria-label={syncing ? "正在同步外部训练记录" : "同步外部训练记录"}
+      title={
+        online
+          ? hasContinuation
+            ? "继续同步 Garmin、Garmin wellness 和训记"
+            : "同步 Garmin、Garmin wellness 和训记"
+          : "联网后同步外部训练记录"
+      }
+      disabled={syncing || !online}
+      onClick={sync}
+    >
+      <span aria-hidden="true">⇄</span>
+      <span>{syncing ? "同步中…" : "同步"}</span>
+    </button>
+  );
+}
+
+function TodaySyncStatus({ controller }: { controller: TodaySyncController }) {
+  const { syncing, result, failed, syncStatus } = controller;
+
+  return (
+    <>
+      {syncing ? (
+        <div className="today-sync-status" role="status" aria-live="polite">
+          <strong>正在同步外部训练记录</strong>
+          <ul className="today-sync-results" aria-label="来源同步结果">
+            {Object.entries(sourceNames).map(([source, name]) => (
+              <li key={source} data-sync-source={source}>
+                <span>{name}</span>
+                <strong>同步中</strong>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {result && syncStatus ? (
+        <div className="today-sync-status" role="status" aria-live="polite">
+          <strong>{syncStatus}</strong>
+          <SourceResults result={result} />
+        </div>
+      ) : null}
+      {failed ? (
+        <p className="today-sync-error today-sync-status" role="alert">
+          暂时无法同步，请稍后再试。
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 export function TodaySyncControl({
   trackerKey,
   onCompleted,
+  children,
 }: {
   trackerKey: string;
   onCompleted: () => void | Promise<unknown>;
+  children?: (parts: { button: ReactNode; status: ReactNode }) => ReactNode;
 }) {
   const [syncing, setSyncing] = useState(false);
   const [result, setResult] = useState<TodaySyncResult | null>(null);
@@ -86,49 +155,29 @@ export function TodaySyncControl({
     }
   }
 
+  const controller: TodaySyncController = {
+    syncing,
+    result,
+    failed,
+    online,
+    hasContinuation,
+    syncStatus,
+    sync: () => void sync(),
+  };
+  const button = <TodaySyncButton controller={controller} />;
+  const status =
+    syncing || (result && syncStatus) || failed ? (
+      <TodaySyncStatus controller={controller} />
+    ) : null;
+
+  if (children) {
+    return children({ button, status });
+  }
+
   return (
     <div className="today-sync-control">
-      <button
-        className="secondary-button today-sync-button"
-        type="button"
-        aria-label={syncing ? "正在同步外部训练记录" : "同步外部训练记录"}
-        title={
-          online
-            ? hasContinuation
-              ? "继续同步 Garmin、Garmin wellness 和训记"
-              : "同步 Garmin、Garmin wellness 和训记"
-            : "联网后同步外部训练记录"
-        }
-        disabled={syncing || !online}
-        onClick={() => void sync()}
-      >
-        <span aria-hidden="true">⇄</span>
-        <span>{syncing ? "同步中…" : "同步"}</span>
-      </button>
-      {syncing ? (
-        <div className="today-sync-status" role="status" aria-live="polite">
-          <strong>正在同步外部训练记录</strong>
-          <ul className="today-sync-results" aria-label="来源同步结果">
-            {Object.entries(sourceNames).map(([source, name]) => (
-              <li key={source} data-sync-source={source}>
-                <span>{name}</span>
-                <strong>同步中</strong>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {result && syncStatus ? (
-        <div className="today-sync-status" role="status" aria-live="polite">
-          <strong>{syncStatus}</strong>
-          <SourceResults result={result} />
-        </div>
-      ) : null}
-      {failed ? (
-        <p className="today-sync-error today-sync-status" role="alert">
-          暂时无法同步，请稍后再试。
-        </p>
-      ) : null}
+      {button}
+      {status}
     </div>
   );
 }

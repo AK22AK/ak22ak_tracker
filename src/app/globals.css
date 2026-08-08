@@ -6218,6 +6218,20 @@ body {
   width: min(100%, 340px);
 }
 
+.today-actions > .today-sync-button {
+  grid-column: 2;
+}
+
+.today-sync-status-slot {
+  width: 100%;
+  min-width: 0;
+}
+
+.today-sync-status-slot > .today-sync-status {
+  width: 100%;
+  box-sizing: border-box;
+}
+
 .today-sync-control {
   display: grid;
   min-width: 0;
@@ -6276,6 +6290,10 @@ body {
 
 .today-training-section {
   padding: 0 0 12px;
+}
+
+.today-training-section > .today-adjustment-entry {
+  margin-inline: 20px;
 }
 
 .today-task-summary .task-summary-copy strong {

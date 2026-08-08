@@ -1079,7 +1079,7 @@ test("UI-R5 production Today information architecture stays flat and actionable"
   expect.soft(structure.executionConditionVisible).toBe(false);
 });
 
-for (const width of [320, 375, 390, 430]) {
+for (const width of [320, 375, 390, 393, 430]) {
   test(`today feedback action remains in flow at ${width}px`, async ({
     page,
   }) => {
@@ -1109,17 +1109,41 @@ for (const width of [320, 375, 390, 430]) {
       const planCard = document.querySelector<HTMLElement>(
         ".today-training-section",
       );
+      const planHeading = planCard?.querySelector<HTMLElement>(
+        ":scope > .section-heading",
+      );
       const adjustment = [
         ...document.querySelectorAll<HTMLButtonElement>("button"),
       ].find((button) => button.textContent?.trim() === "调整今天");
       const feedbackCardRect = feedbackCard?.getBoundingClientRect();
       const feedbackActionRect = feedbackAction?.getBoundingClientRect();
+      const planCardRect = planCard?.getBoundingClientRect();
+      const planHeadingRect = planHeading?.getBoundingClientRect();
+      const planHeadingStyle = planHeading
+        ? getComputedStyle(planHeading)
+        : null;
+      const adjustmentRect = adjustment?.getBoundingClientRect();
+      const headingPaddingLeft = Number.parseFloat(
+        planHeadingStyle?.paddingLeft ?? "0",
+      );
+      const headingPaddingRight = Number.parseFloat(
+        planHeadingStyle?.paddingRight ?? "0",
+      );
       return {
         feedbackCardRect,
         hasSafetyCard: Boolean(safetyCard),
         feedbackActionRect,
         actionHeight: feedbackActionRect?.height ?? 0,
         adjustmentInPlanCard: Boolean(planCard?.contains(adjustment ?? null)),
+        planCardRect,
+        adjustmentRect,
+        headingContentLeft: (planHeadingRect?.left ?? 0) + headingPaddingLeft,
+        headingContentRight:
+          (planHeadingRect?.right ?? 0) - headingPaddingRight,
+        adjustmentHeight: adjustmentRect?.height ?? 0,
+        adjustmentTextFits:
+          adjustment !== undefined &&
+          adjustment.scrollWidth <= adjustment.clientWidth + 1,
       };
     });
 
@@ -1138,6 +1162,17 @@ for (const width of [320, 375, 390, 430]) {
       layout.feedbackCardRect?.bottom ?? Number.NEGATIVE_INFINITY,
     );
     expect(layout.adjustmentInPlanCard).toBe(true);
+    expect(layout.adjustmentRect?.left).toBeGreaterThanOrEqual(
+      layout.headingContentLeft - 1,
+    );
+    expect(layout.adjustmentRect?.right).toBeLessThanOrEqual(
+      layout.headingContentRight + 1,
+    );
+    expect(layout.adjustmentRect?.right).toBeLessThanOrEqual(
+      layout.planCardRect?.right ?? Number.NEGATIVE_INFINITY,
+    );
+    expect(layout.adjustmentHeight).toBeGreaterThanOrEqual(44);
+    expect(layout.adjustmentTextFits).toBe(true);
 
     await adjustment.click();
     await expect(adjustment).toHaveAttribute("aria-expanded", "true");
@@ -1228,16 +1263,90 @@ for (const width of [320, 375, 390, 393, 430]) {
     expect(taskBeforeSync).toBe(true);
 
     const syncButton = page.getByRole("button", { name: "同步外部训练记录" });
+    const titleTopBeforeSync = await page
+      .locator(".today-title-row h1")
+      .evaluate((element) => element.getBoundingClientRect().top);
     await syncButton.dblclick();
     await expect(
       page.getByRole("button", { name: "正在同步外部训练记录" }),
     ).toBeDisabled();
     expect(requests).toBe(1);
+    const syncRunningLayout = await page.evaluate(() => {
+      const header = document.querySelector<HTMLElement>(".today-header");
+      const actions = document.querySelector<HTMLElement>(".today-actions");
+      const status = document.querySelector<HTMLElement>(".today-sync-status");
+      const sourceRows = [
+        ...(status?.querySelectorAll<HTMLElement>(".today-sync-results li") ??
+          []),
+      ];
+      const title = document.querySelector<HTMLElement>(".today-title-row h1");
+      const headerRect = header?.getBoundingClientRect();
+      const statusRect = status?.getBoundingClientRect();
+      return {
+        headerWidth: headerRect?.width ?? 0,
+        headerLeft: headerRect?.left ?? 0,
+        headerRight: headerRect?.right ?? 0,
+        actionsWidth: actions?.getBoundingClientRect().width ?? 0,
+        statusWidth: statusRect?.width ?? 0,
+        statusLeft: statusRect?.left ?? 0,
+        statusRight: statusRect?.right ?? 0,
+        statusInActions: Boolean(status && actions?.contains(status)),
+        statusInHeader: Boolean(status && header?.contains(status)),
+        titleTop: title?.getBoundingClientRect().top ?? 0,
+        sourceRowWidths: sourceRows.map(
+          (row) => row.getBoundingClientRect().width,
+        ),
+      };
+    });
+    expect(syncRunningLayout.statusWidth).toBeGreaterThanOrEqual(
+      syncRunningLayout.headerWidth - 4,
+    );
+    expect(syncRunningLayout.statusRight).toBeLessThanOrEqual(
+      syncRunningLayout.headerRight + 1,
+    );
+    expect(syncRunningLayout.statusLeft).toBeGreaterThanOrEqual(
+      syncRunningLayout.headerLeft - 1,
+    );
+    expect(syncRunningLayout.statusInActions).toBe(false);
+    expect(syncRunningLayout.statusInHeader).toBe(true);
+    expect(syncRunningLayout.titleTop).toBeCloseTo(titleTopBeforeSync, 0);
+    expect(
+      syncRunningLayout.sourceRowWidths.every(
+        (width) => width >= syncRunningLayout.statusWidth - 28,
+      ),
+    ).toBe(true);
     release();
 
     await expect(page.getByText("有记录 · 继续同步")).toBeVisible();
     await expect(page.getByText("暂时失败")).toBeVisible();
     await expect(page.getByText("需更新凭证")).toBeVisible();
+    const syncPartialLayout = await page.evaluate(() => {
+      const header = document.querySelector<HTMLElement>(".today-header");
+      const status = document.querySelector<HTMLElement>(".today-sync-status");
+      const headerRect = header?.getBoundingClientRect();
+      const statusRect = status?.getBoundingClientRect();
+      return {
+        headerWidth: headerRect?.width ?? 0,
+        headerLeft: headerRect?.left ?? 0,
+        headerRight: headerRect?.right ?? 0,
+        statusWidth: statusRect?.width ?? 0,
+        statusLeft: statusRect?.left ?? 0,
+        statusRight: statusRect?.right ?? 0,
+        statusInActions: Boolean(
+          status && document.querySelector(".today-actions")?.contains(status),
+        ),
+      };
+    });
+    expect(syncPartialLayout.statusWidth).toBeGreaterThanOrEqual(
+      syncPartialLayout.headerWidth - 4,
+    );
+    expect(syncPartialLayout.statusLeft).toBeGreaterThanOrEqual(
+      syncPartialLayout.headerLeft - 1,
+    );
+    expect(syncPartialLayout.statusRight).toBeLessThanOrEqual(
+      syncPartialLayout.headerRight + 1,
+    );
+    expect(syncPartialLayout.statusInActions).toBe(false);
     if (width === 390) {
       await page.screenshot({
         path: "test-results/ui-r8-today-sync-partial-390.png",

@@ -660,37 +660,50 @@ export function DashboardShell({
   return (
     <main className="app-shell today-page" data-today-content-visible="true">
       <header className="today-header">
-        <div className="today-title-row">
-          <div>
-            <h1>今天</h1>
-            <p className="today-date">{today}</p>
-          </div>
-          <div className="today-actions">
-            <button
-              className="refresh-button"
-              type="button"
-              aria-label={refreshing ? "正在刷新今日数据" : "刷新今日数据"}
-              title={
-                online ? "刷新已保存的今日数据" : "联网后刷新已保存的今日数据"
-              }
-              disabled={!online || refreshing}
-              onClick={async () => {
-                setRefreshing(true);
-                try {
-                  await onRefresh();
-                } finally {
-                  setRefreshing(false);
-                }
-              }}
-            >
-              <span aria-hidden="true">↻</span>
-            </button>
-            <TodaySyncControl
-              trackerKey="knee-rehab"
-              onCompleted={onLatestSyncCompleted}
-            />
-          </div>
-        </div>
+        <TodaySyncControl
+          trackerKey="knee-rehab"
+          onCompleted={onLatestSyncCompleted}
+        >
+          {({ button, status }) => (
+            <>
+              <div className="today-title-row">
+                <div>
+                  <h1>今天</h1>
+                  <p className="today-date">{today}</p>
+                </div>
+                <div className="today-actions">
+                  <button
+                    className="refresh-button"
+                    type="button"
+                    aria-label={
+                      refreshing ? "正在刷新今日数据" : "刷新今日数据"
+                    }
+                    title={
+                      online
+                        ? "刷新已保存的今日数据"
+                        : "联网后刷新已保存的今日数据"
+                    }
+                    disabled={!online || refreshing}
+                    onClick={async () => {
+                      setRefreshing(true);
+                      try {
+                        await onRefresh();
+                      } finally {
+                        setRefreshing(false);
+                      }
+                    }}
+                  >
+                    <span aria-hidden="true">↻</span>
+                  </button>
+                  {button}
+                </div>
+              </div>
+              {status ? (
+                <div className="today-sync-status-slot">{status}</div>
+              ) : null}
+            </>
+          )}
+        </TodaySyncControl>
       </header>
 
       {writesDisabled ? (
