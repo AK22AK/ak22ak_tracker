@@ -70,7 +70,23 @@ function TodaySyncButton({ controller }: { controller: TodaySyncController }) {
       disabled={syncing || !online}
       onClick={sync}
     >
-      <span aria-hidden="true">⇄</span>
+      <svg
+        aria-hidden="true"
+        className="ak-toolbar-icon"
+        viewBox="0 0 18 18"
+        width="18"
+        height="18"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M3 6.25h9.5" />
+        <path d="m9.75 3.5 2.75 2.75-2.75 2.75" />
+        <path d="M15 11.75H5.5" />
+        <path d="m8.25 9-2.75 2.75 2.75 2.75" />
+      </svg>
       <span>{syncing ? "同步中…" : "同步"}</span>
     </AkToolbarAction>
   );

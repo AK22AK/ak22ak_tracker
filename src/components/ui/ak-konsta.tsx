@@ -77,6 +77,7 @@ export function AkToolbarAction({
   return (
     <Button
       {...(variant === "tonal" ? { tonalIos: true } : { clearIos: true })}
+      inline
       type="button"
       aria-label={label}
       title={title ?? label}
@@ -146,6 +147,42 @@ export function AkCard({
         className="ak-konsta-card"
       >
         <div className="ak-card-content">{children}</div>
+      </Card>
+    </section>
+  );
+}
+
+export function AkCompactActionCard({
+  title,
+  action,
+  ariaLabel,
+  className = "",
+  dataTodayFeedback = false,
+}: {
+  title: ReactNode;
+  action: ReactNode;
+  ariaLabel?: string;
+  className?: string;
+  dataTodayFeedback?: boolean;
+}) {
+  return (
+    <section
+      className={`ak-card ${className}`.trim()}
+      data-ak-card
+      data-today-feedback={dataTodayFeedback ? "true" : undefined}
+      role="region"
+      aria-label={ariaLabel ?? (typeof title === "string" ? title : undefined)}
+    >
+      <Card
+        contentWrap={false}
+        headerDivider={false}
+        footerDivider={false}
+        className="ak-konsta-card ak-compact-action-card"
+      >
+        <div className="ak-compact-action-row">
+          <h2>{title}</h2>
+          {action}
+        </div>
       </Card>
     </section>
   );

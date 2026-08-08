@@ -1095,6 +1095,84 @@ async function expectTodayR9VisualContract(
   if (expectedTaskTitle) expect(contract.taskTitleCount).toBe(1);
 }
 
+test("UI-R9 Today density contract holds for the Chinese fixture", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockPrivateReads(
+    page,
+    0,
+    planAdvice,
+    evaluationAggregate,
+    trendsAggregate,
+    { today: todayR9ChineseFixture },
+  );
+  await page.goto("/");
+  await expect(page.getByText("上肢综合训练", { exact: true })).toHaveCount(1);
+
+  await page.getByRole("button", { name: "收起 上肢综合训练" }).click();
+  const collapsed = await page.evaluate(() => {
+    const workout = document.querySelector<HTMLElement>("[data-today-workout]");
+    const header = workout?.querySelector<HTMLElement>(".ak-card-header");
+    const taskSummary = workout?.querySelector<HTMLElement>(
+      ".today-task-summary",
+    );
+    const adjustment = workout?.querySelector<HTMLElement>(
+      ".today-adjustment-entry",
+    );
+    const cardRect = workout?.getBoundingClientRect();
+    const headerRect = header?.getBoundingClientRect();
+    const taskRect = taskSummary?.getBoundingClientRect();
+    const adjustmentRect = adjustment?.getBoundingClientRect();
+    const gaps = [
+      headerRect && taskRect ? taskRect.top - headerRect.bottom : 0,
+      taskRect && adjustmentRect ? adjustmentRect.top - taskRect.bottom : 0,
+      cardRect && adjustmentRect ? cardRect.bottom - adjustmentRect.bottom : 0,
+    ];
+    return {
+      height: cardRect?.height ?? 0,
+      gaps,
+      feedbackHeight:
+        document
+          .querySelector<HTMLElement>("[data-today-feedback]")
+          ?.getBoundingClientRect().height ?? 0,
+    };
+  });
+  expect.soft(collapsed.height).toBeLessThanOrEqual(220);
+  expect.soft(Math.max(...collapsed.gaps)).toBeLessThanOrEqual(20);
+  expect.soft(collapsed.feedbackHeight).toBeLessThanOrEqual(88);
+
+  await page.getByRole("button", { name: "展开 上肢综合训练" }).click();
+  const expanded = await page.evaluate(() => {
+    const rows = [
+      ...document.querySelectorAll<HTMLElement>(
+        ".today-prescription .ak-list-row",
+      ),
+    ];
+    const toolbar = [
+      ...document.querySelectorAll<HTMLElement>("[data-ak-toolbar-variant]"),
+    ];
+    const sync = document.querySelector<HTMLElement>(".today-sync-button");
+    const syncStyle = sync ? getComputedStyle(sync) : null;
+    return {
+      rowHeights: rows.map((row) => row.getBoundingClientRect().height),
+      toolbarWidth: sync?.getBoundingClientRect().width ?? 0,
+      toolbarWidthStyle: syncStyle?.width ?? "",
+      toolbarGap: Number.parseFloat(syncStyle?.gap ?? "-1"),
+      toolbarCount: toolbar.length,
+    };
+  });
+  expect.soft(expanded.rowHeights).toHaveLength(4);
+  expect
+    .soft(expanded.rowHeights.every((height) => height >= 56 && height <= 64))
+    .toBe(true);
+  expect.soft(expanded.toolbarCount).toBe(2);
+  expect.soft(expanded.toolbarWidth).toBeLessThanOrEqual(92);
+  expect.soft(expanded.toolbarWidthStyle).not.toBe("100%");
+  expect.soft(expanded.toolbarGap).toBeGreaterThanOrEqual(6);
+  expect.soft(expanded.toolbarGap).toBeLessThanOrEqual(8);
+});
+
 test("UI-R5 production Today information architecture stays flat and actionable", async ({
   page,
 }) => {
@@ -1497,13 +1575,16 @@ for (const width of [320, 375, 390, 393, 430]) {
   });
 }
 
-test("UI-R9 anonymous 390px Today states keep the new information hierarchy", async ({
+test("UI-R9 390px Today states keep the new information hierarchy", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const chineseReviewScreenshotPath =
     process.env.UI_R9_SCREENSHOT_PATH ??
     "test-results/ui-r9-today-chinese-390.png";
+  const chineseCollapsedScreenshotPath =
+    process.env.UI_R9_COLLAPSED_SCREENSHOT_PATH ??
+    "test-results/ui-r9-today-chinese-collapsed-390.png";
   const chineseFooterScreenshotPath =
     process.env.UI_R9_FOOTER_SCREENSHOT_PATH ??
     "test-results/ui-r9-today-chinese-footer-390.png";
@@ -1546,7 +1627,7 @@ test("UI-R9 anonymous 390px Today states keep the new information hierarchy", as
       dateLeading: date ? getComputedStyle(date).lineHeight : null,
       sectionHeadings: [
         ...document.querySelectorAll<HTMLElement>(
-          ".today-section .ak-card-header h2",
+          ".today-section .ak-card-header h2, .today-section .ak-compact-action-row h2",
         ),
       ].map((heading) => {
         const rect = heading.getBoundingClientRect();
@@ -1582,6 +1663,12 @@ test("UI-R9 anonymous 390px Today states keep the new information hierarchy", as
     true,
   );
   expect(headerContract.overflow).toBe(false);
+  await page.getByRole("button", { name: "收起 上肢综合训练" }).click();
+  await page.screenshot({
+    path: chineseCollapsedScreenshotPath,
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "展开 上肢综合训练" }).click();
   await page.screenshot({
     path: chineseReviewScreenshotPath,
     fullPage: true,
@@ -1624,15 +1711,7 @@ test("UI-R9 anonymous 390px Today states keep the new information hierarchy", as
     });
   }
 
-  activeToday = {
-    ...todayAggregate,
-    day: {
-      ...todayAggregate.day,
-      externalTrainingRecords: [],
-      feedbackCount: 0,
-      feedbacks: [],
-    },
-  };
+  activeToday = todayR9ChineseFixture;
   let release!: () => void;
   const syncResponseReleased = new Promise<void>((resolve) => {
     release = resolve;
@@ -1686,6 +1765,71 @@ test("UI-R9 anonymous 390px Today states keep the new information hierarchy", as
     fullPage: true,
   });
 });
+
+for (const width of [320, 375, 390, 393, 430]) {
+  test(`UI-R9 Chinese density and toolbar fit hold at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await mockPrivateReads(
+      page,
+      0,
+      planAdvice,
+      evaluationAggregate,
+      trendsAggregate,
+      { today: todayR9ChineseFixture },
+    );
+    await page.goto("/");
+    await expect(page.getByText("上肢综合训练", { exact: true })).toHaveCount(
+      1,
+    );
+
+    await page.getByRole("button", { name: "收起 上肢综合训练" }).click();
+    const collapsed = await page.evaluate(() => ({
+      workoutHeight:
+        document
+          .querySelector<HTMLElement>("[data-today-workout]")
+          ?.getBoundingClientRect().height ?? 0,
+      feedbackHeight:
+        document
+          .querySelector<HTMLElement>("[data-today-feedback]")
+          ?.getBoundingClientRect().height ?? 0,
+    }));
+    expect(collapsed.workoutHeight).toBeLessThanOrEqual(220);
+    expect(collapsed.feedbackHeight).toBeLessThanOrEqual(88);
+
+    await page.getByRole("button", { name: "展开 上肢综合训练" }).click();
+    const expanded = await page.evaluate(() => {
+      const rows = [
+        ...document.querySelectorAll<HTMLElement>(
+          ".today-prescription .ak-list-row",
+        ),
+      ];
+      const sync = document.querySelector<HTMLElement>(".today-sync-button");
+      const syncStyle = sync ? getComputedStyle(sync) : null;
+      return {
+        rowHeights: rows.map((row) => row.getBoundingClientRect().height),
+        syncWidth: sync?.getBoundingClientRect().width ?? 0,
+        syncGap: Number.parseFloat(syncStyle?.gap ?? "-1"),
+        toolbarVariant: [
+          ...document.querySelectorAll<HTMLElement>(
+            "[data-ak-toolbar-variant]",
+          ),
+        ].map((element) => element.dataset.akToolbarVariant),
+        overflow: document.documentElement.scrollWidth > window.innerWidth,
+      };
+    });
+    expect(expanded.rowHeights).toHaveLength(4);
+    expect(
+      expanded.rowHeights.every((height) => height >= 56 && height <= 64),
+    ).toBe(true);
+    expect(expanded.syncWidth).toBeLessThanOrEqual(92);
+    expect(expanded.syncGap).toBeGreaterThanOrEqual(6);
+    expect(expanded.syncGap).toBeLessThanOrEqual(8);
+    expect(expanded.toolbarVariant).toEqual(["tonal", "tonal"]);
+    expect(expanded.overflow).toBe(false);
+  });
+}
 
 for (const width of [320, 375, 390, 393, 430]) {
   test(`anonymous mobile layout audit passes at ${width}px`, async ({

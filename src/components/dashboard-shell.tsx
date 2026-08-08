@@ -23,6 +23,7 @@ import { TodaySyncControl } from "./today-sync-control";
 import {
   AkActionRow,
   AkCard,
+  AkCompactActionCard,
   AkInsetList,
   AkKonstaProvider,
   AkListRow,
@@ -966,35 +967,49 @@ export function DashboardShell({
           </div>
         ) : null}
 
-        <AkCard
-          className={`today-section feedback-card${currentSafety && currentSafety !== "green" ? ` feedback-card-${currentSafety}` : ""}`}
-          title="身体反馈"
-          ariaLabel="身体反馈"
-          status={
-            currentSafety && currentSafety !== "green" ? (
-              <AkStatusChip tone={safetyTone(currentSafety)} icon="!">
-                {safetyLabel(currentSafety)}
-              </AkStatusChip>
-            ) : undefined
-          }
-          dataTodayFeedback
-        >
-          {currentSafety && currentSafety !== "green" ? (
-            <p className={`safety-message ${currentSafety}`}>
-              {safetyGuidance(currentSafety)}
-            </p>
-          ) : null}
-          {feedbackCount > 0 ? (
-            <p className="feedback-count">今日已记录 {feedbackCount} 次</p>
-          ) : null}
-          <Link
-            className="primary-button feedback-action"
-            href="/feedback"
-            scroll={false}
+        {!currentSafety && feedbackCount === 0 ? (
+          <AkCompactActionCard
+            className="today-section feedback-card feedback-card-empty"
+            title="身体反馈"
+            ariaLabel="身体反馈"
+            dataTodayFeedback
+            action={
+              <Link className="feedback-action" href="/feedback" scroll={false}>
+                记录身体反馈
+              </Link>
+            }
+          />
+        ) : (
+          <AkCard
+            className={`today-section feedback-card${currentSafety && currentSafety !== "green" ? ` feedback-card-${currentSafety}` : ""}`}
+            title="身体反馈"
+            ariaLabel="身体反馈"
+            status={
+              currentSafety && currentSafety !== "green" ? (
+                <AkStatusChip tone={safetyTone(currentSafety)} icon="!">
+                  {safetyLabel(currentSafety)}
+                </AkStatusChip>
+              ) : undefined
+            }
+            dataTodayFeedback
           >
-            {feedbackCount > 0 ? "再次反馈" : "记录身体反馈"}
-          </Link>
-        </AkCard>
+            {currentSafety && currentSafety !== "green" ? (
+              <p className={`safety-message ${currentSafety}`}>
+                {safetyGuidance(currentSafety)}
+              </p>
+            ) : null}
+            {feedbackCount > 0 ? (
+              <p className="feedback-count">今日已记录 {feedbackCount} 次</p>
+            ) : null}
+            <Link
+              className="primary-button feedback-action"
+              href="/feedback"
+              scroll={false}
+            >
+              {feedbackCount > 0 ? "再次反馈" : "记录身体反馈"}
+            </Link>
+          </AkCard>
+        )}
 
         {initialDashboard.recoveryReference ? (
           <RecoveryReferenceCard
