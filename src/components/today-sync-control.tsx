@@ -6,6 +6,8 @@ import { syncLatestIntegrationRecords } from "@/client/integration-api";
 import { useNetworkState } from "@/client/use-network-state";
 import type { TodaySyncResult, TodaySyncSource } from "@/domain/today-sync";
 
+import { AkToolbarAction } from "./ui/ak-konsta";
+
 const sourceNames: Record<TodaySyncSource["source"], string> = {
   garmin_activity: "Garmin 活动",
   garmin_wellness: "Garmin 睡眠与步数",
@@ -54,10 +56,9 @@ function TodaySyncButton({ controller }: { controller: TodaySyncController }) {
   const { syncing, online, hasContinuation, sync } = controller;
 
   return (
-    <button
-      className="secondary-button today-sync-button"
-      type="button"
-      aria-label={syncing ? "正在同步外部训练记录" : "同步外部训练记录"}
+    <AkToolbarAction
+      className="today-sync-button"
+      label={syncing ? "正在同步外部训练记录" : "同步外部训练记录"}
       title={
         online
           ? hasContinuation
@@ -70,7 +71,7 @@ function TodaySyncButton({ controller }: { controller: TodaySyncController }) {
     >
       <span aria-hidden="true">⇄</span>
       <span>{syncing ? "同步中…" : "同步"}</span>
-    </button>
+    </AkToolbarAction>
   );
 }
 

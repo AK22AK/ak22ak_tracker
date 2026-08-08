@@ -22,6 +22,9 @@ importers:
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@neondatabase/serverless@1.1.0)
+      konsta:
+        specifier: 5.3.0
+        version: 5.3.0
       next:
         specifier: 16.2.10
         version: 16.2.10(@babel/core@7.29.7)(@playwright/test@1.61.1)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -3907,6 +3910,13 @@ packages:
         integrity: sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==,
       }
 
+  konsta@5.3.0:
+    resolution:
+      {
+        integrity: sha512-4KjAcQiczKSvbr/hgx9g0CLoJStqjE3DvAIhFJeN05WGi8lYu5b/6f2hdwnmtiq6K4QumY96usStEofH21pdbQ==,
+      }
+    engines: { node: ">= 4.7.0" }
+
   language-subtag-registry@0.3.23:
     resolution:
       {
@@ -4909,6 +4919,12 @@ packages:
         integrity: sha512-ot0WnXS9fgdkgIcePe6RHNk1WA8+muPa6cSjeR3V8K27q9BB1rTE3R1p7Hv0z1ZyAc8s6Vvv8DIyWf681MAt0w==,
       }
     engines: { node: ">= 0.4" }
+
+  tailwind-merge@3.6.0:
+    resolution:
+      {
+        integrity: sha512-uxL7qAVQriqRQPAyK3pj66VqskWqoZ37PW94jwOTwNfq/z9oyu1V+eqrZqtR2+fCiXdYOZe/Modt8GtvqNzu+w==,
+      }
 
   symbol-tree@3.2.4:
     resolution:
@@ -7579,6 +7595,10 @@ snapshots:
     dependencies:
       json-buffer: 3.0.1
 
+  konsta@5.3.0:
+    dependencies:
+      tailwind-merge: 3.6.0
+
   language-subtag-registry@0.3.23: {}
 
   language-tags@1.0.9:
@@ -8191,6 +8211,8 @@ snapshots:
       has-flag: 4.0.0
 
   supports-preserve-symlinks-flag@1.0.0: {}
+
+  tailwind-merge@3.6.0: {}
 
   symbol-tree@3.2.4: {}
 

@@ -21,6 +21,16 @@ import { ExternalTrainingSection } from "./external-training-section";
 import { RecoveryReferenceCard } from "./recovery-reference-card";
 import { TodaySyncControl } from "./today-sync-control";
 import {
+  AkActionRow,
+  AkCard,
+  AkInsetList,
+  AkKonstaProvider,
+  AkListRow,
+  AkScreenHeader,
+  AkStatusChip,
+  AkToolbarAction,
+} from "./ui/ak-konsta";
+import {
   ExecutionContextCard,
   ExecutionPauseCard,
 } from "./execution-context-card";
@@ -130,31 +140,33 @@ function Prescription({
   ] as const;
   const target = valueText(prescription.target);
 
+  const summaryRows = summaryKeys.flatMap(([key, label]) => {
+    const text = valueText(prescription[key]);
+    const displayText =
+      key === "main" && text && target && target !== text
+        ? `${text}（目标：${target}）`
+        : text;
+    return displayText ? [{ title: label, subtitle: displayText }] : [];
+  });
+
   return (
     <div className="today-prescription">
-      {summaryKeys.map(([key, label]) => {
-        const text = valueText(prescription[key]);
-        const displayText =
-          key === "main" && text && target && target !== text
-            ? `${text}（目标：${target}）`
-            : text;
-        return displayText ? (
-          <p key={key}>
-            <strong>{label}</strong>
-            {displayText}
-          </p>
-        ) : null;
-      })}
-      {exercises.length > 0 && (
-        <ul>
-          {exercises.map((exercise) => (
-            <li key={`${exercise.name}-${exercise.dose}`}>
-              <strong>{exercise.name}</strong>
-              <span>{exercise.dose}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+      <AkInsetList>
+        {summaryRows.map((row) => (
+          <AkListRow
+            key={row.title}
+            title={row.title}
+            subtitle={row.subtitle}
+          />
+        ))}
+        {exercises.map((exercise) => (
+          <AkListRow
+            key={`${exercise.name}-${exercise.dose}`}
+            title={exercise.name}
+            subtitle={exercise.dose}
+          />
+        ))}
+      </AkInsetList>
     </div>
   );
 }
@@ -318,9 +330,9 @@ function TodayTask({
           </span>
         </button>
         {showStatus ? (
-          <StatusPill tone={status.tone} icon={status.icon}>
+          <AkStatusChip tone={status.tone} icon={status.icon}>
             {status.label}
-          </StatusPill>
+          </AkStatusChip>
         ) : null}
       </div>
       {taskExpanded ? (
@@ -337,15 +349,14 @@ function TodayTask({
           ) : null}
 
           <div className="manual-entry-fallback">
-            <button
+            <AkActionRow
               className="manual-entry-toggle"
-              type="button"
-              aria-expanded={manualEntryOpen}
+              ariaExpanded={manualEntryOpen}
               onClick={() => setManualEntryOpen((value) => !value)}
             >
               <span>没有同步记录？手工记录</span>
               <span aria-hidden="true">{manualEntryOpen ? "−" : "+"}</span>
-            </button>
+            </AkActionRow>
             {manualEntryOpen ? (
               <div className="manual-entry-content">
                 <div className="task-actual">
@@ -498,16 +509,15 @@ function TodayTask({
           </div>
 
           <div className="task-secondary-actions">
-            <button
+            <AkActionRow
               className="text-button"
-              type="button"
               disabled={saving || !ready}
               onClick={() =>
                 save(task.status === "skipped" ? "planned" : "skipped")
               }
             >
               {task.status === "skipped" ? "恢复为待完成" : "今天跳过"}
-            </button>
+            </AkActionRow>
           </div>
         </div>
       ) : null}
@@ -608,9 +618,6 @@ export function DashboardShell({
 
   const tasks = initialDashboard.tasks;
   const feedbackCount = initialDashboard.feedbackCount;
-  const completedCount = tasks.filter(
-    (task) => task.status === "completed",
-  ).length;
   const notStarted = initialDashboard.state === "not_started";
   const missing = initialDashboard.state === "missing";
   const baselineDay =
@@ -658,31 +665,31 @@ export function DashboardShell({
   };
 
   return (
-    <main className="app-shell today-page" data-today-content-visible="true">
-      <header className="today-header">
+    <AkKonstaProvider>
+      <main
+        className="app-shell today-page ak-today-scope"
+        data-today-content-visible="true"
+      >
         <TodaySyncControl
           trackerKey="knee-rehab"
           onCompleted={onLatestSyncCompleted}
         >
           {({ button, status }) => (
-            <>
-              <div className="today-title-row">
-                <div>
-                  <h1>今天</h1>
-                  <p className="today-date">{today}</p>
-                </div>
-                <div className="today-actions">
-                  <button
+            <AkScreenHeader
+              className="today-header"
+              title="今天"
+              subtitle={today}
+              actions={
+                <>
+                  <AkToolbarAction
                     className="refresh-button"
-                    type="button"
-                    aria-label={
-                      refreshing ? "正在刷新今日数据" : "刷新今日数据"
-                    }
+                    label={refreshing ? "正在刷新今日数据" : "刷新今日数据"}
                     title={
                       online
                         ? "刷新已保存的今日数据"
                         : "联网后刷新已保存的今日数据"
                     }
+                    icon="↻"
                     disabled={!online || refreshing}
                     onClick={async () => {
                       setRefreshing(true);
@@ -692,320 +699,314 @@ export function DashboardShell({
                         setRefreshing(false);
                       }
                     }}
-                  >
-                    <span aria-hidden="true">↻</span>
-                  </button>
+                  />
                   {button}
-                </div>
-              </div>
-              {status ? (
-                <div className="today-sync-status-slot">{status}</div>
-              ) : null}
-            </>
+                </>
+              }
+              status={status}
+            />
           )}
         </TodaySyncControl>
-      </header>
 
-      {writesDisabled ? (
-        <section className="offline-cache-notice" role="status">
-          <strong>
-            {refreshingFromLocal
-              ? "正在获取最新内容"
-              : readOnlyOffline
-                ? "当前离线 · 显示本机内容"
-                : "当前离线"}
-          </strong>
-          <span>
-            {refreshingFromLocal
-              ? "暂时显示本机内容 · 最近更新："
-              : "最近更新："}
-            {offlineSavedAt
-              ? new Intl.DateTimeFormat("zh-CN", {
-                  month: "numeric",
-                  day: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                }).format(new Date(offlineSavedAt))
-              : "未知"}
-          </span>
-          <small>
-            {refreshingFromLocal
-              ? "更新完成后，可以继续使用需要联网的操作。"
-              : "任务和身体反馈可先保存到本机，其他操作请联网后进行。"}
-          </small>
-        </section>
-      ) : null}
-
-      {associationFeedback ? (
-        <section className="association-feedback" role="status">
-          {associationFeedback}
-        </section>
-      ) : null}
-
-      {pendingSummary &&
-      pendingSummary.localOnly +
-        pendingSummary.syncing +
-        pendingSummary.retryable +
-        pendingSummary.waitingAuth +
-        pendingSummary.needsAttention >
-        0 ? (
-        <section className="offline-command-status" role="status">
-          <strong>
-            {pendingSummary.headStatus === "needs_attention"
-              ? `${pendingSummary.needsAttention} 条需要人工处理`
-              : pendingSummary.headStatus === "waiting_auth"
-                ? `${pendingSummary.waitingAuth} 条等待重新验证`
-                : pendingSummary.headStatus === "retryable"
-                  ? `${pendingSummary.retryable} 条等待重试`
-                  : pendingSummary.headStatus === "syncing"
-                    ? `${pendingSummary.syncing} 条正在同步`
-                    : `${pendingSummary.localOnly} 条仅保存在本机`}
-          </strong>
-          {pendingSummary.headStatus === "needs_attention" ? (
-            <span>最早一条记录需要你处理，后面的记录会暂时等待。</span>
-          ) : null}
-          {pendingSummary.unclassifiedFeedback > 0 ? (
-            <span>身体反馈尚未完成安全判断，请先按保守原则处理。</span>
-          ) : null}
-          {online && pendingSummary.canRetryNow ? (
-            <button
-              className="text-button"
-              type="button"
-              onClick={() => void onRetryPending()}
-            >
-              立即重试
-            </button>
-          ) : null}
-        </section>
-      ) : null}
-
-      {currentSafety && currentSafety !== "green" ? (
-        <section
-          className={`safety-banner ${currentSafety}`}
-          role="alert"
-          aria-label={`${safetyLabel(currentSafety)}安全提示`}
-        >
-          <StatusPill
-            tone={safetyTone(currentSafety)}
-            icon={currentSafety === "red" ? "×" : "!"}
-          >
-            {safetyLabel(currentSafety)}
-          </StatusPill>
-          <p>{safetyGuidance(currentSafety)}</p>
-        </section>
-      ) : null}
-
-      {execution.resumption?.status === "pending" ? (
-        <SurfaceCard className="resumption-entry-card" aria-label="待接续评估">
-          <SectionHeading
-            eyebrow="计划接续"
-            title="中断结束后需要确认怎样继续"
-            aside={
-              <StatusPill tone="attention" icon="!">
-                待确认
-              </StatusPill>
-            }
-          />
-          <p>查看中断情况和后续日期变化，再决定按原计划继续或顺延。</p>
-          {writesDisabled ? (
-            <span className="secondary-button" aria-disabled="true">
-              联网后处理接续评估
-            </span>
-          ) : (
-            <Link
-              className="primary-button"
-              href={`/resumption/${execution.resumption.id}`}
-              scroll={false}
-            >
-              查看接续评估
-            </Link>
-          )}
-        </SurfaceCard>
-      ) : null}
-
-      {adjustmentException ? (
-        <section className="today-exception-entry" role="status">
-          <div>
-            <strong>{adjustmentException}</strong>
+        {writesDisabled ? (
+          <section className="offline-cache-notice" role="status">
+            <strong>
+              {refreshingFromLocal
+                ? "正在获取最新内容"
+                : readOnlyOffline
+                  ? "当前离线 · 显示本机内容"
+                  : "当前离线"}
+            </strong>
             <span>
-              {execution.pause
-                ? "今天的训练安排已暂停。"
-                : "今天的安排会按这个临时条件执行。"}
+              {refreshingFromLocal
+                ? "暂时显示本机内容 · 最近更新："
+                : "最近更新："}
+              {offlineSavedAt
+                ? new Intl.DateTimeFormat("zh-CN", {
+                    month: "numeric",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }).format(new Date(offlineSavedAt))
+                : "未知"}
             </span>
-          </div>
-          {!forceAdjustmentPanel ? (
-            <button
-              className="text-button"
-              type="button"
-              aria-expanded={adjustmentPanelOpen}
-              aria-controls={adjustmentPanelId}
-              onClick={() => setAdjustmentsOpen((value) => !value)}
-            >
-              调整今天
-            </button>
-          ) : null}
-        </section>
-      ) : null}
+            <small>
+              {refreshingFromLocal
+                ? "更新完成后，可以继续使用需要联网的操作。"
+                : "任务和身体反馈可先保存到本机，其他操作请联网后进行。"}
+            </small>
+          </section>
+        ) : null}
 
-      <section
-        className="today-section today-training-section"
-        aria-label="今日训练"
-        data-today-workout
-      >
-        <SectionHeading
-          title="今日训练"
-          aside={
-            tasks.length > 1 ? (
-              <span className="count-badge">
-                {completedCount} / {tasks.length}
+        {associationFeedback ? (
+          <section className="association-feedback" role="status">
+            {associationFeedback}
+          </section>
+        ) : null}
+
+        {pendingSummary &&
+        pendingSummary.localOnly +
+          pendingSummary.syncing +
+          pendingSummary.retryable +
+          pendingSummary.waitingAuth +
+          pendingSummary.needsAttention >
+          0 ? (
+          <section className="offline-command-status" role="status">
+            <strong>
+              {pendingSummary.headStatus === "needs_attention"
+                ? `${pendingSummary.needsAttention} 条需要人工处理`
+                : pendingSummary.headStatus === "waiting_auth"
+                  ? `${pendingSummary.waitingAuth} 条等待重新验证`
+                  : pendingSummary.headStatus === "retryable"
+                    ? `${pendingSummary.retryable} 条等待重试`
+                    : pendingSummary.headStatus === "syncing"
+                      ? `${pendingSummary.syncing} 条正在同步`
+                      : `${pendingSummary.localOnly} 条仅保存在本机`}
+            </strong>
+            {pendingSummary.headStatus === "needs_attention" ? (
+              <span>最早一条记录需要你处理，后面的记录会暂时等待。</span>
+            ) : null}
+            {pendingSummary.unclassifiedFeedback > 0 ? (
+              <span>身体反馈尚未完成安全判断，请先按保守原则处理。</span>
+            ) : null}
+            {online && pendingSummary.canRetryNow ? (
+              <button
+                className="text-button"
+                type="button"
+                onClick={() => void onRetryPending()}
+              >
+                立即重试
+              </button>
+            ) : null}
+          </section>
+        ) : null}
+
+        {currentSafety && currentSafety !== "green" ? (
+          <section
+            className={`safety-banner ${currentSafety}`}
+            role="alert"
+            aria-label={`${safetyLabel(currentSafety)}安全提示`}
+          >
+            <AkStatusChip
+              tone={safetyTone(currentSafety)}
+              icon={currentSafety === "red" ? "×" : "!"}
+            >
+              {safetyLabel(currentSafety)}
+            </AkStatusChip>
+            <p>{safetyGuidance(currentSafety)}</p>
+          </section>
+        ) : null}
+
+        {execution.resumption?.status === "pending" ? (
+          <SurfaceCard
+            className="resumption-entry-card"
+            aria-label="待接续评估"
+          >
+            <SectionHeading
+              eyebrow="计划接续"
+              title="中断结束后需要确认怎样继续"
+              aside={
+                <StatusPill tone="attention" icon="!">
+                  待确认
+                </StatusPill>
+              }
+            />
+            <p>查看中断情况和后续日期变化，再决定按原计划继续或顺延。</p>
+            {writesDisabled ? (
+              <span className="secondary-button" aria-disabled="true">
+                联网后处理接续评估
               </span>
-            ) : null
-          }
-        />
-        {missing ? (
-          <>
-            <p className="today-training-context">等待导入私人计划</p>
-            <p className="empty-state-copy">
-              还没有训练计划。完成设置后，今天的安排会显示在这里。
-            </p>
-          </>
-        ) : null}
-        {notStarted ? (
-          <>
-            <p className="today-training-context">
-              计划将于 {formatStartDate(initialDashboard.startDate)}开始
-            </p>
-            <p className="empty-state-copy">
-              计划已就绪。开始前可以先记录一次基线反馈。
-            </p>
-          </>
-        ) : null}
-        {!missing && !notStarted && tasks.length === 0 ? (
-          <>
-            {baselineDay ? (
-              <p className="today-training-context">第 1 周从今天开始</p>
             ) : (
-              <p className="today-training-context">今天没有安排训练</p>
+              <Link
+                className="primary-button"
+                href={`/resumption/${execution.resumption.id}`}
+                scroll={false}
+              >
+                查看接续评估
+              </Link>
             )}
-            <p className="empty-state-copy">
-              {baselineDay
-                ? "今天是恢复/基线日；可先记录一次基线反馈。"
-                : "如果有突发反应，仍可以随时提交反馈。"}
-            </p>
-          </>
+          </SurfaceCard>
         ) : null}
-        {tasks.length > 0 ? (
-          tasks.length === 1 ? (
-            renderTask(tasks[0]!, true, true)
-          ) : (
-            <div className="task-list">
-              {tasks.map((task) => renderTask(task))}
-            </div>
-          )
-        ) : null}
-        {!adjustmentException ? (
-          <div className="today-adjustment-entry">
-            <button
-              className="text-button"
-              type="button"
-              aria-expanded={adjustmentPanelOpen}
-              aria-controls={adjustmentPanelId}
-              onClick={() => setAdjustmentsOpen((value) => !value)}
-            >
-              调整今天
-            </button>
-          </div>
-        ) : null}
-      </section>
 
-      {externalRecords.length > 0 ? (
-        <section
-          className="today-section today-records-section"
-          aria-label="训练记录"
-          data-today-records
-          data-testid="today-records"
+        {adjustmentException ? (
+          <section className="today-exception-entry" role="status">
+            <div>
+              <strong>{adjustmentException}</strong>
+              <span>
+                {execution.pause
+                  ? "今天的训练安排已暂停。"
+                  : "今天的安排会按这个临时条件执行。"}
+              </span>
+            </div>
+            {!forceAdjustmentPanel ? (
+              <button
+                className="text-button"
+                type="button"
+                aria-expanded={adjustmentPanelOpen}
+                aria-controls={adjustmentPanelId}
+                onClick={() => setAdjustmentsOpen((value) => !value)}
+              >
+                调整今天
+              </button>
+            ) : null}
+          </section>
+        ) : null}
+
+        <AkCard
+          className="today-section today-training-section"
+          title="今日训练"
+          subtitle={
+            tasks.length === 1
+              ? userFacingTaskTitle(tasks[0]!.title)
+              : tasks.length > 1
+                ? "按顺序完成今天的安排"
+                : undefined
+          }
+          dataTodayWorkout
         >
-          <SectionHeading
+          {missing ? (
+            <>
+              <p className="today-training-context">等待导入私人计划</p>
+              <p className="empty-state-copy">
+                还没有训练计划。完成设置后，今天的安排会显示在这里。
+              </p>
+            </>
+          ) : null}
+          {notStarted ? (
+            <>
+              <p className="today-training-context">
+                计划将于 {formatStartDate(initialDashboard.startDate)}开始
+              </p>
+              <p className="empty-state-copy">
+                计划已就绪。开始前可以先记录一次基线反馈。
+              </p>
+            </>
+          ) : null}
+          {!missing && !notStarted && tasks.length === 0 ? (
+            <>
+              {baselineDay ? (
+                <p className="today-training-context">第 1 周从今天开始</p>
+              ) : (
+                <p className="today-training-context">今天没有安排训练</p>
+              )}
+              <p className="empty-state-copy">
+                {baselineDay
+                  ? "今天是恢复/基线日；可先记录一次基线反馈。"
+                  : "如果有突发反应，仍可以随时提交反馈。"}
+              </p>
+            </>
+          ) : null}
+          {tasks.length > 0 ? (
+            tasks.length === 1 ? (
+              renderTask(tasks[0]!, true, true)
+            ) : (
+              <div className="task-list">
+                {tasks.map((task) => renderTask(task))}
+              </div>
+            )
+          ) : null}
+          {!adjustmentException ? (
+            <div className="today-adjustment-entry">
+              <button
+                className="text-button"
+                type="button"
+                aria-expanded={adjustmentPanelOpen}
+                aria-controls={adjustmentPanelId}
+                onClick={() => setAdjustmentsOpen((value) => !value)}
+              >
+                调整今天
+              </button>
+            </div>
+          ) : null}
+        </AkCard>
+
+        {externalRecords.length > 0 ? (
+          <AkCard
+            className="today-section today-records-section"
             title="训练记录"
-            aside={
+            status={
               <span className="count-badge">{externalRecords.length} 条</span>
             }
-          />
-          <ExternalTrainingSection
-            trackerKey="knee-rehab"
-            records={externalRecords}
-            tasks={tasks}
-            heading=""
-            onUpdated={handleExternalTrainingUpdated}
-            onConflict={onExternalTrainingConflict}
-            readOnly={writesDisabled}
-            presentation="today"
-          />
-        </section>
-      ) : null}
-
-      {adjustmentPanelOpen ? (
-        <div id={adjustmentPanelId} className="today-adjustment-panel">
-          <fieldset
-            className="offline-write-boundary"
-            disabled={writesDisabled}
+            ariaLabel="训练记录"
+            dataTodayRecords
+            dataTestId="today-records"
           >
-            <ExecutionPauseCard
+            <ExternalTrainingSection
               trackerKey="knee-rehab"
-              execution={execution}
-              onChanged={onExecutionChanged}
+              records={externalRecords}
+              tasks={tasks}
+              heading=""
+              onUpdated={handleExternalTrainingUpdated}
+              onConflict={onExternalTrainingConflict}
+              readOnly={writesDisabled}
+              presentation="today"
             />
-          </fieldset>
-          <fieldset
-            className="offline-write-boundary"
-            disabled={writesDisabled}
-          >
-            <ExecutionContextCard
-              trackerKey="knee-rehab"
-              localDate={localDate}
-              planVersion={planVersion}
-              execution={execution}
-              onChanged={onExecutionChanged}
-            />
-          </fieldset>
-        </div>
-      ) : null}
+          </AkCard>
+        ) : null}
 
-      <section
-        className={`today-section feedback-card${currentSafety && currentSafety !== "green" ? ` feedback-card-${currentSafety}` : ""}`}
-        aria-label="身体反馈"
-        data-today-feedback
-      >
-        <SectionHeading
+        {adjustmentPanelOpen ? (
+          <div id={adjustmentPanelId} className="today-adjustment-panel">
+            <fieldset
+              className="offline-write-boundary"
+              disabled={writesDisabled}
+            >
+              <ExecutionPauseCard
+                trackerKey="knee-rehab"
+                execution={execution}
+                onChanged={onExecutionChanged}
+              />
+            </fieldset>
+            <fieldset
+              className="offline-write-boundary"
+              disabled={writesDisabled}
+            >
+              <ExecutionContextCard
+                trackerKey="knee-rehab"
+                localDate={localDate}
+                planVersion={planVersion}
+                execution={execution}
+                onChanged={onExecutionChanged}
+              />
+            </fieldset>
+          </div>
+        ) : null}
+
+        <AkCard
+          className={`today-section feedback-card${currentSafety && currentSafety !== "green" ? ` feedback-card-${currentSafety}` : ""}`}
           title="身体反馈"
-          aside={
+          ariaLabel="身体反馈"
+          status={
             currentSafety && currentSafety !== "green" ? (
-              <StatusPill tone={safetyTone(currentSafety)} icon="!">
+              <AkStatusChip tone={safetyTone(currentSafety)} icon="!">
                 {safetyLabel(currentSafety)}
-              </StatusPill>
+              </AkStatusChip>
             ) : undefined
           }
-        />
-        {currentSafety && currentSafety !== "green" ? (
-          <p className={`safety-message ${currentSafety}`}>
-            {safetyGuidance(currentSafety)}
-          </p>
-        ) : null}
-        {feedbackCount > 0 ? (
-          <p className="feedback-count">今日已记录 {feedbackCount} 次</p>
-        ) : null}
-        <Link
-          className="primary-button feedback-action"
-          href="/feedback"
-          scroll={false}
+          dataTodayFeedback
         >
-          {feedbackCount > 0 ? "再次反馈" : "记录身体反馈"}
-        </Link>
-      </section>
+          {currentSafety && currentSafety !== "green" ? (
+            <p className={`safety-message ${currentSafety}`}>
+              {safetyGuidance(currentSafety)}
+            </p>
+          ) : null}
+          {feedbackCount > 0 ? (
+            <p className="feedback-count">今日已记录 {feedbackCount} 次</p>
+          ) : null}
+          <Link
+            className="primary-button feedback-action"
+            href="/feedback"
+            scroll={false}
+          >
+            {feedbackCount > 0 ? "再次反馈" : "记录身体反馈"}
+          </Link>
+        </AkCard>
 
-      {initialDashboard.recoveryReference ? (
-        <RecoveryReferenceCard reference={initialDashboard.recoveryReference} />
-      ) : null}
-    </main>
+        {initialDashboard.recoveryReference ? (
+          <RecoveryReferenceCard
+            reference={initialDashboard.recoveryReference}
+          />
+        ) : null}
+      </main>
+    </AkKonstaProvider>
   );
 }

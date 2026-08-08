@@ -1019,12 +1019,10 @@ test("UI-R5 production Today information architecture stays flat and actionable"
       ),
       recordsInsideWorkout: Boolean(workout?.contains(records)),
       singleTaskIsWorkoutBody: Boolean(
-        document
-          .querySelector(".today-task")
-          ?.parentElement?.matches("[data-today-workout]"),
+        workout?.querySelector(".today-task"),
       ),
       singleTaskHeading: workout
-        ?.querySelector(".section-heading h2")
+        ?.querySelector(".ak-card-header h2")
         ?.textContent?.trim(),
       singleTaskCountBadge:
         workout?.querySelector(".count-badge")?.textContent?.trim() ?? null,
@@ -1038,7 +1036,7 @@ test("UI-R5 production Today information architecture stays flat and actionable"
       hasLegacyRemainingHeading:
         document.body.innerText.includes("今天还剩 1 项"),
       recordsHeading: records
-        ?.querySelector(".section-heading h2")
+        ?.querySelector(".ak-card-header h2")
         ?.textContent?.trim(),
       recordsStatus:
         records?.querySelector(".today-sync-status")?.textContent?.trim() ??
@@ -1047,7 +1045,7 @@ test("UI-R5 production Today information architecture stays flat and actionable"
         document.body.innerText.match(/累计慢跑 12 分钟/g) ?? []
       ).length,
       nestedTaskCard: Boolean(
-        document.querySelector(".today-plan-card .task-card"),
+        document.querySelector("[data-ak-card] [data-ak-card]"),
       ),
       templateDescriptionVisible: document.body.innerText.includes(
         "周五下班后执行；当前限制以膝部组织耐受为准。",
@@ -1110,7 +1108,7 @@ for (const width of [320, 375, 390, 393, 430]) {
         ".today-training-section",
       );
       const planHeading = planCard?.querySelector<HTMLElement>(
-        ":scope > .section-heading",
+        ".ak-card-header",
       );
       const adjustment = [
         ...document.querySelectorAll<HTMLButtonElement>("button"),
@@ -1264,7 +1262,7 @@ for (const width of [320, 375, 390, 393, 430]) {
 
     const syncButton = page.getByRole("button", { name: "同步外部训练记录" });
     const titleTopBeforeSync = await page
-      .locator(".today-title-row h1")
+      .locator(".ak-screen-header-copy h1")
       .evaluate((element) => element.getBoundingClientRect().top);
     await syncButton.dblclick();
     await expect(
@@ -1273,13 +1271,17 @@ for (const width of [320, 375, 390, 393, 430]) {
     expect(requests).toBe(1);
     const syncRunningLayout = await page.evaluate(() => {
       const header = document.querySelector<HTMLElement>(".today-header");
-      const actions = document.querySelector<HTMLElement>(".today-actions");
+      const actions = document.querySelector<HTMLElement>(
+        ".ak-screen-header-actions",
+      );
       const status = document.querySelector<HTMLElement>(".today-sync-status");
       const sourceRows = [
         ...(status?.querySelectorAll<HTMLElement>(".today-sync-results li") ??
           []),
       ];
-      const title = document.querySelector<HTMLElement>(".today-title-row h1");
+      const title = document.querySelector<HTMLElement>(
+        ".ak-screen-header-copy h1",
+      );
       const headerRect = header?.getBoundingClientRect();
       const statusRect = status?.getBoundingClientRect();
       return {
@@ -1333,7 +1335,8 @@ for (const width of [320, 375, 390, 393, 430]) {
         statusLeft: statusRect?.left ?? 0,
         statusRight: statusRect?.right ?? 0,
         statusInActions: Boolean(
-          status && document.querySelector(".today-actions")?.contains(status),
+          status &&
+          document.querySelector(".ak-screen-header-actions")?.contains(status),
         ),
       };
     });
@@ -1349,7 +1352,7 @@ for (const width of [320, 375, 390, 393, 430]) {
     expect(syncPartialLayout.statusInActions).toBe(false);
     if (width === 390) {
       await page.screenshot({
-        path: "test-results/ui-r8-today-sync-partial-390.png",
+        path: "test-results/ui-r9-today-sync-partial-390.png",
         fullPage: true,
       });
     }
@@ -1357,7 +1360,7 @@ for (const width of [320, 375, 390, 393, 430]) {
   });
 }
 
-test("UI-R8 anonymous 390px Today states keep the new information hierarchy", async ({
+test("UI-R9 anonymous 390px Today states keep the new information hierarchy", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -1390,11 +1393,13 @@ test("UI-R8 anonymous 390px Today states keep the new information hierarchy", as
   await expect(page.getByText("今天还没有记录")).toHaveCount(0);
   await expect(page.getByText("告诉康复助手")).toHaveCount(0);
   const headerContract = await page.evaluate(() => {
-    const h1 = document.querySelector<HTMLElement>(".today-title-row h1");
-    const date = document.querySelector<HTMLElement>(".today-date");
+    const h1 = document.querySelector<HTMLElement>(".ak-screen-header-copy h1");
+    const date = document.querySelector<HTMLElement>(
+      ".ak-screen-header-copy p",
+    );
     const actions = [
       ...document.querySelectorAll<HTMLElement>(
-        ".today-actions > button, .today-actions .today-sync-button",
+        ".ak-screen-header-actions > button",
       ),
     ];
     return {
@@ -1403,7 +1408,9 @@ test("UI-R8 anonymous 390px Today states keep the new information hierarchy", as
       dateSize: date ? getComputedStyle(date).fontSize : null,
       dateLeading: date ? getComputedStyle(date).lineHeight : null,
       sectionHeadings: [
-        ...document.querySelectorAll<HTMLElement>(".today-section h2"),
+        ...document.querySelectorAll<HTMLElement>(
+          ".today-section .ak-card-header h2",
+        ),
       ].map((heading) => {
         const rect = heading.getBoundingClientRect();
         const style = getComputedStyle(heading);
@@ -1439,7 +1446,7 @@ test("UI-R8 anonymous 390px Today states keep the new information hierarchy", as
   );
   expect(headerContract.overflow).toBe(false);
   await page.screenshot({
-    path: "test-results/ui-r8-today-no-records-normal-390.png",
+    path: "test-results/ui-r9-today-no-records-normal-390.png",
     fullPage: true,
   });
 
@@ -1448,7 +1455,7 @@ test("UI-R8 anonymous 390px Today states keep the new information hierarchy", as
   await expect(page.locator("[data-today-records]")).toBeVisible();
   await expect(page.getByRole("heading", { name: "训练记录" })).toBeVisible();
   await page.screenshot({
-    path: "test-results/ui-r8-today-records-390.png",
+    path: "test-results/ui-r9-today-records-390.png",
     fullPage: true,
   });
 
@@ -1471,7 +1478,7 @@ test("UI-R8 anonymous 390px Today states keep the new information hierarchy", as
     ).toBeVisible();
     await expect(feedbackRegion.getByText("告诉康复助手")).toHaveCount(0);
     await page.screenshot({
-      path: `test-results/ui-r8-today-${safety}-390.png`,
+      path: `test-results/ui-r9-today-${safety}-390.png`,
       fullPage: true,
     });
   }
@@ -1528,13 +1535,13 @@ test("UI-R8 anonymous 390px Today states keep the new information hierarchy", as
   ).toBeDisabled();
   await expect(page.getByText("正在同步外部训练记录")).toBeVisible();
   await page.screenshot({
-    path: "test-results/ui-r8-today-sync-running-390.png",
+    path: "test-results/ui-r9-today-sync-running-390.png",
     fullPage: true,
   });
   release();
   await expect(page.getByText("已更新 1 条，部分来源未完成")).toBeVisible();
   await page.screenshot({
-    path: "test-results/ui-r8-today-sync-partial-final-390.png",
+    path: "test-results/ui-r9-today-sync-partial-final-390.png",
     fullPage: true,
   });
 });
@@ -2597,7 +2604,9 @@ test("UI-R7 final cascade keeps token-backed styles after legacy rules", async (
     document.body.append(probe);
     const probeStyle = getComputedStyle(probe);
     const nav = document.querySelector<HTMLElement>(".bottom-nav");
-    const title = document.querySelector<HTMLElement>(".today-title-row h1");
+    const title = document.querySelector<HTMLElement>(
+      ".ak-screen-header-copy h1",
+    );
     const surfaces = [
       ...document.querySelectorAll<HTMLElement>(".today-section, .today-task"),
     ];
@@ -2638,7 +2647,7 @@ test("UI-R7 final cascade keeps token-backed styles after legacy rules", async (
 for (const rootPage of [
   {
     path: "/",
-    heading: ".today-title-row h1",
+    heading: ".ak-screen-header-copy h1",
     surface: ".today-section",
     backgroundToken: "--ak-surface",
   },

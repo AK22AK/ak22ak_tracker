@@ -1,0 +1,270 @@
+/* UI-R9 Today tokens and layout. Konsta owns component primitives; these
+   selectors only define AK's page grid and business-state treatment. */
+.ak-today-scope {
+  --ak-today-gutter: clamp(16px, 5vw, 24px);
+  --ak-today-card-inset: 16px;
+  --ak-today-gap: 12px;
+  display: grid;
+  gap: var(--ak-today-gap);
+}
+
+.ak-today-scope .ak-screen-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.ak-today-scope .ak-screen-header-copy {
+  min-width: 0;
+}
+
+.ak-today-scope .ak-screen-header-copy h1 {
+  margin: 0;
+  font-size: 34px;
+  line-height: 41px;
+  letter-spacing: -0.04em;
+}
+
+.ak-today-scope .ak-screen-header-copy p {
+  margin: 2px 0 0;
+  color: var(--ak-label-secondary);
+  font-size: 17px;
+  line-height: 22px;
+}
+
+.ak-today-scope .ak-screen-header-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ak-today-scope .ak-toolbar-action {
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: var(--ak-control-radius);
+  white-space: nowrap;
+}
+
+.ak-today-scope .refresh-button {
+  width: 44px;
+  padding: 0;
+}
+
+.ak-today-scope .today-sync-button {
+  min-width: 76px;
+  padding-inline: 10px;
+}
+
+.ak-today-scope .ak-screen-header-status {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.ak-today-scope .ak-screen-header-status > .today-sync-status {
+  width: 100%;
+}
+
+.ak-today-scope .ak-card {
+  min-width: 0;
+  padding: 0;
+  border-radius: var(--ak-surface-radius);
+  background: var(--ak-surface);
+}
+
+.ak-today-scope .ak-konsta-card {
+  min-width: 0;
+  margin: 0;
+  border-radius: var(--ak-surface-radius);
+  background: transparent;
+  box-shadow: none;
+}
+
+.ak-today-scope .ak-konsta-card > [class*="card-header"],
+.ak-today-scope .ak-konsta-card > [class*="card-content"],
+.ak-today-scope .ak-konsta-card > [class*="card-footer"] {
+  min-width: 0;
+}
+
+.ak-today-scope .ak-card-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: var(--ak-today-card-inset);
+}
+
+.ak-today-scope .ak-card-header > div:first-child {
+  min-width: 0;
+}
+
+.ak-today-scope .ak-card-header h2 {
+  margin: 0;
+  color: var(--ak-label-primary);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 22px;
+  letter-spacing: 0;
+}
+
+.ak-today-scope .ak-card-header p {
+  margin: 2px 0 0;
+  color: var(--ak-label-secondary);
+  font-size: 15px;
+  line-height: 21px;
+  overflow-wrap: anywhere;
+}
+
+.ak-today-scope .ak-card-header > div:last-child {
+  flex: 0 0 auto;
+}
+
+.ak-today-scope .ak-card-footer {
+  display: grid;
+  gap: 0;
+  padding: 0 var(--ak-today-card-inset) var(--ak-today-card-inset);
+}
+
+.ak-today-scope .ak-inset-list {
+  min-width: 0;
+  margin: 0 var(--ak-today-card-inset) var(--ak-today-card-inset);
+}
+
+.ak-today-scope .ak-list-row {
+  min-width: 0;
+}
+
+.ak-today-scope .ak-list-row [class*="item-title"],
+.ak-today-scope .ak-list-row [class*="item-subtitle"] {
+  overflow-wrap: anywhere;
+}
+
+.ak-today-scope .ak-status-chip {
+  min-height: 28px;
+  padding-inline: 9px;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.ak-today-scope .today-training-section .today-task {
+  margin: 0 var(--ak-today-card-inset) var(--ak-today-card-inset);
+  border: 0;
+  border-radius: 0;
+  background: var(--ak-surface);
+}
+
+.ak-today-scope .today-training-section .today-task + .today-task {
+  margin-top: var(--ak-today-gap);
+}
+
+.ak-today-scope .today-task-summary {
+  min-width: 0;
+  padding: 8px 0 12px;
+}
+
+.ak-today-scope .today-task-summary .task-summary-copy {
+  min-width: 0;
+}
+
+.ak-today-scope .today-task-summary .task-summary-copy strong,
+.ak-today-scope .today-task-summary .task-summary-copy span {
+  overflow-wrap: anywhere;
+}
+
+.ak-today-scope .today-task-details {
+  min-width: 0;
+  padding: 0 0 12px;
+}
+
+.ak-today-scope .today-task-details .today-prescription {
+  margin: 0 0 12px;
+}
+
+.ak-today-scope .today-adjustment-entry {
+  margin-inline: var(--ak-today-card-inset);
+}
+
+.ak-today-scope .today-prescription .ak-inset-list {
+  margin: 0;
+}
+
+.ak-today-scope .ak-action-row {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-radius: var(--ak-control-radius);
+  text-align: left;
+  white-space: normal;
+}
+
+.ak-today-scope .manual-entry-toggle,
+.ak-today-scope .task-secondary-actions .text-button {
+  border-top: 1px solid var(--ak-separator);
+}
+
+.ak-today-scope .today-records-section .external-training-section {
+  min-width: 0;
+  margin: 0 var(--ak-today-card-inset) var(--ak-today-card-inset);
+}
+
+.ak-today-scope .today-records-section .external-section-title {
+  display: none;
+}
+
+.ak-today-scope .feedback-card {
+  display: grid;
+  gap: var(--ak-today-gap);
+}
+
+.ak-today-scope .feedback-card .safety-message,
+.ak-today-scope .feedback-card .feedback-count {
+  margin: 0 var(--ak-today-card-inset);
+}
+
+.ak-today-scope .feedback-card .feedback-action {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  margin: 0 var(--ak-today-card-inset) var(--ak-today-card-inset);
+  text-decoration: none;
+}
+
+.ak-today-scope .safety-banner,
+.ak-today-scope .offline-cache-notice,
+.ak-today-scope .offline-command-status,
+.ak-today-scope .association-feedback {
+  min-width: 0;
+}
+
+@media (max-width: 374px) {
+  .ak-today-scope .ak-screen-header {
+    gap: 8px;
+  }
+
+  .ak-today-scope .ak-screen-header-actions {
+    gap: 4px;
+  }
+
+  .ak-today-scope .today-sync-button {
+    min-width: 68px;
+    padding-inline: 6px;
+  }
+
+  .ak-today-scope .ak-card-header {
+    align-items: flex-start;
+  }
+
+  .ak-today-scope .ak-card-header > div:last-child {
+    max-width: 45%;
+  }
+}
