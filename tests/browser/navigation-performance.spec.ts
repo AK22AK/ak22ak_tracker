@@ -49,7 +49,7 @@ const day = {
     },
   ],
   feedbackCount: 0,
-  feedbacks: [],
+  feedbacks: [] as ReturnType<typeof anonymousFeedback>[],
   externalTrainingRecords: [
     {
       id: "019c0000-0000-7000-8000-000000000004",
@@ -1023,7 +1023,9 @@ test("UI-R5 production Today information architecture stays flat and actionable"
           .querySelector(".today-task")
           ?.parentElement?.matches("[data-today-workout]"),
       ),
-      singleTaskHeading: workout?.querySelector("h2")?.textContent?.trim(),
+      singleTaskHeading: workout
+        ?.querySelector(".section-heading h2")
+        ?.textContent?.trim(),
       singleTaskCountBadge:
         workout?.querySelector(".count-badge")?.textContent?.trim() ?? null,
       singleTaskStatusPills: [
@@ -1031,16 +1033,16 @@ test("UI-R5 production Today information architecture stays flat and actionable"
           []),
       ].map((pill) => pill.textContent?.trim()),
       singleTaskVisibleTitleCount: workout?.querySelectorAll(
-        ".today-task-summary > .task-summary-copy > strong",
+        ".today-task-summary .task-summary-copy > strong",
       ).length,
       hasLegacyRemainingHeading:
         document.body.innerText.includes("今天还剩 1 项"),
       recordsHeading: records
-        ?.querySelector(".today-sync-heading strong")
+        ?.querySelector(".section-heading h2")
         ?.textContent?.trim(),
-      recordsStatus: records
-        ?.querySelector(".today-sync-heading p")
-        ?.textContent?.trim(),
+      recordsStatus:
+        records?.querySelector(".today-sync-status")?.textContent?.trim() ??
+        null,
       mergedTargetCount: (
         document.body.innerText.match(/累计慢跑 12 分钟/g) ?? []
       ).length,
@@ -1063,14 +1065,14 @@ test("UI-R5 production Today information architecture stays flat and actionable"
   expect.soft(structure.feedbackIsSibling).toBe(true);
   expect.soft(structure.recordsInsideWorkout).toBe(false);
   expect.soft(structure.singleTaskIsWorkoutBody).toBe(true);
-  expect.soft(structure.singleTaskHeading).toBe("较长轻松跑");
+  expect.soft(structure.singleTaskHeading).toBe("今日训练");
   expect.soft(structure.singleTaskCountBadge).toBeNull();
-  expect.soft(structure.singleTaskStatusPills).toEqual([]);
-  expect.soft(structure.singleTaskVisibleTitleCount).toBe(0);
+  expect.soft(structure.singleTaskStatusPills).toEqual(["待完成"]);
+  expect.soft(structure.singleTaskVisibleTitleCount).toBe(1);
   expect.soft(structure.hasLegacyRemainingHeading).toBe(false);
   expect.soft(structure.recordsHeading).toBe("训练记录");
   expect.soft(structure.recordsHeading).not.toBe("同步状态");
-  expect.soft(structure.recordsStatus).toBe("尚未检查新记录");
+  expect.soft(structure.recordsStatus).toBeNull();
   expect.soft(structure.mergedTargetCount).toBe(1);
   expect.soft(structure.nestedTaskCard).toBe(false);
   expect.soft(structure.templateDescriptionVisible).toBe(false);
@@ -1097,8 +1099,10 @@ for (const width of [320, 375, 390, 430]) {
 
     const layout = await page.evaluate(() => {
       const feedbackCard =
-        document.querySelector<HTMLElement>(".feedback-compact");
-      const safetyCard = document.querySelector<HTMLElement>(".feedback-card");
+        document.querySelector<HTMLElement>(".feedback-card");
+      const safetyCard = document.querySelector<HTMLElement>(
+        ".feedback-card-yellow, .feedback-card-red",
+      );
       const feedbackAction = feedbackCard?.querySelector<HTMLElement>(
         'a[href="/feedback"]',
       );
@@ -1223,10 +1227,10 @@ for (const width of [320, 375, 390, 393, 430]) {
     });
     expect(taskBeforeSync).toBe(true);
 
-    const syncButton = page.getByRole("button", { name: "同步训练记录" });
+    const syncButton = page.getByRole("button", { name: "同步外部训练记录" });
     await syncButton.dblclick();
     await expect(
-      page.getByRole("button", { name: "正在同步…" }),
+      page.getByRole("button", { name: "正在同步外部训练记录" }),
     ).toBeDisabled();
     expect(requests).toBe(1);
     release();
@@ -1234,9 +1238,197 @@ for (const width of [320, 375, 390, 393, 430]) {
     await expect(page.getByText("有记录 · 继续同步")).toBeVisible();
     await expect(page.getByText("暂时失败")).toBeVisible();
     await expect(page.getByText("需更新凭证")).toBeVisible();
+    if (width === 390) {
+      await page.screenshot({
+        path: "test-results/ui-r8-today-sync-partial-390.png",
+        fullPage: true,
+      });
+    }
     await expectMobileLayoutIntegrity(page);
   });
 }
+
+test("UI-R8 anonymous 390px Today states keep the new information hierarchy", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  let activeToday: typeof todayAggregate = {
+    ...todayAggregate,
+    day: {
+      ...todayAggregate.day,
+      externalTrainingRecords: [],
+      feedbackCount: 0,
+      feedbacks: [],
+    },
+  };
+  await mockPrivateReads(
+    page,
+    0,
+    planAdvice,
+    evaluationAggregate,
+    trendsAggregate,
+    { today: () => activeToday },
+  );
+
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "今天", level: 1 }),
+  ).toBeVisible();
+  await expect(page.getByText("尚未检查新记录")).toHaveCount(0);
+  await expect(page.locator("[data-today-records]")).toHaveCount(0);
+  await expect(page.getByText("今日训练", { exact: true })).toHaveCount(1);
+  await expect(page.getByText("身体反馈", { exact: true })).toHaveCount(1);
+  await expect(page.getByText("今天还没有记录")).toHaveCount(0);
+  await expect(page.getByText("告诉康复助手")).toHaveCount(0);
+  const headerContract = await page.evaluate(() => {
+    const h1 = document.querySelector<HTMLElement>(".today-title-row h1");
+    const date = document.querySelector<HTMLElement>(".today-date");
+    const actions = [
+      ...document.querySelectorAll<HTMLElement>(
+        ".today-actions > button, .today-actions .today-sync-button",
+      ),
+    ];
+    return {
+      h1Size: h1 ? getComputedStyle(h1).fontSize : null,
+      h1Leading: h1 ? getComputedStyle(h1).lineHeight : null,
+      dateSize: date ? getComputedStyle(date).fontSize : null,
+      dateLeading: date ? getComputedStyle(date).lineHeight : null,
+      sectionHeadings: [
+        ...document.querySelectorAll<HTMLElement>(".today-section h2"),
+      ].map((heading) => {
+        const rect = heading.getBoundingClientRect();
+        const style = getComputedStyle(heading);
+        return {
+          fontSize: style.fontSize,
+          lineHeight: style.lineHeight,
+          x: rect.x,
+        };
+      }),
+      actionHeights: actions.map(
+        (action) => action.getBoundingClientRect().height,
+      ),
+      overflow: document.documentElement.scrollWidth > window.innerWidth,
+    };
+  });
+  expect(headerContract.h1Size).toBe("34px");
+  expect(headerContract.h1Leading).toBe("41px");
+  expect(headerContract.dateSize).toBe("17px");
+  expect(headerContract.dateLeading).toBe("22px");
+  expect(headerContract.sectionHeadings).toHaveLength(2);
+  expect(
+    new Set(headerContract.sectionHeadings.map(({ fontSize }) => fontSize)),
+  ).toEqual(new Set(["17px"]));
+  expect(
+    new Set(headerContract.sectionHeadings.map(({ lineHeight }) => lineHeight)),
+  ).toEqual(new Set(["22px"]));
+  expect(
+    new Set(headerContract.sectionHeadings.map(({ x }) => x).map(Math.round))
+      .size,
+  ).toBe(1);
+  expect(headerContract.actionHeights.every((height) => height >= 44)).toBe(
+    true,
+  );
+  expect(headerContract.overflow).toBe(false);
+  await page.screenshot({
+    path: "test-results/ui-r8-today-no-records-normal-390.png",
+    fullPage: true,
+  });
+
+  activeToday = todayAggregate;
+  await page.goto("/");
+  await expect(page.locator("[data-today-records]")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "训练记录" })).toBeVisible();
+  await page.screenshot({
+    path: "test-results/ui-r8-today-records-390.png",
+    fullPage: true,
+  });
+
+  for (const safety of ["yellow", "red"] as const) {
+    activeToday = {
+      ...todayAggregate,
+      day: {
+        ...todayAggregate.day,
+        feedbackCount: 1,
+        feedbacks: [anonymousFeedback(safety)],
+      },
+    };
+    await page.goto("/");
+    const feedbackRegion = page.getByRole("region", { name: "身体反馈" });
+    await expect(
+      feedbackRegion.getByText(safety === "yellow" ? "黄灯" : "红灯"),
+    ).toBeVisible();
+    await expect(
+      feedbackRegion.getByRole("link", { name: "再次反馈" }),
+    ).toBeVisible();
+    await expect(feedbackRegion.getByText("告诉康复助手")).toHaveCount(0);
+    await page.screenshot({
+      path: `test-results/ui-r8-today-${safety}-390.png`,
+      fullPage: true,
+    });
+  }
+
+  activeToday = {
+    ...todayAggregate,
+    day: {
+      ...todayAggregate.day,
+      externalTrainingRecords: [],
+      feedbackCount: 0,
+      feedbacks: [],
+    },
+  };
+  let release!: () => void;
+  const syncResponseReleased = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(
+    "**/api/trackers/knee-rehab/integrations/sync-latest",
+    async (route) => {
+      await syncResponseReleased;
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          sources: [
+            {
+              source: "garmin_activity",
+              status: "records",
+              recordCount: 1,
+              continueAvailable: true,
+            },
+            {
+              source: "garmin_wellness",
+              status: "temporarily_failed",
+              recordCount: 0,
+              continueAvailable: false,
+            },
+            {
+              source: "xunji_training",
+              status: "needs_credentials",
+              recordCount: 0,
+              continueAvailable: false,
+            },
+          ],
+        }),
+      });
+    },
+  );
+  await page.goto("/");
+  const sync = page.getByRole("button", { name: "同步外部训练记录" });
+  await sync.click();
+  await expect(
+    page.getByRole("button", { name: "正在同步外部训练记录" }),
+  ).toBeDisabled();
+  await expect(page.getByText("正在同步外部训练记录")).toBeVisible();
+  await page.screenshot({
+    path: "test-results/ui-r8-today-sync-running-390.png",
+    fullPage: true,
+  });
+  release();
+  await expect(page.getByText("已更新 1 条，部分来源未完成")).toBeVisible();
+  await page.screenshot({
+    path: "test-results/ui-r8-today-sync-partial-final-390.png",
+    fullPage: true,
+  });
+});
 
 for (const width of [320, 375, 390, 430]) {
   test(`anonymous mobile layout audit passes at ${width}px`, async ({
@@ -1295,7 +1487,7 @@ for (const width of [320, 375, 390, 430]) {
           },
         },
         safety === "green"
-          ? "今天已记录 1 次"
+          ? "今日已记录 1 次"
           : safety === "yellow"
             ? "今天不要升级"
             : "停止相关诱发负荷",
@@ -2816,7 +3008,7 @@ for (const width of [320, 375, 390, 430]) {
     const todayPanel = page.locator('[data-tab-panel="today"]');
     await expect(todayPanel.getByLabel("外部活动与训练记录")).toBeVisible();
     await expect(todayPanel.getByRole("heading", { name: "步行" })).toHaveCount(
-      0,
+      1,
     );
     const taskCheckbox = todayPanel.getByRole("checkbox", {
       name: "Anonymous task",
@@ -2830,10 +3022,10 @@ for (const width of [320, 375, 390, 430]) {
         "Garmin 活动已关联到“Anonymous task”；任务完成状态未改变，可在日历当天修改。",
       ),
     ).toBeVisible();
-    await expect(
-      todayPanel.getByText("已关联 1 条来源 · Garmin"),
-    ).toBeVisible();
-    await expect(todayPanel.getByLabel("外部活动与训练记录")).toHaveCount(0);
+    await expect(todayPanel.getByText("已关联 1 条来源 · Garmin")).toHaveCount(
+      0,
+    );
+    await expect(todayPanel.getByLabel("外部活动与训练记录")).toHaveCount(1);
     await expect(taskCheckbox).not.toBeChecked();
     await expect.poll(() => counters.association).toBe(1);
 
@@ -2859,9 +3051,9 @@ for (const width of [320, 375, 390, 430]) {
 
     await page.goBack();
     await expect(page).toHaveURL("/");
-    await expect(
-      todayPanel.getByText("已关联 1 条来源 · Garmin"),
-    ).toBeVisible();
+    await expect(todayPanel.getByText("已关联 1 条来源 · Garmin")).toHaveCount(
+      0,
+    );
     await page.goForward();
     await expect(page).toHaveURL("/calendar");
     await expect(

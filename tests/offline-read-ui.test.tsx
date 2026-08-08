@@ -129,10 +129,7 @@ describe("P2 offline snapshot UI", () => {
     );
     const online = renderPrivate(<TodayClient />);
     expect(
-      await screen.findByRole("heading", {
-        name: "Anonymous offline task",
-        level: 2,
-      }),
+      await screen.findByRole("article", { name: "Anonymous offline task" }),
     ).toBeTruthy();
     await waitFor(async () => {
       expect(await offlineDatabase.querySnapshots.count()).toBe(1);
@@ -147,10 +144,7 @@ describe("P2 offline snapshot UI", () => {
     expect(await screen.findByText("当前离线 · 显示本机内容")).toBeTruthy();
     expect(screen.getByText(/其他操作请联网后进行/)).toBeTruthy();
     expect(
-      screen.getByRole("heading", {
-        name: "Anonymous offline task",
-        level: 2,
-      }),
+      screen.getByRole("article", { name: "Anonymous offline task" }),
     ).toBeTruthy();
     expect(
       (
@@ -170,10 +164,7 @@ describe("P2 offline snapshot UI", () => {
     );
     const seeded = renderPrivate(<TodayClient />);
     expect(
-      await screen.findByRole("heading", {
-        name: "Anonymous offline task",
-        level: 2,
-      }),
+      await screen.findByRole("article", { name: "Anonymous offline task" }),
     ).toBeTruthy();
     await waitFor(async () =>
       expect(await offlineDatabase.querySnapshots.count()).toBe(1),
@@ -198,10 +189,7 @@ describe("P2 offline snapshot UI", () => {
     );
     const first = renderPrivate(<TodayClient />, "10001");
     expect(
-      await screen.findByRole("heading", {
-        name: "Anonymous offline task",
-        level: 2,
-      }),
+      await screen.findByRole("article", { name: "Anonymous offline task" }),
     ).toBeTruthy();
     await waitFor(async () =>
       expect(await offlineDatabase.querySnapshots.count()).toBe(1),

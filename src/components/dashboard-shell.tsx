@@ -7,10 +7,7 @@ import {
   createOrReuseClientCommand,
   type PendingClientCommand,
 } from "@/domain/client-command";
-import type {
-  ExternalRecordAssociation,
-  ExternalTrainingRecord,
-} from "@/domain/external-training";
+import type { ExternalRecordAssociation } from "@/domain/external-training";
 import type { TaskActual } from "@/domain/schemas";
 import { userFacingTaskTitle } from "@/domain/task-title";
 import type { DashboardTask, TodayDashboard } from "@/server/dashboard";
@@ -164,7 +161,6 @@ function Prescription({
 
 function TodayTask({
   task,
-  records,
   onUpdated,
   localDate,
   planVersion,
@@ -172,7 +168,6 @@ function TodayTask({
   showTitle = true,
 }: {
   task: DashboardTask;
-  records: ExternalTrainingRecord[];
   onUpdated: (task: DashboardTask) => void;
   localDate: string;
   planVersion: number | null;
@@ -328,23 +323,6 @@ function TodayTask({
           </StatusPill>
         ) : null}
       </div>
-      {records.length > 0 ? (
-        <div className="task-linked-source-summary">
-          <span>
-            已关联 {records.length} 条来源 ·{" "}
-            {[
-              ...new Set(
-                records.map((record) =>
-                  record.provider === "xunji" ? "训记" : "Garmin",
-                ),
-              ),
-            ].join("、")}
-          </span>
-          <Link href={`/calendar?date=${localDate}`} scroll={false}>
-            日历中查看
-          </Link>
-        </div>
-      ) : null}
       {taskExpanded ? (
         <div className="today-task-details" id={detailsId}>
           <div className="today-task-prescription">
@@ -545,14 +523,6 @@ function TodayTask({
   );
 }
 
-function taskIdForRecord(
-  record: ExternalTrainingRecord,
-  tasks: DashboardTask[],
-) {
-  const taskId = record.association?.taskId ?? record.suggestion?.taskId;
-  return taskId && tasks.some((task) => task.id === taskId) ? taskId : null;
-}
-
 function safetyTone(level: "green" | "yellow" | "red"): StatusTone {
   if (level === "red") return "danger";
   if (level === "yellow") return "warning";
@@ -641,9 +611,6 @@ export function DashboardShell({
   const completedCount = tasks.filter(
     (task) => task.status === "completed",
   ).length;
-  const remainingCount = tasks.filter(
-    (task) => task.status === "planned",
-  ).length;
   const notStarted = initialDashboard.state === "not_started";
   const missing = initialDashboard.state === "missing";
   const baselineDay =
@@ -651,17 +618,6 @@ export function DashboardShell({
   const latestSafety = initialDashboard.feedbacks.at(-1)?.safetyLevel ?? null;
   const currentSafety = latestSafety;
   const externalRecords = initialDashboard.externalTrainingRecords;
-  const pendingRecords = externalRecords.filter(
-    (record) =>
-      !record.association ||
-      record.association.status === "suggested" ||
-      record.association.needsReview,
-  );
-  const confirmedRecords = externalRecords.filter(
-    (record) =>
-      record.association?.status === "confirmed" &&
-      !record.association.needsReview,
-  );
   const adjustmentException = executionExceptionLabel(execution);
   const adjustmentPanelId = "today-adjustments";
   const forceAdjustmentPanel =
@@ -683,31 +639,15 @@ export function DashboardShell({
     await onExternalTrainingUpdated(recordId, association);
   };
 
-  const planTitle = missing
-    ? "等待导入私人计划"
-    : notStarted
-      ? `计划将于 ${formatStartDate(initialDashboard.startDate)}开始`
-      : tasks.length === 0
-        ? baselineDay
-          ? "第 1 周从今天开始"
-          : "今天没有安排训练"
-        : remainingCount > 0
-          ? `今天还剩 ${remainingCount} 项`
-          : "今天的任务已处理";
-  const singleTask = tasks.length === 1 ? tasks[0] : null;
   const renderTask = (
     task: DashboardTask,
     showStatus = true,
     showTitle = true,
   ) => {
-    const taskRecords = confirmedRecords.filter(
-      (record) => taskIdForRecord(record, tasks) === task.id,
-    );
     return (
       <TodayTask
         key={task.id}
         task={task}
-        records={taskRecords}
         onUpdated={onTaskUpdated}
         localDate={localDate}
         planVersion={planVersion}
@@ -722,27 +662,34 @@ export function DashboardShell({
       <header className="today-header">
         <div className="today-title-row">
           <div>
-            <p className="eyebrow">今日训练</p>
             <h1>今天</h1>
             <p className="today-date">{today}</p>
           </div>
-          <button
-            className="refresh-button"
-            type="button"
-            aria-label={refreshing ? "正在刷新今日数据" : "刷新今日数据"}
-            title={online ? "刷新今日数据" : "联网后刷新"}
-            disabled={!online || refreshing}
-            onClick={async () => {
-              setRefreshing(true);
-              try {
-                await onRefresh();
-              } finally {
-                setRefreshing(false);
+          <div className="today-actions">
+            <button
+              className="refresh-button"
+              type="button"
+              aria-label={refreshing ? "正在刷新今日数据" : "刷新今日数据"}
+              title={
+                online ? "刷新已保存的今日数据" : "联网后刷新已保存的今日数据"
               }
-            }}
-          >
-            <span aria-hidden="true">↻</span>
-          </button>
+              disabled={!online || refreshing}
+              onClick={async () => {
+                setRefreshing(true);
+                try {
+                  await onRefresh();
+                } finally {
+                  setRefreshing(false);
+                }
+              }}
+            >
+              <span aria-hidden="true">↻</span>
+            </button>
+            <TodaySyncControl
+              trackerKey="knee-rehab"
+              onCompleted={onLatestSyncCompleted}
+            />
+          </div>
         </div>
       </header>
 
@@ -893,17 +840,9 @@ export function DashboardShell({
         data-today-workout
       >
         <SectionHeading
-          eyebrow="今日训练"
-          title={singleTask ? userFacingTaskTitle(singleTask.title) : planTitle}
+          title="今日训练"
           aside={
-            singleTask ? (
-              <StatusPill
-                tone={taskStatusPresentation[singleTask.status].tone}
-                icon={taskStatusPresentation[singleTask.status].icon}
-              >
-                {taskStatusPresentation[singleTask.status].label}
-              </StatusPill>
-            ) : tasks.length > 1 ? (
+            tasks.length > 1 ? (
               <span className="count-badge">
                 {completedCount} / {tasks.length}
               </span>
@@ -911,25 +850,40 @@ export function DashboardShell({
           }
         />
         {missing ? (
-          <p className="empty-state-copy">
-            还没有训练计划。完成设置后，今天的安排会显示在这里。
-          </p>
+          <>
+            <p className="today-training-context">等待导入私人计划</p>
+            <p className="empty-state-copy">
+              还没有训练计划。完成设置后，今天的安排会显示在这里。
+            </p>
+          </>
         ) : null}
         {notStarted ? (
-          <p className="empty-state-copy">
-            计划已就绪。开始前可以先记录一次基线反馈。
-          </p>
+          <>
+            <p className="today-training-context">
+              计划将于 {formatStartDate(initialDashboard.startDate)}开始
+            </p>
+            <p className="empty-state-copy">
+              计划已就绪。开始前可以先记录一次基线反馈。
+            </p>
+          </>
         ) : null}
         {!missing && !notStarted && tasks.length === 0 ? (
-          <p className="empty-state-copy">
-            {baselineDay
-              ? "今天是恢复/基线日；可先记录一次基线反馈。"
-              : "按计划恢复即可；如果有突发反应，仍可以随时提交反馈。"}
-          </p>
+          <>
+            {baselineDay ? (
+              <p className="today-training-context">第 1 周从今天开始</p>
+            ) : (
+              <p className="today-training-context">今天没有安排训练</p>
+            )}
+            <p className="empty-state-copy">
+              {baselineDay
+                ? "今天是恢复/基线日；可先记录一次基线反馈。"
+                : "如果有突发反应，仍可以随时提交反馈。"}
+            </p>
+          </>
         ) : null}
         {tasks.length > 0 ? (
           tasks.length === 1 ? (
-            renderTask(tasks[0]!, false, false)
+            renderTask(tasks[0]!, true, true)
           ) : (
             <div className="task-list">
               {tasks.map((task) => renderTask(task))}
@@ -951,38 +905,31 @@ export function DashboardShell({
         ) : null}
       </section>
 
-      <section
-        className="today-section today-records-section"
-        aria-label="训练记录"
-        data-today-records
-      >
-        <TodaySyncControl
-          trackerKey="knee-rehab"
-          onCompleted={onLatestSyncCompleted}
-        />
-        {pendingRecords.length > 0 ? (
-          <div className="today-records-review">
-            <SectionHeading
-              eyebrow="待确认"
-              title={`${pendingRecords.length} 条来源记录`}
-              aside={
-                <StatusPill tone="attention" icon="!">
-                  待处理
-                </StatusPill>
-              }
-            />
-            <ExternalTrainingSection
-              trackerKey="knee-rehab"
-              records={pendingRecords}
-              tasks={tasks}
-              heading="来源详情"
-              onUpdated={handleExternalTrainingUpdated}
-              onConflict={onExternalTrainingConflict}
-              readOnly={writesDisabled}
-            />
-          </div>
-        ) : null}
-      </section>
+      {externalRecords.length > 0 ? (
+        <section
+          className="today-section today-records-section"
+          aria-label="训练记录"
+          data-today-records
+          data-testid="today-records"
+        >
+          <SectionHeading
+            title="训练记录"
+            aside={
+              <span className="count-badge">{externalRecords.length} 条</span>
+            }
+          />
+          <ExternalTrainingSection
+            trackerKey="knee-rehab"
+            records={externalRecords}
+            tasks={tasks}
+            heading=""
+            onUpdated={handleExternalTrainingUpdated}
+            onConflict={onExternalTrainingConflict}
+            readOnly={writesDisabled}
+            presentation="today"
+          />
+        </section>
+      ) : null}
 
       {adjustmentPanelOpen ? (
         <div id={adjustmentPanelId} className="today-adjustment-panel">
@@ -1011,67 +958,37 @@ export function DashboardShell({
         </div>
       ) : null}
 
-      {currentSafety && currentSafety !== "green" ? (
-        <section
-          className="today-section feedback-card"
-          aria-label="身体反馈"
-          data-today-feedback
-        >
-          <SectionHeading
-            eyebrow="身体反馈"
-            title={
-              feedbackCount > 0
-                ? `今天已记录 ${feedbackCount} 次`
-                : "今天还没有记录"
-            }
-            aside={
+      <section
+        className={`today-section feedback-card${currentSafety && currentSafety !== "green" ? ` feedback-card-${currentSafety}` : ""}`}
+        aria-label="身体反馈"
+        data-today-feedback
+      >
+        <SectionHeading
+          title="身体反馈"
+          aside={
+            currentSafety && currentSafety !== "green" ? (
               <StatusPill tone={safetyTone(currentSafety)} icon="!">
                 {safetyLabel(currentSafety)}
               </StatusPill>
-            }
-          />
+            ) : undefined
+          }
+        />
+        {currentSafety && currentSafety !== "green" ? (
           <p className={`safety-message ${currentSafety}`}>
             {safetyGuidance(currentSafety)}
           </p>
-          <div className="button-row">
-            <Link className="primary-button" href="/feedback" scroll={false}>
-              {feedbackCount > 0 ? "再次反馈" : "记录身体反馈"}
-            </Link>
-            <Link
-              className="secondary-button"
-              href={`/plan/conversation?date=${encodeURIComponent(localDate)}`}
-            >
-              告诉康复助手
-            </Link>
-          </div>
-        </section>
-      ) : (
-        <section
-          className="today-section feedback-compact"
-          aria-label="身体反馈"
-          data-today-feedback
+        ) : null}
+        {feedbackCount > 0 ? (
+          <p className="feedback-count">今日已记录 {feedbackCount} 次</p>
+        ) : null}
+        <Link
+          className="primary-button feedback-action"
+          href="/feedback"
+          scroll={false}
         >
-          <div className="feedback-compact-copy">
-            <strong>身体反馈</strong>
-            <span>
-              {feedbackCount > 0
-                ? `今天已记录 ${feedbackCount} 次`
-                : "今天还没有记录"}
-            </span>
-          </div>
-          <div className="feedback-compact-actions">
-            <Link className="primary-button" href="/feedback" scroll={false}>
-              {feedbackCount > 0 ? "再次反馈" : "记录身体反馈"}
-            </Link>
-            <Link
-              className="text-button"
-              href={`/plan/conversation?date=${encodeURIComponent(localDate)}`}
-            >
-              告诉康复助手
-            </Link>
-          </div>
-        </section>
-      )}
+          {feedbackCount > 0 ? "再次反馈" : "记录身体反馈"}
+        </Link>
+      </section>
 
       {initialDashboard.recoveryReference ? (
         <RecoveryReferenceCard reference={initialDashboard.recoveryReference} />

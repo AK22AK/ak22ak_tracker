@@ -39,14 +39,14 @@ export function SectionHeading({
   title,
   aside,
 }: {
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   aside?: ReactNode;
 }) {
   return (
     <div className="section-heading">
       <div>
-        <p className="eyebrow">{eyebrow}</p>
+        {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
         <h2>{title}</h2>
       </div>
       {aside}

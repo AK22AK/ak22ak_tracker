@@ -6164,3 +6164,190 @@ body {
   font-size: var(--ak-meta-size);
   line-height: var(--ak-meta-leading);
 }
+
+/* UI-R8 Today hierarchy: header actions own refresh/sync, while result
+   projections remain lightweight and records are rendered only when present. */
+.today-title-row {
+  align-items: flex-start;
+}
+
+.today-title-row h1 {
+  margin-top: 0;
+  font-size: 34px;
+  line-height: 41px;
+}
+
+.today-date {
+  margin-top: 2px;
+  color: var(--ak-label-secondary);
+  font-size: 17px;
+  line-height: 22px;
+}
+
+.today-actions {
+  display: grid;
+  grid-template-columns: 44px auto;
+  align-items: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.today-actions > .today-sync-control {
+  display: contents;
+}
+
+.today-actions .today-sync-button {
+  grid-column: 2;
+  display: inline-flex;
+  min-width: 68px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
+.today-actions .today-sync-button span:first-child {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.today-actions .today-sync-status {
+  grid-column: 1 / -1;
+  width: min(100%, 340px);
+}
+
+.today-sync-control {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.today-sync-status {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: var(--ak-control-radius);
+  background: var(--ak-surface-secondary);
+  color: var(--ak-label-secondary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.today-sync-status > strong {
+  color: var(--ak-label-primary);
+  font-weight: 600;
+}
+
+.today-sync-error.today-sync-status {
+  color: var(--ak-red);
+}
+
+.today-sync-error.today-sync-status > strong {
+  color: inherit;
+}
+
+.today-section > .section-heading,
+.today-records-section > .section-heading,
+.feedback-card > .section-heading {
+  min-width: 0;
+  padding: 0;
+}
+
+.today-training-section > .section-heading h2,
+.today-records-section > .section-heading h2,
+.feedback-card > .section-heading h2 {
+  font-size: 17px;
+  line-height: 22px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.today-training-section > .section-heading {
+  padding-inline: 20px;
+}
+
+.today-training-section {
+  padding: 0 0 12px;
+}
+
+.today-task-summary .task-summary-copy strong {
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 600;
+}
+
+.today-records-section {
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  background: var(--ak-surface);
+}
+
+.today-records-section .external-training-section {
+  margin-top: 0;
+  gap: 0;
+}
+
+.today-records-section .external-section-title {
+  display: none;
+}
+
+.today-records-section .external-training-card {
+  padding: 12px 0;
+  border: 0;
+  border-top: 1px solid var(--ak-separator);
+  border-radius: 0;
+  background: transparent;
+}
+
+.today-records-section .external-training-card:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.today-records-section .external-training-card:last-child {
+  padding-bottom: 0;
+}
+
+.today-records-section .external-training-card.compact {
+  padding-inline: 0;
+  background: transparent;
+}
+
+.today-records-section .external-association-edit {
+  min-height: 44px;
+}
+
+.feedback-card {
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+}
+
+.feedback-card .safety-message,
+.feedback-card .feedback-count {
+  margin: 0;
+}
+
+.feedback-card .feedback-count {
+  color: var(--ak-label-secondary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.feedback-card .feedback-action {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}

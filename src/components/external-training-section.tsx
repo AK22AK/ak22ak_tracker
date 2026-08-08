@@ -209,7 +209,7 @@ function ExternalTrainingCard({
   ) => void | Promise<void>;
   readOnly: boolean;
   assistantLink: boolean;
-  presentation: "actionable" | "calendar";
+  presentation: "actionable" | "calendar" | "today";
   onConflict?: () => void | Promise<void>;
 }) {
   const [selectedTaskId, setSelectedTaskId] = useState(
@@ -357,6 +357,13 @@ function ExternalTrainingCard({
               </button>
             ) : null}
           </div>
+        ) : presentation === "today" ? (
+          <Link
+            className="external-association-edit"
+            href={`/calendar?date=${encodeURIComponent(record.localDate)}`}
+          >
+            在日历中修改
+          </Link>
         ) : (
           <button
             className="external-association-edit"
@@ -407,7 +414,7 @@ export function ExternalTrainingSection({
   ) => void | Promise<void>;
   readOnly?: boolean;
   assistantLinks?: boolean;
-  presentation?: "actionable" | "calendar";
+  presentation?: "actionable" | "calendar" | "today";
   onConflict?: () => void | Promise<void>;
 }) {
   if (records.length === 0) return null;
@@ -416,10 +423,12 @@ export function ExternalTrainingSection({
       className="external-training-section"
       aria-label="外部活动与训练记录"
     >
-      <div className="external-section-title">
-        <h2>{heading}</h2>
-        <span>{records.length} 条</span>
-      </div>
+      {heading ? (
+        <div className="external-section-title">
+          <h2>{heading}</h2>
+          <span>{records.length} 条</span>
+        </div>
+      ) : null}
       {records.map((record) => (
         <ExternalTrainingCard
           key={record.id}

@@ -203,7 +203,7 @@ describe("today background refresh", () => {
     commandHarness.replayNow.mockReset();
   });
 
-  it("keeps normal technical state implicit and preserves the two daily actions", async () => {
+  it("keeps normal technical state implicit and preserves the formal daily action", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(jsonResponse(aggregate("planned", 0))),
@@ -222,16 +222,17 @@ describe("today background refresh", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "Anonymous task", level: 2 }),
+      await screen.findByRole("article", { name: "Anonymous task" }),
     ).toBeTruthy();
     expect(screen.queryByText("当前在线")).toBeNull();
     expect(screen.queryByText("正常模式")).toBeNull();
     expect(screen.queryByText("康复计划 v1")).toBeNull();
     expect(screen.queryByRole("button", { name: "退出" })).toBeNull();
     expect(screen.getByRole("link", { name: "记录身体反馈" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "告诉康复助手" })).toBeNull();
     expect(
-      screen.getByRole("link", { name: "告诉康复助手" }).getAttribute("href"),
-    ).toBe("/plan/conversation?date=2026-07-19");
+      screen.getByRole("button", { name: "同步外部训练记录" }),
+    ).toBeTruthy();
     expect(
       within(screen.getByLabelText("今日训练")).getByRole("button", {
         name: "调整今天",
@@ -316,10 +317,7 @@ describe("today background refresh", () => {
       </QueryClientProvider>,
     );
 
-    await screen.findByRole("heading", {
-      name: "Anonymous task",
-      level: 2,
-    });
+    await screen.findByRole("article", { name: "Anonymous task" });
     expect(idleCallback).not.toBeNull();
     act(() => idleCallback?.());
 
@@ -692,7 +690,7 @@ describe("today background refresh", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "Anonymous task", level: 2 }),
+      await screen.findByRole("article", { name: "Anonymous task" }),
     ).toBeTruthy();
     expect(screen.getByText("Anonymous movement · 2 × 8")).toBeTruthy();
     expect(screen.getByText("待完成")).toBeTruthy();
@@ -750,10 +748,7 @@ describe("today background refresh", () => {
       within(task).getByText("Anonymous movement", { exact: true }),
     ).toBeTruthy();
     expect(screen.queryByText(/第 5 周 ·/)).toBeNull();
-    const sync = screen.getByRole("region", { name: "训练记录" });
-    expect(
-      task.compareDocumentPosition(sync) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "训练记录" })).toBeNull();
   });
 
   it("renders completed and skipped tasks as distinct visual states", async () => {

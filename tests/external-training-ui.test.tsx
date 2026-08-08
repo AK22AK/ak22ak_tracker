@@ -189,7 +189,7 @@ describe("external training association UI", () => {
     vi.unstubAllGlobals();
   });
 
-  it("keeps resolved records out of the Today pending flow and summarizes confirmed links under the task", async () => {
+  it("keeps resolved records compact while listing them in the Today records section", async () => {
     const data = todayAggregate();
     data.day.externalTrainingRecords[0]!.association = {
       status: "confirmed",
@@ -233,9 +233,11 @@ describe("external training association UI", () => {
       </QueryClientProvider>,
     );
 
-    expect(await screen.findByText("已关联 1 条来源 · 训记")).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "步行" })).toBeNull();
-    expect(screen.queryByText("已标记为与计划无关")).toBeNull();
+    expect(
+      await screen.findByRole("heading", { name: "Anonymous session" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "步行" })).toBeTruthy();
+    expect(screen.getByText("已标记为与计划无关")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "与计划无关" })).toBeNull();
     expect(screen.queryByLabelText("待处理来源")).toBeNull();
   });
@@ -315,7 +317,7 @@ describe("external training association UI", () => {
     );
 
     expect(
-      await within(todayPage!).findByText("已关联 1 条来源 · 训记"),
+      await within(todayPage!).findByText("已关联：Anonymous strength task"),
     ).toBeTruthy();
     const calendarPage =
       view.container.querySelector<HTMLElement>(".calendar-shell");
@@ -342,7 +344,7 @@ describe("external training association UI", () => {
     ).toBeTruthy();
     await waitFor(() =>
       expect(
-        within(todayPage!).queryByText("已关联 1 条来源 · 训记"),
+        within(todayPage!).queryByText("已关联：Anonymous strength task"),
       ).toBeNull(),
     );
     expect(
@@ -406,7 +408,9 @@ describe("external training association UI", () => {
         },
       }),
     );
-    expect(await screen.findByText("已关联 1 条来源 · 训记")).toBeTruthy();
+    expect(
+      await screen.findByText("已关联：Anonymous strength task"),
+    ).toBeTruthy();
   });
 
   it("refreshes canonical source state after PUT 409 and re-emphasizes needsReview", async () => {
@@ -570,7 +574,7 @@ describe("external training association UI", () => {
       fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH"),
     ).toBe(false);
     await waitFor(() =>
-      expect(screen.getByText("已关联 1 条来源 · 训记")).toBeTruthy(),
+      expect(screen.getByText("已关联：Anonymous strength task")).toBeTruthy(),
     );
   });
 

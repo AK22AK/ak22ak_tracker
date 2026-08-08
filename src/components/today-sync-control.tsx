@@ -68,7 +68,7 @@ export function TodaySyncControl({
       : recordCount > 0
         ? `已更新 ${recordCount} 条`
         : "没有新的训练记录"
-    : "尚未检查新记录";
+    : null;
 
   async function sync() {
     if (syncing || !online) return;
@@ -88,39 +88,44 @@ export function TodaySyncControl({
 
   return (
     <div className="today-sync-control">
-      <div className="today-sync-heading">
-        <div>
-          <strong>训练记录</strong>
-          <p>{syncing ? "正在同步" : syncStatus}</p>
-        </div>
-        <button
-          className="secondary-button today-sync-button"
-          type="button"
-          disabled={syncing || !online}
-          onClick={() => void sync()}
-        >
-          {syncing
-            ? "正在同步…"
-            : online
-              ? hasContinuation
-                ? "继续同步"
-                : "同步训练记录"
-              : "联网后同步"}
-        </button>
-      </div>
+      <button
+        className="secondary-button today-sync-button"
+        type="button"
+        aria-label={syncing ? "正在同步外部训练记录" : "同步外部训练记录"}
+        title={
+          online
+            ? hasContinuation
+              ? "继续同步 Garmin、Garmin wellness 和训记"
+              : "同步 Garmin、Garmin wellness 和训记"
+            : "联网后同步外部训练记录"
+        }
+        disabled={syncing || !online}
+        onClick={() => void sync()}
+      >
+        <span aria-hidden="true">⇄</span>
+        <span>{syncing ? "同步中…" : "同步"}</span>
+      </button>
       {syncing ? (
-        <ul className="today-sync-results" aria-label="来源同步结果">
-          {Object.entries(sourceNames).map(([source, name]) => (
-            <li key={source} data-sync-source={source}>
-              <span>{name}</span>
-              <strong>同步中</strong>
-            </li>
-          ))}
-        </ul>
+        <div className="today-sync-status" role="status" aria-live="polite">
+          <strong>正在同步外部训练记录</strong>
+          <ul className="today-sync-results" aria-label="来源同步结果">
+            {Object.entries(sourceNames).map(([source, name]) => (
+              <li key={source} data-sync-source={source}>
+                <span>{name}</span>
+                <strong>同步中</strong>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
-      {result ? <SourceResults result={result} /> : null}
+      {result && syncStatus ? (
+        <div className="today-sync-status" role="status" aria-live="polite">
+          <strong>{syncStatus}</strong>
+          <SourceResults result={result} />
+        </div>
+      ) : null}
       {failed ? (
-        <p className="today-sync-error" role="alert">
+        <p className="today-sync-error today-sync-status" role="alert">
           暂时无法同步，请稍后再试。
         </p>
       ) : null}
