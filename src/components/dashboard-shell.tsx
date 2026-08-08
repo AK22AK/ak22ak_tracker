@@ -683,6 +683,7 @@ export function DashboardShell({
                 <>
                   <AkToolbarAction
                     className="refresh-button"
+                    variant="tonal"
                     label={refreshing ? "正在刷新今日数据" : "刷新今日数据"}
                     title={
                       online
@@ -855,13 +856,7 @@ export function DashboardShell({
         <AkCard
           className="today-section today-training-section"
           title="今日训练"
-          subtitle={
-            tasks.length === 1
-              ? userFacingTaskTitle(tasks[0]!.title)
-              : tasks.length > 1
-                ? "按顺序完成今天的安排"
-                : undefined
-          }
+          subtitle={tasks.length > 1 ? "按顺序完成今天的安排" : undefined}
           dataTodayWorkout
         >
           {missing ? (

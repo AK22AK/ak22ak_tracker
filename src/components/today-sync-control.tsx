@@ -58,6 +58,7 @@ function TodaySyncButton({ controller }: { controller: TodaySyncController }) {
   return (
     <AkToolbarAction
       className="today-sync-button"
+      variant="tonal"
       label={syncing ? "正在同步外部训练记录" : "同步外部训练记录"}
       title={
         online

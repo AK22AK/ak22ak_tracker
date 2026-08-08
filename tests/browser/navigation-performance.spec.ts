@@ -125,6 +125,32 @@ const todayAggregate = {
   },
 };
 
+const todayR9ChineseFixture = {
+  ...todayAggregate,
+  tracker: {
+    ...todayAggregate.tracker,
+    name: "膝盖康复计划",
+  },
+  day: {
+    ...todayAggregate.day,
+    trackerName: "膝盖康复计划",
+    externalTrainingRecords: [],
+    tasks: todayAggregate.day.tasks.map((task) => ({
+      ...task,
+      title: "上肢综合训练",
+      description: "今天完成四个动作，按当前负荷记录实际完成情况。",
+      prescription: {
+        exercises: [
+          { name: "坐姿划船", dose: "2 组 × 10 次" },
+          { name: "墙面俯卧撑", dose: "2 组 × 8 次" },
+          { name: "弹力带外旋", dose: "2 组 × 12 次" },
+          { name: "肩胛收缩", dose: "2 组 × 10 次" },
+        ],
+      },
+    })),
+  },
+};
+
 const calendarAggregate = {
   trackerKey: "knee-rehab",
   month: localDate.slice(0, 7),
@@ -955,6 +981,83 @@ async function expectMobileLayoutIntegrity(page: Page) {
   expect(layout.lastControlCoveredByBottomNav).toBe(false);
 }
 
+async function expectTodayR9VisualContract(
+  page: Page,
+  expectedTaskTitle?: string,
+) {
+  const contract = await page.evaluate((taskTitle) => {
+    const toolbarActions = [
+      ...document.querySelectorAll<HTMLElement>("[data-ak-toolbar-variant]"),
+    ];
+    const toolbarStyles = toolbarActions.map((element) => {
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return {
+        variant: element.dataset.akToolbarVariant,
+        background: style.backgroundColor,
+        border: style.border,
+        radius: style.borderRadius,
+        height: rect.height,
+        centerY: rect.top + rect.height / 2,
+      };
+    });
+    const footerRows = [
+      ...document.querySelectorAll<HTMLElement>("[data-ak-action-row='true']"),
+    ];
+    const taskTitles = [
+      ...document.querySelectorAll<HTMLElement>(
+        ".today-task-summary .task-summary-copy strong",
+      ),
+    ].map((element) => element.textContent?.trim());
+    return {
+      toolbarStyles,
+      footerRows: footerRows.map((element) => {
+        const style = getComputedStyle(element);
+        return {
+          radius: style.borderRadius,
+          borderTop: style.borderTop,
+          height: element.getBoundingClientRect().height,
+        };
+      }),
+      taskTitleCount: taskTitle
+        ? taskTitles.filter((title) => title === taskTitle).length
+        : null,
+    };
+  }, expectedTaskTitle);
+
+  expect(contract.toolbarStyles).toHaveLength(2);
+  expect(new Set(contract.toolbarStyles.map(({ variant }) => variant))).toEqual(
+    new Set(["tonal"]),
+  );
+  expect(
+    new Set(contract.toolbarStyles.map(({ background }) => background)).size,
+  ).toBe(1);
+  expect(new Set(contract.toolbarStyles.map(({ border }) => border)).size).toBe(
+    1,
+  );
+  expect(new Set(contract.toolbarStyles.map(({ radius }) => radius)).size).toBe(
+    1,
+  );
+  expect(
+    new Set(contract.toolbarStyles.map(({ height }) => Math.round(height))),
+  ).toEqual(new Set([44]));
+  expect(
+    Math.max(...contract.toolbarStyles.map(({ centerY }) => centerY)) -
+      Math.min(...contract.toolbarStyles.map(({ centerY }) => centerY)),
+  ).toBeLessThanOrEqual(0.5);
+  expect(contract.footerRows.length).toBeGreaterThanOrEqual(2);
+  expect(new Set(contract.footerRows.map(({ radius }) => radius))).toEqual(
+    new Set(["0px"]),
+  );
+  expect(
+    contract.footerRows.every(
+      ({ height, borderTop }) =>
+        height >= 44 && borderTop !== "0px none rgb(0, 0, 0)",
+    ),
+  ).toBe(true);
+  if (expectedTaskTitle) expect(contract.taskTitleCount).toBe(1);
+}
+
 test("UI-R5 production Today information architecture stays flat and actionable", async ({
   page,
 }) => {
@@ -1018,9 +1121,7 @@ test("UI-R5 production Today information architecture stays flat and actionable"
           Node.DOCUMENT_POSITION_FOLLOWING,
       ),
       recordsInsideWorkout: Boolean(workout?.contains(records)),
-      singleTaskIsWorkoutBody: Boolean(
-        workout?.querySelector(".today-task"),
-      ),
+      singleTaskIsWorkoutBody: Boolean(workout?.querySelector(".today-task")),
       singleTaskHeading: workout
         ?.querySelector(".ak-card-header h2")
         ?.textContent?.trim(),
@@ -1107,9 +1208,8 @@ for (const width of [320, 375, 390, 393, 430]) {
       const planCard = document.querySelector<HTMLElement>(
         ".today-training-section",
       );
-      const planHeading = planCard?.querySelector<HTMLElement>(
-        ".ak-card-header",
-      );
+      const planHeading =
+        planCard?.querySelector<HTMLElement>(".ak-card-header");
       const adjustment = [
         ...document.querySelectorAll<HTMLButtonElement>("button"),
       ].find((button) => button.textContent?.trim() === "调整今天");
@@ -1364,15 +1464,13 @@ test("UI-R9 anonymous 390px Today states keep the new information hierarchy", as
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  let activeToday: typeof todayAggregate = {
-    ...todayAggregate,
-    day: {
-      ...todayAggregate.day,
-      externalTrainingRecords: [],
-      feedbackCount: 0,
-      feedbacks: [],
-    },
-  };
+  const chineseReviewScreenshotPath =
+    process.env.UI_R9_SCREENSHOT_PATH ??
+    "test-results/ui-r9-today-chinese-390.png";
+  const chineseFooterScreenshotPath =
+    process.env.UI_R9_FOOTER_SCREENSHOT_PATH ??
+    "test-results/ui-r9-today-chinese-footer-390.png";
+  let activeToday: unknown = todayR9ChineseFixture;
   await mockPrivateReads(
     page,
     0,
@@ -1392,6 +1490,8 @@ test("UI-R9 anonymous 390px Today states keep the new information hierarchy", as
   await expect(page.getByText("身体反馈", { exact: true })).toHaveCount(1);
   await expect(page.getByText("今天还没有记录")).toHaveCount(0);
   await expect(page.getByText("告诉康复助手")).toHaveCount(0);
+  await expect(page.getByText("上肢综合训练", { exact: true })).toHaveCount(1);
+  await expectTodayR9VisualContract(page, "上肢综合训练");
   const headerContract = await page.evaluate(() => {
     const h1 = document.querySelector<HTMLElement>(".ak-screen-header-copy h1");
     const date = document.querySelector<HTMLElement>(
@@ -1446,11 +1546,15 @@ test("UI-R9 anonymous 390px Today states keep the new information hierarchy", as
   );
   expect(headerContract.overflow).toBe(false);
   await page.screenshot({
-    path: "test-results/ui-r9-today-no-records-normal-390.png",
+    path: chineseReviewScreenshotPath,
     fullPage: true,
   });
+  await page.getByRole("button", { name: "今天跳过" }).scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: chineseFooterScreenshotPath,
+  });
 
-  activeToday = todayAggregate;
+  activeToday = { ...todayR9ChineseFixture, day: todayAggregate.day };
   await page.goto("/");
   await expect(page.locator("[data-today-records]")).toBeVisible();
   await expect(page.getByRole("heading", { name: "训练记录" })).toBeVisible();
@@ -1546,7 +1650,7 @@ test("UI-R9 anonymous 390px Today states keep the new information hierarchy", as
   });
 });
 
-for (const width of [320, 375, 390, 430]) {
+for (const width of [320, 375, 390, 393, 430]) {
   test(`anonymous mobile layout audit passes at ${width}px`, async ({
     page,
   }) => {
@@ -1572,6 +1676,7 @@ for (const width of [320, 375, 390, 430]) {
     };
 
     await inspectToday(todayAggregate, "Anonymous task");
+    await expectTodayR9VisualContract(page, "Anonymous task");
     await inspectToday(
       {
         ...todayAggregate,

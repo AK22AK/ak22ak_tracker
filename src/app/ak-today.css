@@ -44,9 +44,15 @@
 }
 
 .ak-today-scope .ak-toolbar-action {
+  display: inline-flex;
   min-width: 44px;
   min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
   border-radius: var(--ak-control-radius);
+  background: var(--ak-grouped-background);
+  color: var(--ak-accent);
   white-space: nowrap;
 }
 
@@ -84,10 +90,9 @@
   box-shadow: none;
 }
 
-.ak-today-scope .ak-konsta-card > [class*="card-header"],
-.ak-today-scope .ak-konsta-card > [class*="card-content"],
-.ak-today-scope .ak-konsta-card > [class*="card-footer"] {
+.ak-today-scope .ak-card-content {
   min-width: 0;
+  padding: var(--ak-today-card-inset);
 }
 
 .ak-today-scope .ak-card-header {
@@ -139,8 +144,9 @@
   min-width: 0;
 }
 
-.ak-today-scope .ak-list-row [class*="item-title"],
-.ak-today-scope .ak-list-row [class*="item-subtitle"] {
+.ak-today-scope .ak-list-row-content,
+.ak-today-scope .ak-list-row-title-wrap {
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 
@@ -201,9 +207,13 @@
   justify-content: space-between;
   gap: 12px;
   padding: 8px 0;
-  border-radius: var(--ak-control-radius);
+  border-radius: 0;
   text-align: left;
   white-space: normal;
+}
+
+.ak-today-scope .manual-entry-fallback {
+  border-top: 0;
 }
 
 .ak-today-scope .manual-entry-toggle,

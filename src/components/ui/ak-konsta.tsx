@@ -63,6 +63,7 @@ export function AkToolbarAction({
   disabled,
   title,
   className = "",
+  variant = "clear",
 }: {
   label: string;
   icon?: ReactNode;
@@ -71,14 +72,16 @@ export function AkToolbarAction({
   disabled?: boolean;
   title?: string;
   className?: string;
+  variant?: "clear" | "tonal";
 }) {
   return (
     <Button
-      clearIos
+      {...(variant === "tonal" ? { tonalIos: true } : { clearIos: true })}
       type="button"
       aria-label={label}
       title={title ?? label}
       className={`ak-toolbar-action ${className}`.trim()}
+      data-ak-toolbar-variant={variant}
       disabled={disabled}
       onClick={onClick}
     >
@@ -137,9 +140,12 @@ export function AkCard({
         footer={
           footer ? <div className="ak-card-footer">{footer}</div> : undefined
         }
+        contentWrap={false}
+        headerDivider={false}
+        footerDivider={false}
         className="ak-konsta-card"
       >
-        {children}
+        <div className="ak-card-content">{children}</div>
       </Card>
     </section>
   );
@@ -173,6 +179,9 @@ export function AkListRow({
       after={after}
       media={media}
       contentChildren={children}
+      innerClassName="ak-list-row-inner"
+      contentClassName="ak-list-row-content"
+      titleWrapClassName="ak-list-row-title-wrap"
       className="ak-list-row"
     />
   );
@@ -222,6 +231,7 @@ export function AkActionRow({
       disabled={disabled}
       aria-expanded={ariaExpanded}
       aria-controls={ariaControls}
+      data-ak-action-row="true"
     >
       {children}
     </Button>
