@@ -199,6 +199,10 @@
   margin: 0;
 }
 
+.ak-today-scope .today-prescription li {
+  border-bottom: 0;
+}
+
 .ak-today-scope .ak-action-row {
   display: flex;
   width: 100%;

@@ -1004,6 +1004,11 @@ async function expectTodayR9VisualContract(
     const footerRows = [
       ...document.querySelectorAll<HTMLElement>("[data-ak-action-row='true']"),
     ];
+    const prescriptionRows = [
+      ...document.querySelectorAll<HTMLElement>(
+        ".today-prescription .ak-list-row",
+      ),
+    ];
     const taskTitles = [
       ...document.querySelectorAll<HTMLElement>(
         ".today-task-summary .task-summary-copy strong",
@@ -1017,6 +1022,24 @@ async function expectTodayR9VisualContract(
           radius: style.borderRadius,
           borderTop: style.borderTop,
           height: element.getBoundingClientRect().height,
+        };
+      }),
+      prescriptionRows: prescriptionRows.map((row, index) => {
+        const inner = row.querySelector<HTMLElement>(".ak-list-row-inner");
+        const rowStyle = getComputedStyle(row);
+        const pseudoStyle = inner ? getComputedStyle(inner, "::after") : null;
+        const pseudoVisible = Boolean(
+          pseudoStyle &&
+          pseudoStyle.display !== "none" &&
+          pseudoStyle.content !== "none" &&
+          Number.parseFloat(pseudoStyle.height) > 0 &&
+          pseudoStyle.backgroundColor !== "rgba(0, 0, 0, 0)",
+        );
+        return {
+          index,
+          rowBorderBottomWidth: Number.parseFloat(rowStyle.borderBottomWidth),
+          pseudoVisible,
+          pseudoHeight: pseudoStyle ? Number.parseFloat(pseudoStyle.height) : 0,
         };
       }),
       taskTitleCount: taskTitle
@@ -1055,6 +1078,20 @@ async function expectTodayR9VisualContract(
         height >= 44 && borderTop !== "0px none rgb(0, 0, 0)",
     ),
   ).toBe(true);
+  expect(contract.prescriptionRows.length).toBeGreaterThanOrEqual(1);
+  expect(
+    contract.prescriptionRows.every(
+      ({ rowBorderBottomWidth }) => rowBorderBottomWidth === 0,
+    ),
+  ).toBe(true);
+  for (const [index, row] of contract.prescriptionRows.entries()) {
+    if (index === contract.prescriptionRows.length - 1) {
+      expect(row.pseudoVisible).toBe(false);
+    } else {
+      expect(row.pseudoVisible).toBe(true);
+      expect(row.pseudoHeight).toBeGreaterThan(0);
+    }
+  }
   if (expectedTaskTitle) expect(contract.taskTitleCount).toBe(1);
 }
 
