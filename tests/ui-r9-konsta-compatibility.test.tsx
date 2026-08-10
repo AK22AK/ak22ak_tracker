@@ -3,14 +3,15 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { hydrateRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   AkActionRow,
   AkCard,
+  AkCompactActionCard,
   AkInsetList,
   AkKonstaProvider,
   AkListRow,
@@ -20,6 +21,28 @@ import {
 } from "@/components/ui/ak-konsta";
 
 describe("UI-R9 Konsta compatibility adapter", () => {
+  afterEach(() => cleanup());
+
+  it("renders compact card actions through the controlled link adapter", () => {
+    render(
+      <AkKonstaProvider>
+        <AkCompactActionCard
+          title="身体反馈"
+          action={{
+            href: "/feedback",
+            label: "记录身体反馈",
+            scroll: false,
+          }}
+        />
+      </AkKonstaProvider>,
+    );
+
+    const action = screen.getByRole("link", { name: "记录身体反馈" });
+    expect(action.getAttribute("href")).toBe("/feedback");
+    expect(action.getAttribute("data-ak-action-variant")).toBe("tonal");
+    expect(action.getAttribute("data-ak-compact-action")).toBe("true");
+  });
+
   it("exposes the Today primitives through stable AK semantics", () => {
     const refresh = vi.fn();
     const sync = vi.fn();
@@ -93,6 +116,10 @@ describe("UI-R9 Konsta compatibility adapter", () => {
     container.innerHTML = renderToString(
       <AkKonstaProvider>
         <AkCard title="服务端卡片">首包内容</AkCard>
+        <AkCompactActionCard
+          title="身体反馈"
+          action={{ href: "/feedback", label: "记录身体反馈" }}
+        />
       </AkKonstaProvider>,
     );
     const errors: unknown[] = [];
@@ -110,6 +137,10 @@ describe("UI-R9 Konsta compatibility adapter", () => {
         container,
         <AkKonstaProvider>
           <AkCard title="服务端卡片">首包内容</AkCard>
+          <AkCompactActionCard
+            title="身体反馈"
+            action={{ href: "/feedback", label: "记录身体反馈" }}
+          />
         </AkKonstaProvider>,
       );
       await new Promise((resolve) => setTimeout(resolve, 0));

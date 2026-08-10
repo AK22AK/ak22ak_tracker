@@ -21,6 +21,7 @@ import { ExternalTrainingSection } from "./external-training-section";
 import { RecoveryReferenceCard } from "./recovery-reference-card";
 import { TodaySyncControl } from "./today-sync-control";
 import {
+  AkActionLink,
   AkActionRow,
   AkCard,
   AkCompactActionCard,
@@ -344,7 +345,7 @@ function TodayTask({
 
           {task.description ? (
             <details className="today-task-notes">
-              <summary>查看训练说明</summary>
+              <summary data-ak-today-action="secondary">查看训练说明</summary>
               <p>{task.description}</p>
             </details>
           ) : null}
@@ -669,6 +670,7 @@ export function DashboardShell({
     <AkKonstaProvider>
       <main
         className="app-shell today-page ak-today-scope"
+        data-ak-ui-contract="today-r10"
         data-today-content-visible="true"
       >
         <TodaySyncControl
@@ -846,6 +848,7 @@ export function DashboardShell({
                 type="button"
                 aria-expanded={adjustmentPanelOpen}
                 aria-controls={adjustmentPanelId}
+                data-ak-today-action="secondary"
                 onClick={() => setAdjustmentsOpen((value) => !value)}
               >
                 调整今天
@@ -908,6 +911,7 @@ export function DashboardShell({
                 type="button"
                 aria-expanded={adjustmentPanelOpen}
                 aria-controls={adjustmentPanelId}
+                data-ak-today-action="secondary"
                 onClick={() => setAdjustmentsOpen((value) => !value)}
               >
                 调整今天
@@ -973,11 +977,7 @@ export function DashboardShell({
             title="身体反馈"
             ariaLabel="身体反馈"
             dataTodayFeedback
-            action={
-              <Link className="feedback-action" href="/feedback" scroll={false}>
-                记录身体反馈
-              </Link>
-            }
+            action={{ href: "/feedback", label: "记录身体反馈", scroll: false }}
           />
         ) : (
           <AkCard
@@ -1001,13 +1001,13 @@ export function DashboardShell({
             {feedbackCount > 0 ? (
               <p className="feedback-count">今日已记录 {feedbackCount} 次</p>
             ) : null}
-            <Link
+            <AkActionLink
               className="primary-button feedback-action"
               href="/feedback"
               scroll={false}
-            >
-              {feedbackCount > 0 ? "再次反馈" : "记录身体反馈"}
-            </Link>
+              label={feedbackCount > 0 ? "再次反馈" : "记录身体反馈"}
+              variant="filled"
+            />
           </AkCard>
         )}
 

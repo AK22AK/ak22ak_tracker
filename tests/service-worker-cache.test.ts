@@ -1,18 +1,16 @@
-import { readFile } from "node:fs/promises";
 import { runInNewContext } from "node:vm";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { buildServiceWorkerSource } from "@/service-worker/source";
+
 type Listener = (event: Record<string, unknown>) => void;
 
-async function loadServiceWorker() {
+async function loadServiceWorker(revision = "test-revision-a") {
   const listeners = new Map<string, Listener>();
   const addedUrls: string[][] = [];
   const deletedCaches: string[] = [];
-  const source = await readFile(
-    new URL("../public/sw.js", import.meta.url),
-    "utf8",
-  );
+  const source = buildServiceWorkerSource(revision);
   const cache = {
     addAll: vi.fn(async (urls: string[]) => {
       addedUrls.push(urls);
@@ -57,6 +55,16 @@ async function loadServiceWorker() {
 }
 
 describe("Service Worker private-cache policy (P0-07/P0-08)", () => {
+  it("changes its public version signal per build while staying stable within a revision", () => {
+    const first = buildServiceWorkerSource("test-revision-a");
+    const second = buildServiceWorkerSource("test-revision-b");
+
+    expect(first).toBe(buildServiceWorkerSource("test-revision-a"));
+    expect(first).not.toBe(second);
+    expect(first).toContain('const BUILD_REVISION = "test-revision-a";');
+    expect(second).toContain('const BUILD_REVISION = "test-revision-b";');
+  });
+
   it("pre-caches a self-contained public offline shell without the authenticated home page", async () => {
     const { listeners, addedUrls, deletedCaches, skipWaiting } =
       await loadServiceWorker();

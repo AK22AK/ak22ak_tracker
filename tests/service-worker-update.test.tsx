@@ -15,6 +15,7 @@ import {
   PwaUpdatePrompt,
   ServiceWorkerRegistration as ServiceWorkerRegistrationProvider,
 } from "@/components/service-worker-registration";
+import { buildServiceWorkerSource } from "@/service-worker/source";
 import type { PendingCommand } from "@/offline/command-contracts";
 import {
   createOfflineDatabase,
@@ -220,6 +221,47 @@ describe("controlled PWA updates", () => {
     now += 5 * 60 * 1000;
     document.dispatchEvent(new Event("visibilitychange"));
     await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+  });
+
+  it("does not repeat a dismissed prompt for the same revision", async () => {
+    let now = 1_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    const { update } = installServiceWorkerHarness();
+    render(
+      <ServiceWorkerRegistrationProvider enabled reloadPage={vi.fn()}>
+        <UpdateView />
+      </ServiceWorkerRegistrationProvider>,
+    );
+
+    expect(await screen.findByText("新版本可用")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "稍后" }));
+    now += 6 * 60 * 1000;
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText("新版本可用")).toBeNull();
+  });
+
+  it("lets the existing registration surface a waiting worker for a new build revision", async () => {
+    const current = buildServiceWorkerSource("test-revision-a");
+    const next = buildServiceWorkerSource("test-revision-b");
+    expect(current).not.toBe(next);
+
+    const { registration, worker, update } = installServiceWorkerHarness({
+      waiting: false,
+    });
+    vi.mocked(update).mockImplementation(async () => {
+      Object.defineProperty(registration, "waiting", {
+        configurable: true,
+        value: worker,
+      });
+    });
+    render(
+      <ServiceWorkerRegistrationProvider enabled reloadPage={vi.fn()}>
+        <UpdateView />
+      </ServiceWorkerRegistrationProvider>,
+    );
+
+    expect(await screen.findByText("新版本可用")).toBeTruthy();
   });
 
   it("notices a worker installed through updatefound", async () => {

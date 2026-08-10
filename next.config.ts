@@ -1,6 +1,13 @@
 import type { NextConfig } from "next";
 
+import { resolveServiceWorkerBuildRevision } from "./src/service-worker/build-revision";
+
+const serviceWorkerBuildRevision = resolveServiceWorkerBuildRevision();
+
 const nextConfig: NextConfig = {
+  env: {
+    AK_BUILD_REVISION: serviceWorkerBuildRevision,
+  },
   turbopack: {
     root: process.cwd(),
   },

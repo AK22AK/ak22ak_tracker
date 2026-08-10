@@ -1,4 +1,13 @@
-const CACHE_NAME = "ak-tracker-public-v11";
+const SAFE_BUILD_REVISION = /^[A-Za-z0-9._-]{1,96}$/;
+
+export function buildServiceWorkerSource(revision: string) {
+  if (!SAFE_BUILD_REVISION.test(revision)) {
+    throw new Error("invalid_service_worker_build_revision");
+  }
+
+  const encodedRevision = JSON.stringify(revision);
+  return `const BUILD_REVISION = ${encodedRevision};
+const CACHE_NAME = "ak-tracker-public-" + BUILD_REVISION;
 const OFFLINE_SHELL_URL = "/offline.html";
 const APP_SHELL = [
   OFFLINE_SHELL_URL,
@@ -92,3 +101,5 @@ self.addEventListener("fetch", (event) => {
     );
   }
 });
+`;
+}

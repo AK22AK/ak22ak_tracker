@@ -125,6 +125,36 @@ const todayAggregate = {
   },
 };
 
+const todayRestDayNoFeedback = {
+  ...todayAggregate,
+  day: {
+    ...todayAggregate.day,
+    tasks: [],
+    externalTrainingRecords: [],
+  },
+};
+
+const todayAlreadyFeedback = {
+  ...todayAggregate,
+  day: {
+    ...todayAggregate.day,
+    tasks: [],
+    externalTrainingRecords: [],
+    feedbackCount: 1,
+    feedbacks: [anonymousFeedback("green")],
+  },
+};
+
+function todayWithSafety(safetyLevel: "yellow" | "red") {
+  return {
+    ...todayAlreadyFeedback,
+    day: {
+      ...todayAlreadyFeedback.day,
+      feedbacks: [anonymousFeedback(safetyLevel)],
+    },
+  };
+}
+
 const todayR9ChineseFixture = {
   ...todayAggregate,
   tracker: {
@@ -1296,13 +1326,20 @@ test("UI-R5 production Today information architecture stays flat and actionable"
 for (const width of [320, 375, 390, 393, 430]) {
   test(`today feedback action remains in flow at ${width}px`, async ({
     page,
-  }) => {
+  }, testInfo) => {
     await page.setViewportSize({ width, height: 844 });
     await mockPrivateReads(page, 0);
     await page.goto("/");
 
     const feedbackAction = page.getByRole("link", { name: "记录身体反馈" });
     await expect(feedbackAction).toBeVisible();
+    await expect(page.locator('[data-ak-ui-contract="today-r10"]')).toHaveCount(
+      1,
+    );
+    await expect(feedbackAction).toHaveAttribute(
+      "data-ak-action-variant",
+      "tonal",
+    );
     const adjustment = page.getByRole("button", { name: "调整今天" });
     await expect(adjustment).toBeVisible();
     await expect(adjustment).toHaveAttribute("aria-expanded", "false");
@@ -1330,6 +1367,12 @@ for (const width of [320, 375, 390, 393, 430]) {
       ].find((button) => button.textContent?.trim() === "调整今天");
       const feedbackCardRect = feedbackCard?.getBoundingClientRect();
       const feedbackActionRect = feedbackAction?.getBoundingClientRect();
+      const feedbackActionStyle = feedbackAction
+        ? getComputedStyle(feedbackAction)
+        : null;
+      const feedbackCardStyle = feedbackCard
+        ? getComputedStyle(feedbackCard)
+        : null;
       const planCardRect = planCard?.getBoundingClientRect();
       const planHeadingRect = planHeading?.getBoundingClientRect();
       const planHeadingStyle = planHeading
@@ -1347,6 +1390,42 @@ for (const width of [320, 375, 390, 393, 430]) {
         hasSafetyCard: Boolean(safetyCard),
         feedbackActionRect,
         actionHeight: feedbackActionRect?.height ?? 0,
+        actionBackground: feedbackActionStyle?.backgroundColor ?? "",
+        cardBackground: feedbackCardStyle?.backgroundColor ?? "",
+        actionColor: feedbackActionStyle?.color ?? "",
+        actionBorderWidth: feedbackActionStyle?.borderTopWidth ?? "",
+        actionRadius: Number.parseFloat(
+          feedbackActionStyle?.borderTopLeftRadius ?? "0",
+        ),
+        actionPaddingLeft: Number.parseFloat(
+          feedbackActionStyle?.paddingLeft ?? "0",
+        ),
+        actionPaddingRight: Number.parseFloat(
+          feedbackActionStyle?.paddingRight ?? "0",
+        ),
+        actionTextFits:
+          feedbackAction != null &&
+          feedbackAction.scrollWidth <= feedbackAction.clientWidth + 1,
+        toolbarVariants: [
+          ...document.querySelectorAll<HTMLElement>(
+            '[data-ak-today-action="toolbar"]',
+          ),
+        ].map((element) => element.dataset.akToolbarVariant ?? ""),
+        feedbackVariants: [
+          ...document.querySelectorAll<HTMLElement>(
+            '[data-ak-today-action="feedback"]',
+          ),
+        ].map((element) => element.dataset.akActionVariant ?? ""),
+        secondaryAffordances: [
+          ...document.querySelectorAll<HTMLElement>(
+            '[data-ak-today-action="secondary"]',
+          ),
+        ].map((element) => ({
+          color: getComputedStyle(element).color,
+          isDisclosure:
+            element.matches("summary") || element.hasAttribute("aria-expanded"),
+          hasVisibleText: Boolean(element.textContent?.trim()),
+        })),
         adjustmentInPlanCard: Boolean(planCard?.contains(adjustment ?? null)),
         planCardRect,
         adjustmentRect,
@@ -1360,8 +1439,33 @@ for (const width of [320, 375, 390, 393, 430]) {
       };
     });
 
+    await testInfo.attach(`ui-r10-${width}-computed`, {
+      body: JSON.stringify(layout, null, 2),
+      contentType: "application/json",
+    });
+
     expect(layout.hasSafetyCard).toBe(false);
     expect(layout.actionHeight).toBeGreaterThanOrEqual(44);
+    expect(layout.actionBackground).not.toBe("rgba(0, 0, 0, 0)");
+    expect(layout.actionBackground).not.toBe(layout.cardBackground);
+    expect(layout.actionColor).not.toBe("rgb(17, 17, 20)");
+    expect(layout.actionBorderWidth).not.toBe("0px");
+    expect(layout.actionRadius).toBeGreaterThanOrEqual(10);
+    expect(layout.actionPaddingLeft).toBeGreaterThanOrEqual(10);
+    expect(layout.actionPaddingLeft).toBeLessThanOrEqual(14);
+    expect(layout.actionPaddingRight).toBeGreaterThanOrEqual(10);
+    expect(layout.actionPaddingRight).toBeLessThanOrEqual(14);
+    expect(layout.actionTextFits).toBe(true);
+    expect(layout.toolbarVariants).toEqual(["tonal", "tonal"]);
+    expect(layout.feedbackVariants).toEqual(["tonal"]);
+    expect(layout.secondaryAffordances.length).toBeGreaterThanOrEqual(3);
+    expect(
+      layout.secondaryAffordances.every(
+        (action) =>
+          action.hasVisibleText &&
+          (action.color !== "rgb(17, 17, 20)" || action.isDisclosure),
+      ),
+    ).toBe(true);
     expect(layout.feedbackActionRect?.top).toBeGreaterThanOrEqual(
       (layout.feedbackCardRect?.top ?? Number.POSITIVE_INFINITY) + 10,
     );
@@ -1392,6 +1496,127 @@ for (const width of [320, 375, 390, 393, 430]) {
     await expect(page.locator("#today-adjustments")).toBeVisible();
   });
 }
+
+test("UI-R10 Today states produce 390x844 production evidence", async ({
+  page,
+}) => {
+  let activeToday: unknown = todayRestDayNoFeedback;
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockPrivateReads(
+    page,
+    0,
+    planAdvice,
+    evaluationAggregate,
+    trendsAggregate,
+    {
+      today: () => activeToday,
+    },
+  );
+  await page.goto("/");
+  await expect(page.locator('[data-ak-ui-contract="today-r10"]')).toHaveCount(
+    1,
+  );
+  await page.screenshot({
+    path: "test-results/ui-r10-rest-day-no-feedback-390.png",
+  });
+
+  await page.goto("/");
+  activeToday = todayAggregate;
+  await page.reload();
+  await expect(page.getByRole("link", { name: "记录身体反馈" })).toBeVisible();
+  const taskCollapse = page.getByRole("button", {
+    name: "收起 Anonymous task",
+  });
+  if (await taskCollapse.count()) await taskCollapse.click();
+  await page.screenshot({
+    path: "test-results/ui-r10-task-no-feedback-390.png",
+  });
+
+  activeToday = todayAlreadyFeedback;
+  await page.reload();
+  await expect(page.getByRole("link", { name: "再次反馈" })).toBeVisible();
+  await page.screenshot({
+    path: "test-results/ui-r10-already-feedback-390.png",
+  });
+
+  for (const safetyLevel of ["yellow", "red"] as const) {
+    activeToday = todayWithSafety(safetyLevel);
+    await page.reload();
+    await expect(page.locator(".safety-banner")).toContainText(
+      safetyLevel === "yellow" ? "黄灯" : "红灯",
+    );
+    const safetyComputed = await page.evaluate(() => {
+      const alert = document.querySelector<HTMLElement>('[role="alert"]');
+      const action = document.querySelector<HTMLElement>(
+        '[data-ak-today-action="feedback"]',
+      );
+      return {
+        alertVisible: Boolean(alert),
+        actionBackground: action
+          ? getComputedStyle(action).backgroundColor
+          : "",
+        actionColor: action ? getComputedStyle(action).color : "",
+        actionVariant: action?.dataset.akActionVariant ?? "",
+      };
+    });
+    expect(safetyComputed.alertVisible).toBe(true);
+    expect(safetyComputed.actionVariant).toBe("filled");
+    expect(safetyComputed.actionBackground).not.toBe("rgba(0, 0, 0, 0)");
+    expect(safetyComputed.actionColor).not.toBe("rgb(17, 17, 20)");
+  }
+});
+
+test("UI-R10 PWA update prompt is visible in the production shell", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const listeners = new Map<string, Set<() => void>>();
+    const add = (type: string, listener: () => void) => {
+      const current = listeners.get(type) ?? new Set();
+      current.add(listener);
+      listeners.set(type, current);
+    };
+    const remove = (type: string, listener: () => void) => {
+      listeners.get(type)?.delete(listener);
+    };
+    const waiting = {
+      state: "installed",
+      postMessage: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    };
+    const registration = {
+      waiting,
+      installing: null,
+      update: async () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    };
+    Object.defineProperty(navigator, "serviceWorker", {
+      configurable: true,
+      value: {
+        controller: {},
+        register: async () => registration,
+        addEventListener: add,
+        removeEventListener: remove,
+      },
+    });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockPrivateReads(
+    page,
+    0,
+    planAdvice,
+    evaluationAggregate,
+    trendsAggregate,
+    {
+      today: todayRestDayNoFeedback,
+    },
+  );
+  await page.goto("/");
+  await expect(page.getByText("新版本可用")).toBeVisible();
+  await page.screenshot({ path: "test-results/ui-r10-pwa-update-390.png" });
+});
 
 for (const width of [320, 375, 390, 393, 430]) {
   test(`today latest-record sync stays bounded and readable at ${width}px`, async ({

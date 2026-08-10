@@ -440,12 +440,62 @@
   line-height: 22px;
 }
 
-.ak-today-scope .feedback-card-empty .feedback-action {
+.ak-today-scope .ak-action-link {
   display: inline-flex;
   min-height: 44px;
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--ak-accent) 28%, transparent);
+  border-radius: var(--ak-control-radius);
+  padding: 0 12px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    transform 120ms ease;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.ak-today-scope .ak-action-link[data-ak-action-variant="tonal"] {
+  background: var(--ak-accent-soft);
+  color: var(--ak-accent);
+}
+
+.ak-today-scope .ak-action-link[data-ak-action-variant="filled"] {
+  border-color: var(--ak-accent);
+  background: var(--ak-accent);
+  color: var(--ak-on-accent);
+}
+
+.ak-today-scope .ak-action-link:not([aria-disabled="true"]):hover {
+  border-color: var(--ak-accent);
+}
+
+.ak-today-scope .ak-action-link:not([aria-disabled="true"]):active {
+  transform: scale(0.98);
+}
+
+.ak-today-scope .ak-action-link:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--ak-accent) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.ak-today-scope .ak-action-link[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.ak-today-scope .feedback-card-empty .feedback-action,
+.ak-today-scope .feedback-card .feedback-action {
+  display: inline-flex;
+}
+
+.ak-today-scope .feedback-card-empty .feedback-action {
   padding: 0 12px;
   border-radius: var(--ak-control-radius);
   text-decoration: none;
@@ -463,7 +513,16 @@
   align-items: center;
   justify-content: center;
   margin: 0 var(--ak-today-card-inset) var(--ak-today-card-inset);
-  text-decoration: none;
+}
+
+@media (max-width: 350px) {
+  .ak-today-scope .ak-compact-action-row {
+    align-items: flex-start;
+  }
+
+  .ak-today-scope .ak-compact-action-link {
+    white-space: normal;
+  }
 }
 
 .ak-today-scope .safety-banner,

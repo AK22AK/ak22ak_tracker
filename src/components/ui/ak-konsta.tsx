@@ -1,6 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
+import Link from "next/link";
+import {
+  forwardRef,
+  type ComponentPropsWithoutRef,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import {
   Button,
   Card,
@@ -82,6 +88,7 @@ export function AkToolbarAction({
       aria-label={label}
       title={title ?? label}
       className={`ak-toolbar-action ${className}`.trim()}
+      data-ak-today-action="toolbar"
       data-ak-toolbar-variant={variant}
       disabled={disabled}
       onClick={onClick}
@@ -160,7 +167,7 @@ export function AkCompactActionCard({
   dataTodayFeedback = false,
 }: {
   title: ReactNode;
-  action: ReactNode;
+  action: AkCompactActionLinkProps;
   ariaLabel?: string;
   className?: string;
   dataTodayFeedback?: boolean;
@@ -181,10 +188,77 @@ export function AkCompactActionCard({
       >
         <div className="ak-compact-action-row">
           <h2>{title}</h2>
-          {action}
+          <AkCompactActionLink {...action} />
         </div>
       </Card>
     </section>
+  );
+}
+
+type AkActionLinkProps = {
+  href: string;
+  label: string;
+  scroll?: boolean;
+  variant?: "tonal" | "filled";
+  className?: string;
+  disabled?: boolean;
+  compact?: boolean;
+};
+
+export type AkCompactActionLinkProps = Omit<
+  AkActionLinkProps,
+  "variant" | "compact"
+>;
+
+export function AkActionLink({
+  href,
+  label,
+  scroll,
+  variant = "filled",
+  className = "",
+  disabled = false,
+  compact = false,
+}: AkActionLinkProps) {
+  const handleClick = disabled
+    ? (event: MouseEvent<HTMLButtonElement>) => {
+        event.preventDefault();
+      }
+    : undefined;
+  const ActionLink = forwardRef<
+    HTMLAnchorElement,
+    ComponentPropsWithoutRef<typeof Link>
+  >((props, ref) => <Link {...props} ref={ref} scroll={scroll} />);
+  ActionLink.displayName = "AkActionNextLink";
+
+  return (
+    <Button
+      component={ActionLink}
+      {...(variant === "tonal" ? { tonalIos: true } : {})}
+      inline
+      href={href}
+      role="link"
+      aria-label={label}
+      aria-disabled={disabled || undefined}
+      className={`ak-action-link ${className}`.trim()}
+      data-ak-action-variant={variant}
+      data-ak-today-action="feedback"
+      data-ak-compact-action={compact ? "true" : undefined}
+      disabled={disabled}
+      onClick={handleClick}
+    >
+      {label}
+    </Button>
+  );
+}
+
+export function AkCompactActionLink(props: AkCompactActionLinkProps) {
+  return (
+    <AkActionLink
+      {...props}
+      compact
+      variant="tonal"
+      className={`ak-compact-action-link ${props.className ?? ""}`.trim()}
+    />
   );
 }
 
@@ -269,6 +343,7 @@ export function AkActionRow({
       aria-expanded={ariaExpanded}
       aria-controls={ariaControls}
       data-ak-action-row="true"
+      data-ak-today-action="secondary"
     >
       {children}
     </Button>
