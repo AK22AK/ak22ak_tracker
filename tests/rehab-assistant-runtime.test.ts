@@ -165,4 +165,112 @@ describe("rehabilitation assistant runtime", () => {
     });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
+
+  it("provides a complete JSON example for complex rehabilitation replies", async () => {
+    let systemMessage = "";
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      systemMessage = body.messages[0].content;
+      return new Response(
+        JSON.stringify({
+          model: "deepseek-v4-flash",
+          choices: [
+            {
+              finish_reason: "stop",
+              message: {
+                content: JSON.stringify({
+                  reply: "先结合近期记录确认训练安排。",
+                  followUpQuestions: [],
+                  feedbackDraft: null,
+                  planReview: "suggested",
+                  memoryActions: [],
+                  evidenceReferences: [
+                    {
+                      localDate: "2026-08-04",
+                      category: "user_message",
+                    },
+                  ],
+                  historyRequest: null,
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+
+    await requestRehabAssistantReply({
+      configuration: {
+        endpoint: "https://example.invalid",
+        apiKey: "fake",
+        model: "deepseek-v4-flash",
+        timeoutMs: 1_000,
+        maxTokens: 1_000,
+      },
+      context: {
+        base: { contextThrough: "2026-08-04" },
+        modelContext: { currentPlan: { tasks: [] } },
+      } as never,
+      message: "请结合近期训练和新的时间安排检查计划。",
+      loadHistory: vi.fn(),
+      fetchImpl: fetchImpl as never,
+    });
+
+    expect(systemMessage).toContain("EXAMPLE JSON OUTPUT");
+    expect(systemMessage).toContain('"followUpQuestions":[]');
+    expect(systemMessage).toContain('"feedbackDraft":null');
+    expect(systemMessage).toContain('"planReview":"suggested"');
+    expect(systemMessage).toContain('"memoryActions"');
+    expect(systemMessage).toContain('"evidenceReferences"');
+    expect(systemMessage).toContain('"historyRequest":null');
+  });
+
+  it("safely defaults omitted non-action fields while keeping reply required", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            model: "deepseek-v4-flash",
+            choices: [
+              {
+                finish_reason: "stop",
+                message: {
+                  content: JSON.stringify({
+                    reply: "近期记录已收到，先补充一个训练后的身体反应。",
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+
+    await expect(
+      requestRehabAssistantReply({
+        configuration: {
+          endpoint: "https://example.invalid",
+          apiKey: "fake",
+          model: "deepseek-v4-flash",
+          timeoutMs: 1_000,
+          maxTokens: 1_000,
+        },
+        context: {
+          base: { contextThrough: "2026-08-04" },
+          modelContext: { currentPlan: { tasks: [] } },
+        } as never,
+        message: "匿名复杂问题",
+        loadHistory: vi.fn(),
+        fetchImpl: fetchImpl as never,
+      }),
+    ).resolves.toEqual({
+      reply: "近期记录已收到，先补充一个训练后的身体反应。",
+      followUpQuestions: [],
+      feedbackDraft: null,
+      planReview: "blocked_by_missing_info",
+      memoryActions: [],
+      evidenceReferences: [],
+    });
+  });
 });

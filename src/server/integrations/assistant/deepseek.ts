@@ -12,6 +12,15 @@ import { PlanAdvisorError } from "@/server/integrations/ai/errors";
 import type { PreparedAssistantContext } from "./context";
 
 const providerOutputSchema = assistantTurnResponseSchema.extend({
+  followUpQuestions:
+    assistantTurnResponseSchema.shape.followUpQuestions.default([]),
+  feedbackDraft: assistantTurnResponseSchema.shape.feedbackDraft.default(null),
+  planReview: assistantTurnResponseSchema.shape.planReview.default(
+    "blocked_by_missing_info",
+  ),
+  memoryActions: assistantTurnResponseSchema.shape.memoryActions.default([]),
+  evidenceReferences:
+    assistantTurnResponseSchema.shape.evidenceReferences.default([]),
   historyRequest: z
     .object({
       from: z.string().date(),
@@ -19,7 +28,8 @@ const providerOutputSchema = assistantTurnResponseSchema.extend({
       reason: z.string().min(1).max(500),
     })
     .strict()
-    .nullable(),
+    .nullable()
+    .default(null),
 });
 
 const chatResponseSchema = z
@@ -49,7 +59,13 @@ const MAX_RESPONSE_BYTES = 128 * 1024;
 function systemPrompt(today: string) {
   return `You are a conservative rehabilitation assistant. Today is ${today}.
 Return strict JSON only. Use exactly these fields: reply, followUpQuestions, feedbackDraft, planReview, memoryActions, evidenceReferences, historyRequest.
-Never diagnose, reinterpret medical imaging, or claim causation. Deterministic safety rules outrank you. Ordinary conversation cannot modify the plan. A feedbackDraft is only a reviewable draft and is never saved automatically. Infer dates conservatively and never return a future localDate. Use memory only for stable goals, preferences, schedules, equipment, routines, or stable constraints; never store temporary symptoms, diagnoses, safety policy, or plan changes. If recent evidence is insufficient and one older bounded range would materially help, request at most one range of no more than 30 days. Otherwise historyRequest must be null. Evidence references contain dates and categories only; never expose database IDs or provider IDs.`;
+EXAMPLE JSON OUTPUT:
+{"reply":"先结合近期记录确认训练安排。","followUpQuestions":[],"feedbackDraft":null,"planReview":"suggested","memoryActions":[{"type":"remember","category":"schedule","content":"工作日中午可进行力量训练"}],"evidenceReferences":[{"localDate":"${today}","category":"user_message"}],"historyRequest":null}
+If feedbackDraft is not null, use exactly this shape:
+{"localDate":"${today}","timing":"morning|post_training|next_day|incident","leftPain":0,"rightPain":0,"swelling":"none|mild|obvious","stiffness":false,"mechanicalSymptoms":false,"weightBearingIssue":false,"localizedBonePain":false,"nightOrRestPain":false,"note":"reviewable user observation","association":{"kind":"auto"}}
+If historyRequest is not null, use exactly {"from":"YYYY-MM-DD","through":"YYYY-MM-DD","reason":"why older evidence is needed"}. The supplied context already contains the most recent 14 days, so never request a range fully contained in those dates. Request at most one older range of no more than 30 days.
+planReview must be exactly not_needed, suggested, or blocked_by_missing_info. memoryActions items must use type remember|forget and category goal|preference|schedule|equipment|routine|stable_constraint. Evidence references contain only localDate and category.
+Never diagnose, reinterpret medical imaging, or claim causation. Deterministic safety rules outrank you. Ordinary conversation cannot modify the plan. A feedbackDraft is only a reviewable draft and is never saved automatically. Infer dates conservatively and never return a future localDate. Use memory only for stable goals, preferences, schedules, equipment, routines, or stable constraints; never store temporary symptoms, diagnoses, safety policy, or plan changes. Otherwise historyRequest must be null. Never expose database IDs or provider IDs.`;
 }
 
 function classifyHttpStatus(status: number) {

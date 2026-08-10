@@ -14,6 +14,7 @@ import {
 import { useNetworkState } from "@/client/use-network-state";
 import type {
   AssistantAssociation,
+  AssistantConversationDto,
   AssistantFeedbackDraft,
 } from "@/domain/rehab-assistant";
 import {
@@ -55,6 +56,35 @@ function dateLabel(value: string) {
     month: "long",
     day: "numeric",
   }).format(new Date(`${value}T12:00:00+08:00`));
+}
+
+function assistantFailureMessage(
+  errorCode: AssistantConversationDto["turns"][number]["errorCode"],
+) {
+  switch (errorCode) {
+    case "invalid_response":
+      return "DeepSeek 返回的格式不完整，原文已保留，可以直接重试。";
+    case "truncated_response":
+      return "DeepSeek 的回复没有完整返回，原文已保留，可以直接重试。";
+    case "empty_response":
+      return "DeepSeek 这次没有返回内容，原文已保留，可以直接重试。";
+    case "timeout":
+      return "DeepSeek 本次响应超时，原文已保留，可以直接重试。";
+    case "rate_limited":
+      return "DeepSeek 暂时限流，请稍后重试。原文已保留。";
+    case "authentication":
+    case "not_configured":
+    case "invalid_configuration":
+      return "DeepSeek 连接需要更新，请先到设置检查。原文已保留。";
+    case "insufficient_balance":
+      return "DeepSeek 余额不足，原文已保留。";
+    case "context_changed":
+      return "近期记录或计划已经变化，请重新发送。原文已保留。";
+    case "provider_unavailable":
+      return "DeepSeek 暂时不可用，原文已保留，可以直接重试。";
+    default:
+      return "这次没有完成，原文已保留，可以直接重试。";
+  }
 }
 
 function FeedbackConfirmation({
@@ -302,6 +332,7 @@ export function RehabAssistantClient({
   const association = useMemo(() => associationFromSearch(search), [search]);
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
+  const [retryingTurnId, setRetryingTurnId] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const commandId = useRef<string | null>(null);
   const query = useQuery({
@@ -348,12 +379,37 @@ export function RehabAssistantClient({
         setMessage("");
         commandId.current = null;
       } else {
-        setSendError("这次没有完成，可以直接重试。你的文字仍保留。 ");
+        setSendError(assistantFailureMessage(latest?.errorCode ?? null));
       }
     } catch {
       setSendError("暂时无法联系康复助手，可以直接重试。你的文字仍保留。");
     } finally {
       setSending(false);
+    }
+  }
+
+  async function retryTurn(turn: AssistantConversationDto["turns"][number]) {
+    if (retryingTurnId || turn.status !== "failed" || !online) return;
+    setRetryingTurnId(turn.id);
+    setSendError(null);
+    try {
+      const conversation = await sendAssistantTurn(trackerKey, {
+        commandId: turn.commandId,
+        message: turn.message,
+        association: turn.association,
+      });
+      queryClient.setQueryData(
+        trackerQueryKeys.assistant(trackerKey),
+        conversation,
+      );
+      const retried = conversation.turns.find((item) => item.id === turn.id);
+      if (retried?.status !== "succeeded") {
+        setSendError(assistantFailureMessage(retried?.errorCode ?? null));
+      }
+    } catch {
+      setSendError("暂时无法联系康复助手，原文已保留，可以直接重试。");
+    } finally {
+      setRetryingTurnId(null);
     }
   }
 
@@ -440,7 +496,17 @@ export function RehabAssistantClient({
               ) : null}
             </div>
           ) : turn.status === "failed" ? (
-            <p role="status">这次没有完成，可以保留原文重试。</p>
+            <div className="assistant-failed-turn">
+              <p role="status">{assistantFailureMessage(turn.errorCode)}</p>
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={!online || retryingTurnId !== null}
+                onClick={() => void retryTurn(turn)}
+              >
+                {retryingTurnId === turn.id ? "正在重试…" : "重新发送"}
+              </button>
+            </div>
           ) : (
             <p role="status">康复助手正在整理…</p>
           )}

@@ -141,4 +141,68 @@ describe("rehabilitation assistant conversation", () => {
     expect(saved.feedback.timing).toBe("next_day");
     expect(saved.feedback.swelling).toBe("none");
   });
+
+  it("explains an invalid DeepSeek reply and retries the same canonical turn without changing the user's message", async () => {
+    const localValues = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => localValues.get(key) ?? null,
+      setItem: (key: string, value: string) => localValues.set(key, value),
+      removeItem: (key: string) => localValues.delete(key),
+    });
+    const failed = {
+      ...conversation,
+      turns: [
+        {
+          ...conversation.turns[0],
+          status: "failed",
+          response: null,
+          errorCode: "invalid_response",
+          model: null,
+          contextHash: null,
+        },
+      ],
+    };
+    const succeeded = {
+      ...conversation,
+      turns: [
+        {
+          ...conversation.turns[0],
+          response: {
+            ...conversation.turns[0].response,
+            feedbackDraft: null,
+          },
+        },
+      ],
+    };
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        requests.push({ url, init });
+        return new Response(
+          JSON.stringify(init?.method === "POST" ? succeeded : failed),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }),
+    );
+
+    renderAssistant();
+    expect(
+      await screen.findByText(
+        "DeepSeek 返回的格式不完整，原文已保留，可以直接重试。",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "重新发送" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("先确认我整理的反馈。")).toBeTruthy(),
+    );
+    const postRequests = requests.filter(({ init }) => init?.method === "POST");
+    expect(postRequests).toHaveLength(1);
+    expect(JSON.parse(String(postRequests[0]?.init?.body))).toEqual({
+      commandId: conversation.turns[0].commandId,
+      message: conversation.turns[0].message,
+      association: conversation.turns[0].association,
+    });
+  });
 });
