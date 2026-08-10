@@ -56,6 +56,16 @@ const chatResponseSchema = z
 
 const MAX_RESPONSE_BYTES = 128 * 1024;
 
+function reportInvalidProviderResponse(stage: string, error?: z.ZodError) {
+  console.warn("assistant_provider_invalid_response", {
+    stage,
+    issues: error?.issues.slice(0, 20).map((issue) => ({
+      code: issue.code,
+      path: issue.path.join("."),
+    })),
+  });
+}
+
 function systemPrompt(today: string) {
   return `You are a conservative rehabilitation assistant. Today is ${today}.
 Return strict JSON only. Use exactly these fields: reply, followUpQuestions, feedbackDraft, planReview, memoryActions, evidenceReferences, historyRequest.
@@ -64,7 +74,7 @@ EXAMPLE JSON OUTPUT:
 If feedbackDraft is not null, use exactly this shape:
 {"localDate":"${today}","timing":"morning|post_training|next_day|incident","leftPain":0,"rightPain":0,"swelling":"none|mild|obvious","stiffness":false,"mechanicalSymptoms":false,"weightBearingIssue":false,"localizedBonePain":false,"nightOrRestPain":false,"note":"reviewable user observation","association":{"kind":"auto"}}
 If historyRequest is not null, use exactly {"from":"YYYY-MM-DD","through":"YYYY-MM-DD","reason":"why older evidence is needed"}. The supplied context already contains the most recent 14 days, so never request a range fully contained in those dates. Request at most one older range of no more than 30 days.
-planReview must be exactly not_needed, suggested, or blocked_by_missing_info. memoryActions items must use type remember|forget and category goal|preference|schedule|equipment|routine|stable_constraint. Evidence references contain only localDate and category.
+planReview must be exactly not_needed, suggested, or blocked_by_missing_info. memoryActions items must use type remember|forget and category goal|preference|schedule|equipment|routine|stable_constraint. Every evidenceReferences category must be exactly one of user_message|plan|feedback|planned_task|garmin_activity|xunji_training|recovery|memory|rehab_profile.
 Never diagnose, reinterpret medical imaging, or claim causation. Deterministic safety rules outrank you. Ordinary conversation cannot modify the plan. A feedbackDraft is only a reviewable draft and is never saved automatically. Infer dates conservatively and never return a future localDate. Use memory only for stable goals, preferences, schedules, equipment, routines, or stable constraints; never store temporary symptoms, diagnoses, safety policy, or plan changes. Otherwise historyRequest must be null. Never expose database IDs or provider IDs.`;
 }
 
@@ -135,27 +145,52 @@ async function callDeepSeek(
     throw new PlanAdvisorError(classifyHttpStatus(response.status));
   }
   const raw = await readBoundedBody(response);
+  let parsedEnvelope: unknown;
   try {
-    const envelope = chatResponseSchema.parse(JSON.parse(raw));
-    const choice = envelope.choices[0]!;
-    if (envelope.model !== configuration.model) {
-      throw new PlanAdvisorError("invalid_response");
-    }
-    if (choice.finish_reason === "length") {
-      throw new PlanAdvisorError("truncated_response");
-    }
-    const content = choice.message.content?.trim();
-    if (choice.finish_reason === "stop" && !content) {
-      throw new PlanAdvisorError("empty_response");
-    }
-    if (choice.finish_reason !== "stop") {
-      throw new PlanAdvisorError("invalid_response");
-    }
-    return providerOutputSchema.parse(JSON.parse(content!));
+    parsedEnvelope = JSON.parse(raw);
   } catch (error) {
-    if (error instanceof PlanAdvisorError) throw error;
+    reportInvalidProviderResponse("envelope_json");
     throw new PlanAdvisorError("invalid_response", { cause: error });
   }
+  const envelopeResult = chatResponseSchema.safeParse(parsedEnvelope);
+  if (!envelopeResult.success) {
+    reportInvalidProviderResponse("envelope_schema", envelopeResult.error);
+    throw new PlanAdvisorError("invalid_response", {
+      cause: envelopeResult.error,
+    });
+  }
+  const envelope = envelopeResult.data;
+  const choice = envelope.choices[0]!;
+  if (envelope.model !== configuration.model) {
+    reportInvalidProviderResponse("model_mismatch");
+    throw new PlanAdvisorError("invalid_response");
+  }
+  if (choice.finish_reason === "length") {
+    throw new PlanAdvisorError("truncated_response");
+  }
+  const content = choice.message.content?.trim();
+  if (choice.finish_reason === "stop" && !content) {
+    throw new PlanAdvisorError("empty_response");
+  }
+  if (choice.finish_reason !== "stop") {
+    reportInvalidProviderResponse("finish_reason");
+    throw new PlanAdvisorError("invalid_response");
+  }
+  let parsedContent: unknown;
+  try {
+    parsedContent = JSON.parse(content!);
+  } catch (error) {
+    reportInvalidProviderResponse("content_json");
+    throw new PlanAdvisorError("invalid_response", { cause: error });
+  }
+  const outputResult = providerOutputSchema.safeParse(parsedContent);
+  if (!outputResult.success) {
+    reportInvalidProviderResponse("output_schema", outputResult.error);
+    throw new PlanAdvisorError("invalid_response", {
+      cause: outputResult.error,
+    });
+  }
+  return outputResult.data;
 }
 
 function rangeDays(from: string, through: string) {

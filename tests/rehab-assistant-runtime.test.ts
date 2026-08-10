@@ -273,4 +273,63 @@ describe("rehabilitation assistant runtime", () => {
       evidenceReferences: [],
     });
   });
+
+  it("logs only a safe validation stage and field path for invalid provider output", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            model: "deepseek-v4-flash",
+            choices: [
+              {
+                finish_reason: "stop",
+                message: {
+                  content: JSON.stringify({
+                    reply: "private provider reply must not appear in logs",
+                    planReview: "change_the_plan_now",
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+    );
+
+    await expect(
+      requestRehabAssistantReply({
+        configuration: {
+          endpoint: "https://example.invalid",
+          apiKey: "fake",
+          model: "deepseek-v4-flash",
+          timeoutMs: 1_000,
+          maxTokens: 1_000,
+        },
+        context: {
+          base: { contextThrough: "2026-08-04" },
+          modelContext: { currentPlan: { tasks: [] } },
+        } as never,
+        message: "private user message must not appear in logs",
+        loadHistory: vi.fn(),
+        fetchImpl: fetchImpl as never,
+      }),
+    ).rejects.toMatchObject({ code: "invalid_response" });
+
+    expect(warning).toHaveBeenCalledWith(
+      "assistant_provider_invalid_response",
+      expect.objectContaining({
+        stage: "output_schema",
+        issues: expect.arrayContaining([
+          expect.objectContaining({ path: "planReview" }),
+        ]),
+      }),
+    );
+    expect(JSON.stringify(warning.mock.calls)).not.toContain(
+      "private provider reply",
+    );
+    expect(JSON.stringify(warning.mock.calls)).not.toContain(
+      "private user message",
+    );
+  });
 });
