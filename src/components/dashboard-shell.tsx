@@ -1007,6 +1007,7 @@ export function DashboardShell({
               scroll={false}
               label={feedbackCount > 0 ? "再次反馈" : "记录身体反馈"}
               variant="filled"
+              todayAction="feedback"
             />
           </AkCard>
         )}

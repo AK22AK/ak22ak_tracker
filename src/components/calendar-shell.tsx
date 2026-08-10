@@ -13,6 +13,7 @@ import { userFacingTaskTitle } from "@/domain/task-title";
 
 import { ExternalTrainingSection } from "./external-training-section";
 import { RecoveryReferenceCard } from "./recovery-reference-card";
+import { AkCalendarActionLink } from "./ui/ak-konsta";
 import { useNetworkState } from "@/client/use-network-state";
 
 const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
@@ -357,7 +358,6 @@ export function CalendarShell({
     <main className="app-shell calendar-shell">
       <header className="calendar-topbar">
         <div>
-          <p className="eyebrow">训练日历</p>
           <h1>训练日历</h1>
         </div>
         <div className="calendar-topbar-actions">
@@ -472,12 +472,9 @@ export function CalendarShell({
                 )}
               >
                 <time dateTime={date}>
-                  {Number(date.slice(-2))}
-                  {date === today && (
-                    <span className="calendar-today-mark" aria-hidden="true">
-                      今
-                    </span>
-                  )}
+                  <span className="calendar-date-number">
+                    {Number(date.slice(-2))}
+                  </span>
                 </time>
                 <span className="calendar-markers">
                   {visualTaskLabel && (
@@ -527,23 +524,23 @@ export function CalendarShell({
         aria-labelledby="selected-date-title"
       >
         <div className="section-heading compact calendar-detail-heading">
-          <div>
+          <div className="calendar-detail-heading-copy">
             <p className="eyebrow">
               {selectedDateContext(selectedDate, today)}
             </p>
             <h2 id="selected-date-title">{formatSelectedDate(selectedDate)}</h2>
           </div>
+          {selectedDate <= today ? (
+            <AkCalendarActionLink
+              href={`/plan/conversation?date=${encodeURIComponent(selectedDate)}`}
+              label="补充这一天"
+            />
+          ) : (
+            <p className="calendar-future-assistant-note">
+              未来日期不能补充反馈
+            </p>
+          )}
         </div>
-        {selectedDate <= today ? (
-          <Link
-            className="secondary-button calendar-assistant-entry"
-            href={`/plan/conversation?date=${encodeURIComponent(selectedDate)}`}
-          >
-            补充这一天
-          </Link>
-        ) : (
-          <p className="calendar-future-assistant-note">未来日期不能补充反馈</p>
-        )}
 
         {detailLoading && (
           <div className="calendar-detail-loading" role="status">
@@ -589,20 +586,30 @@ export function CalendarShell({
                   当天暂停训练，原任务仍保留为当时的状态。
                 </div>
               ) : null}
-              <div className="calendar-day-overview" aria-label="当天概览">
-                <span>
-                  <strong>{dashboard.tasks.length}</strong> 项任务
-                </span>
-                <span>
-                  <strong>{dashboard.feedbackCount}</strong> 次反馈
-                </span>
-                {dashboard.externalTrainingRecords.length > 0 ? (
-                  <span>
-                    <strong>{dashboard.externalTrainingRecords.length}</strong>{" "}
-                    条来源
-                  </span>
-                ) : null}
-              </div>
+              {dashboard.tasks.length > 0 ||
+              dashboard.feedbackCount > 0 ||
+              dashboard.externalTrainingRecords.length > 0 ? (
+                <div className="calendar-day-overview" aria-label="当天概览">
+                  {dashboard.tasks.length > 0 ? (
+                    <span>
+                      <strong>{dashboard.tasks.length}</strong> 项任务
+                    </span>
+                  ) : null}
+                  {dashboard.feedbackCount > 0 ? (
+                    <span>
+                      <strong>{dashboard.feedbackCount}</strong> 次反馈
+                    </span>
+                  ) : null}
+                  {dashboard.externalTrainingRecords.length > 0 ? (
+                    <span>
+                      <strong>
+                        {dashboard.externalTrainingRecords.length}
+                      </strong>{" "}
+                      条来源
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
               {dashboard.recoveryReference ? (
                 <RecoveryReferenceCard
                   reference={dashboard.recoveryReference}

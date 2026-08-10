@@ -203,6 +203,8 @@ type AkActionLinkProps = {
   className?: string;
   disabled?: boolean;
   compact?: boolean;
+  todayAction?: "feedback";
+  calendarAction?: "assistant";
 };
 
 export type AkCompactActionLinkProps = Omit<
@@ -218,6 +220,8 @@ export function AkActionLink({
   className = "",
   disabled = false,
   compact = false,
+  todayAction,
+  calendarAction,
 }: AkActionLinkProps) {
   const handleClick = disabled
     ? (event: MouseEvent<HTMLButtonElement>) => {
@@ -241,7 +245,8 @@ export function AkActionLink({
       aria-disabled={disabled || undefined}
       className={`ak-action-link ${className}`.trim()}
       data-ak-action-variant={variant}
-      data-ak-today-action="feedback"
+      data-ak-today-action={todayAction}
+      data-ak-calendar-action={calendarAction}
       data-ak-compact-action={compact ? "true" : undefined}
       disabled={disabled}
       onClick={handleClick}
@@ -251,12 +256,31 @@ export function AkActionLink({
   );
 }
 
+export type AkCalendarActionLinkProps = Omit<
+  AkActionLinkProps,
+  "variant" | "compact" | "todayAction" | "calendarAction"
+>;
+
+export function AkCalendarActionLink(props: AkCalendarActionLinkProps) {
+  return (
+    <AkActionLink
+      {...props}
+      compact
+      variant="tonal"
+      todayAction={undefined}
+      calendarAction="assistant"
+      className={`ak-calendar-action-link ${props.className ?? ""}`.trim()}
+    />
+  );
+}
+
 export function AkCompactActionLink(props: AkCompactActionLinkProps) {
   return (
     <AkActionLink
       {...props}
       compact
       variant="tonal"
+      todayAction="feedback"
       className={`ak-compact-action-link ${props.className ?? ""}`.trim()}
     />
   );

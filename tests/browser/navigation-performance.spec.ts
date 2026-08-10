@@ -685,6 +685,7 @@ type RequestCounters = {
 
 type MockPrivateReadOptions = {
   today?: unknown | (() => unknown);
+  calendar?: unknown | (() => unknown);
   day?: (date: string) => unknown;
   association?: (body: Record<string, unknown>) => unknown;
   integration?: unknown | (() => unknown);
@@ -753,7 +754,10 @@ async function mockPrivateReads(
       body = assistantConversation;
     } else if (url.pathname.endsWith("/calendar")) {
       counters.month += 1;
-      body = calendarAggregate;
+      body =
+        typeof options.calendar === "function"
+          ? options.calendar()
+          : (options.calendar ?? calendarAggregate);
     } else if (/\/days\/\d{4}-\d{2}-\d{2}$/.test(url.pathname)) {
       counters.day += 1;
       const requestedDate = url.pathname.slice(-10);
@@ -3316,6 +3320,554 @@ test("UI-R7 Calendar keeps task descriptions behind the existing secondary discl
   await expect(disclosure).toHaveCount(1);
   await disclosure.click();
   await expect(page.getByText("匿名模板说明", { exact: true })).toBeVisible();
+});
+
+test("UI-R11 selected today keeps the date number centered without inline 今", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const emptyDay = {
+    ...day,
+    tasks: [],
+    feedbackCount: 0,
+    feedbacks: [],
+    externalTrainingRecords: [],
+  };
+  await mockPrivateReads(
+    page,
+    0,
+    planAdvice,
+    evaluationAggregate,
+    trendsAggregate,
+    {
+      calendar: {
+        ...calendarAggregate,
+        days: [
+          {
+            date: localDate,
+            taskCount: 0,
+            completedCount: 0,
+            skippedCount: 0,
+            feedbackCount: 0,
+          },
+        ],
+      },
+      day: (date) => ({
+        ...dayAggregate,
+        targetDate: date,
+        day: { ...emptyDay },
+      }),
+    },
+  );
+  await page.goto(`/calendar?date=${localDate}`);
+  const selectedToday = page.getByRole("button", {
+    name: new RegExp(`^${localDate}，已选中.*今天`),
+  });
+  await expect(selectedToday).toBeVisible();
+
+  const geometry = await selectedToday.evaluate((button) => {
+    const dateTime = button.querySelector("time");
+    const numberNode = dateTime?.firstChild;
+    const range = document.createRange();
+    if (numberNode) range.selectNode(numberNode);
+    const numberRect = range.getBoundingClientRect();
+    const buttonRect = button.getBoundingClientRect();
+    const mark = button.querySelector<HTMLElement>(".calendar-today-mark");
+    return {
+      numberCenterX: numberRect.left + numberRect.width / 2,
+      cellCenterX: buttonRect.left + buttonRect.width / 2,
+      numberCenterDelta: Math.abs(
+        numberRect.left +
+          numberRect.width / 2 -
+          (buttonRect.left + buttonRect.width / 2),
+      ),
+      numberWidth: numberRect.width,
+      dateTimeText: dateTime?.textContent ?? "",
+      markText: mark?.textContent ?? "",
+      buttonRect: {
+        left: buttonRect.left,
+        right: buttonRect.right,
+        width: buttonRect.width,
+        height: buttonRect.height,
+      },
+    };
+  });
+  expect(
+    geometry.numberCenterDelta,
+    JSON.stringify(geometry),
+  ).toBeLessThanOrEqual(1);
+  expect(geometry.dateTimeText, JSON.stringify(geometry)).not.toContain("今");
+  expect(geometry.markText, JSON.stringify(geometry)).toBe("");
+});
+
+test("UI-R11 calendar detail action is a compact trailing adapter action", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  const emptyDay = {
+    ...day,
+    tasks: [],
+    feedbackCount: 0,
+    feedbacks: [],
+    externalTrainingRecords: [],
+  };
+  await mockPrivateReads(
+    page,
+    0,
+    planAdvice,
+    evaluationAggregate,
+    trendsAggregate,
+    {
+      calendar: {
+        ...calendarAggregate,
+        days: [
+          {
+            date: localDate,
+            taskCount: 0,
+            completedCount: 0,
+            skippedCount: 0,
+            feedbackCount: 0,
+          },
+        ],
+      },
+      day: (date) => ({
+        ...dayAggregate,
+        targetDate: date,
+        day: { ...emptyDay },
+      }),
+    },
+  );
+  await page.goto(`/calendar?date=${localDate}`);
+  const action = page.getByRole("link", { name: "补充这一天" });
+  await expect(action).toBeVisible();
+  await expect(page.getByText("当天没有计划任务")).toBeVisible();
+
+  const contract = await page.evaluate(() => {
+    const heading = document.querySelector<HTMLElement>(
+      ".calendar-detail-heading",
+    );
+    const action = document.querySelector<HTMLElement>(
+      '[data-ak-calendar-action="assistant"]',
+    );
+    const legacyAction = document.querySelector<HTMLElement>(
+      ".date-detail-card .secondary-button",
+    );
+    const measuredAction = action ?? legacyAction;
+    const detailCard = document.querySelector<HTMLElement>(".date-detail-card");
+    const actionRect = measuredAction?.getBoundingClientRect();
+    const headingRect = heading?.getBoundingClientRect();
+    const cardRect = detailCard?.getBoundingClientRect();
+    const style = measuredAction ? getComputedStyle(measuredAction) : null;
+    return {
+      headingHasAction: Boolean(heading?.contains(action)),
+      adapterMarker: action?.dataset.akCalendarAction ?? "",
+      usesLegacySecondaryButton: Boolean(
+        legacyAction?.classList.contains("secondary-button"),
+      ),
+      fontSize: style?.fontSize ?? "",
+      lineHeight: style?.lineHeight ?? "",
+      height: actionRect?.height ?? 0,
+      paddingLeft: style ? Number.parseFloat(style.paddingLeft) : 0,
+      paddingRight: style ? Number.parseFloat(style.paddingRight) : 0,
+      width: actionRect?.width ?? 0,
+      actionTextFits: Boolean(
+        measuredAction &&
+        measuredAction.scrollWidth <= measuredAction.clientWidth + 1 &&
+        measuredAction.scrollHeight <= measuredAction.clientHeight + 1,
+      ),
+      actionInCard: Boolean(
+        actionRect &&
+        cardRect &&
+        actionRect.left >= cardRect.left - 0.5 &&
+        actionRect.right <= cardRect.right + 0.5 &&
+        actionRect.top >= cardRect.top - 0.5 &&
+        actionRect.bottom <= cardRect.bottom + 0.5,
+      ),
+      headingActionInsetAligned: Boolean(
+        actionRect &&
+        headingRect &&
+        cardRect &&
+        actionRect.right <= cardRect.right + 0.5 &&
+        actionRect.top >= headingRect.top - 0.5,
+      ),
+      detailOverviewCount: document.querySelectorAll(".calendar-day-overview")
+        .length,
+      topbarEyebrowCount: document.querySelectorAll(".calendar-topbar .eyebrow")
+        .length,
+      actionRect: actionRect
+        ? {
+            left: actionRect.left,
+            right: actionRect.right,
+            top: actionRect.top,
+            bottom: actionRect.bottom,
+          }
+        : null,
+      headingRect: headingRect
+        ? {
+            left: headingRect.left,
+            right: headingRect.right,
+            top: headingRect.top,
+            bottom: headingRect.bottom,
+          }
+        : null,
+    };
+  });
+  expect.soft(contract.headingHasAction, JSON.stringify(contract)).toBe(true);
+  expect
+    .soft(contract.adapterMarker, JSON.stringify(contract))
+    .toBe("assistant");
+  expect
+    .soft(contract.usesLegacySecondaryButton, JSON.stringify(contract))
+    .toBe(false);
+  expect
+    .soft(Number.parseFloat(contract.fontSize), JSON.stringify(contract))
+    .toBeGreaterThanOrEqual(15);
+  expect
+    .soft(Number.parseFloat(contract.fontSize), JSON.stringify(contract))
+    .toBeLessThanOrEqual(17);
+  expect
+    .soft(Number.parseFloat(contract.lineHeight), JSON.stringify(contract))
+    .toBeGreaterThanOrEqual(20);
+  expect
+    .soft(Number.parseFloat(contract.lineHeight), JSON.stringify(contract))
+    .toBeLessThanOrEqual(22);
+  expect
+    .soft(contract.height, JSON.stringify(contract))
+    .toBeGreaterThanOrEqual(44);
+  expect
+    .soft(contract.paddingLeft, JSON.stringify(contract))
+    .toBeGreaterThanOrEqual(10);
+  expect
+    .soft(contract.paddingLeft, JSON.stringify(contract))
+    .toBeLessThanOrEqual(14);
+  expect
+    .soft(contract.paddingRight, JSON.stringify(contract))
+    .toBeGreaterThanOrEqual(10);
+  expect
+    .soft(contract.paddingRight, JSON.stringify(contract))
+    .toBeLessThanOrEqual(14);
+  expect.soft(contract.width, JSON.stringify(contract)).toBeLessThan(320);
+  expect.soft(contract.actionTextFits, JSON.stringify(contract)).toBe(true);
+  expect.soft(contract.actionInCard, JSON.stringify(contract)).toBe(true);
+  expect
+    .soft(contract.headingActionInsetAligned, JSON.stringify(contract))
+    .toBe(true);
+  expect.soft(contract.detailOverviewCount, JSON.stringify(contract)).toBe(0);
+  expect.soft(contract.topbarEyebrowCount, JSON.stringify(contract)).toBe(0);
+});
+
+function calendarR11Reads() {
+  const r11DayFor = (date: string) => {
+    const dateDay = structuredClone(day);
+    if (date === localDate) {
+      dateDay.tasks = [];
+      dateDay.feedbackCount = 0;
+      dateDay.feedbacks = [];
+      dateDay.externalTrainingRecords = [];
+    } else if (date === historyRecordDate) {
+      dateDay.feedbackCount = 1;
+      dateDay.feedbacks = [anonymousFeedback("green")];
+    }
+    return {
+      ...dayAggregate,
+      targetDate: date,
+      day: dateDay,
+    };
+  };
+
+  return {
+    calendar: {
+      ...calendarAggregate,
+      days: [
+        {
+          date: localDate,
+          taskCount: 0,
+          completedCount: 0,
+          skippedCount: 0,
+          feedbackCount: 0,
+        },
+        {
+          date: historyRecordDate,
+          taskCount: 1,
+          completedCount: 1,
+          skippedCount: 0,
+          feedbackCount: 1,
+          localPendingCount: 1,
+        },
+        {
+          date: nextLocalDate,
+          taskCount: 1,
+          completedCount: 0,
+          skippedCount: 0,
+          feedbackCount: 0,
+        },
+      ],
+    },
+    day: r11DayFor,
+  } satisfies MockPrivateReadOptions;
+}
+
+function calendarR11DayButton(page: Page, date: string) {
+  return page.getByRole("button", {
+    name: new RegExp(`^${date}，`),
+  });
+}
+
+for (const width of [320, 375, 390, 393, 430]) {
+  test(`UI-R11 Calendar geometry and state contract holds at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await mockPrivateReads(
+      page,
+      0,
+      planAdvice,
+      evaluationAggregate,
+      trendsAggregate,
+      calendarR11Reads(),
+    );
+    await page.goto(`/calendar?date=${localDate}`);
+    await expect(page.getByText("当天没有计划任务")).toBeVisible();
+
+    const beforeSelection = await page.evaluate(() => {
+      const today = document.querySelector<HTMLElement>(`.calendar-day.today`);
+      const number = today?.querySelector<HTMLElement>(".calendar-date-number");
+      const buttonRect = today?.getBoundingClientRect();
+      const numberRect = number?.getBoundingClientRect();
+      const action = document.querySelector<HTMLElement>(
+        '[data-ak-calendar-action="assistant"]',
+      );
+      const detailCard =
+        document.querySelector<HTMLElement>(".date-detail-card");
+      const heading = document.querySelector<HTMLElement>(
+        ".calendar-detail-heading",
+      );
+      const actionRect = action?.getBoundingClientRect();
+      const cardRect = detailCard?.getBoundingClientRect();
+      const headingRect = heading?.getBoundingClientRect();
+      const actionStyle = action ? getComputedStyle(action) : null;
+      const bottomNav = document.querySelector<HTMLElement>(
+        'nav[aria-label="主导航"]',
+      );
+      return {
+        viewportWidth: window.innerWidth,
+        rootScrollWidth: document.documentElement.scrollWidth,
+        numberCenterDelta:
+          buttonRect && numberRect
+            ? Math.abs(
+                numberRect.left +
+                  numberRect.width / 2 -
+                  (buttonRect.left + buttonRect.width / 2),
+              )
+            : Number.POSITIVE_INFINITY,
+        dayHeights: [
+          ...document.querySelectorAll<HTMLElement>(
+            ".calendar-day:not(.empty)",
+          ),
+        ].map((dayButton) => dayButton.getBoundingClientRect().height),
+        action: {
+          fontSize: actionStyle?.fontSize ?? "",
+          lineHeight: actionStyle?.lineHeight ?? "",
+          height: actionRect?.height ?? 0,
+          paddingLeft: actionStyle
+            ? Number.parseFloat(actionStyle.paddingLeft)
+            : 0,
+          paddingRight: actionStyle
+            ? Number.parseFloat(actionStyle.paddingRight)
+            : 0,
+          width: actionRect?.width ?? 0,
+          textFits: Boolean(
+            action &&
+            action.scrollWidth <= action.clientWidth + 1 &&
+            action.scrollHeight <= action.clientHeight + 1,
+          ),
+          withinCard: Boolean(
+            actionRect &&
+            cardRect &&
+            actionRect.left >= cardRect.left - 0.5 &&
+            actionRect.right <= cardRect.right + 0.5 &&
+            actionRect.top >= cardRect.top - 0.5 &&
+            actionRect.bottom <= cardRect.bottom + 0.5,
+          ),
+          withinHeading: Boolean(
+            actionRect &&
+            headingRect &&
+            actionRect.top >= headingRect.top - 0.5 &&
+            actionRect.bottom <= headingRect.bottom + 0.5,
+          ),
+        },
+        bottomNavTop: bottomNav?.getBoundingClientRect().top ?? null,
+      };
+    });
+
+    expect(beforeSelection.rootScrollWidth).toBeLessThanOrEqual(
+      beforeSelection.viewportWidth,
+    );
+    expect(beforeSelection.numberCenterDelta).toBeLessThanOrEqual(1);
+    expect(beforeSelection.dayHeights.every((height) => height >= 44)).toBe(
+      true,
+    );
+    expect(
+      Number.parseFloat(beforeSelection.action.fontSize),
+    ).toBeGreaterThanOrEqual(15);
+    expect(
+      Number.parseFloat(beforeSelection.action.fontSize),
+    ).toBeLessThanOrEqual(17);
+    expect(
+      Number.parseFloat(beforeSelection.action.lineHeight),
+    ).toBeGreaterThanOrEqual(20);
+    expect(
+      Number.parseFloat(beforeSelection.action.lineHeight),
+    ).toBeLessThanOrEqual(22);
+    expect(beforeSelection.action.height).toBeGreaterThanOrEqual(44);
+    expect(beforeSelection.action.paddingLeft).toBeGreaterThanOrEqual(10);
+    expect(beforeSelection.action.paddingLeft).toBeLessThanOrEqual(14);
+    expect(beforeSelection.action.paddingRight).toBeGreaterThanOrEqual(10);
+    expect(beforeSelection.action.paddingRight).toBeLessThanOrEqual(14);
+    expect(beforeSelection.action.width).toBeLessThan(width);
+    expect(beforeSelection.action.textFits).toBe(true);
+    expect(beforeSelection.action.withinCard).toBe(true);
+    expect(beforeSelection.action.withinHeading).toBe(true);
+
+    const todayButton = calendarR11DayButton(page, localDate);
+    const historyButton = calendarR11DayButton(page, historyRecordDate);
+    const futureButton = calendarR11DayButton(page, nextLocalDate);
+    await expect(todayButton).toHaveAttribute("aria-current", "date");
+    await expect(todayButton).toHaveAttribute("aria-pressed", "true");
+    await expect(futureButton).not.toHaveAttribute("aria-current", "date");
+
+    await historyButton.click();
+    await expect(page.getByText("历史记录")).toBeVisible();
+    await expect(todayButton).toHaveAttribute("aria-current", "date");
+    await expect(todayButton).toHaveAttribute("aria-pressed", "false");
+    await expect(historyButton).toHaveAttribute("aria-pressed", "true");
+    const afterHistory = await page.evaluate(() => {
+      const today = document.querySelector<HTMLElement>(".calendar-day.today");
+      const number = today?.querySelector<HTMLElement>(".calendar-date-number");
+      const buttonRect = today?.getBoundingClientRect();
+      const numberRect = number?.getBoundingClientRect();
+      return buttonRect && numberRect
+        ? Math.abs(
+            numberRect.left +
+              numberRect.width / 2 -
+              (buttonRect.left + buttonRect.width / 2),
+          )
+        : Number.POSITIVE_INFINITY;
+    });
+    expect(afterHistory).toBeLessThanOrEqual(1);
+
+    await futureButton.click();
+    await expect(page.getByText("未来日期不能补充反馈")).toBeVisible();
+    await expect(page.getByRole("link", { name: "补充这一天" })).toHaveCount(0);
+    await expect(todayButton).toHaveAttribute("aria-current", "date");
+    await expect(futureButton).toHaveAttribute("aria-pressed", "true");
+
+    const bottomNav = await page.evaluate(() => {
+      const navigation = document.querySelector<HTMLElement>(
+        'nav[aria-label="主导航"]',
+      );
+      const controls = [
+        ...document.querySelectorAll<HTMLElement>(
+          ".calendar-shell button, .calendar-shell a[href], .calendar-shell summary",
+        ),
+      ];
+      const last = controls.at(-1);
+      last?.scrollIntoView({ block: "end" });
+      return {
+        lastControlBottom: last?.getBoundingClientRect().bottom ?? null,
+        navigationTop: navigation?.getBoundingClientRect().top ?? null,
+      };
+    });
+    expect(
+      bottomNav.lastControlBottom === null ||
+        bottomNav.navigationTop === null ||
+        bottomNav.lastControlBottom <= bottomNav.navigationTop + 0.5,
+    ).toBe(true);
+  });
+}
+
+test("UI-R11 captures anonymous Calendar state evidence", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockPrivateReads(
+    page,
+    0,
+    planAdvice,
+    evaluationAggregate,
+    trendsAggregate,
+    calendarR11Reads(),
+  );
+  await page.goto(`/calendar?date=${localDate}`);
+  await expect(page.getByText("当天没有计划任务")).toBeVisible();
+  await page.screenshot({
+    path: "/private/tmp/ak22ak-ui-r11-calendar-today-selected-390x844.png",
+    fullPage: false,
+  });
+
+  await calendarR11DayButton(page, historyRecordDate).click();
+  await expect(page.getByText("历史记录")).toBeVisible();
+  await expect(page.getByText("1 次反馈")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "外部活动与训练记录" }),
+  ).toBeVisible();
+  await page.screenshot({
+    path: "/private/tmp/ak22ak-ui-r11-calendar-history-rich-390x844.png",
+    fullPage: false,
+  });
+
+  await calendarR11DayButton(page, nextLocalDate).click();
+  await expect(page.getByText("未来日期不能补充反馈")).toBeVisible();
+  await page.screenshot({
+    path: "/private/tmp/ak22ak-ui-r11-calendar-future-selected-390x844.png",
+    fullPage: false,
+  });
+
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.goto(`/calendar?date=${localDate}`);
+  await expect(page.getByText("当天没有计划任务")).toBeVisible();
+  await page.screenshot({
+    path: "/private/tmp/ak22ak-ui-r11-calendar-today-selected-320x844.png",
+    fullPage: false,
+  });
+});
+
+test("UI-R11 Calendar action keeps read-only route history without assistant writes", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockPrivateReads(
+    page,
+    0,
+    planAdvice,
+    evaluationAggregate,
+    trendsAggregate,
+    calendarR11Reads(),
+  );
+  let mutatingRequests = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("/api/") && request.method() !== "GET") {
+      mutatingRequests += 1;
+    }
+  });
+
+  await page.goto(`/calendar?date=${localDate}`);
+  await expect(page.getByText("当天没有计划任务")).toBeVisible();
+  const action = page.getByRole("link", { name: "补充这一天" });
+  await expect(action).toHaveAttribute(
+    "href",
+    `/plan/conversation?date=${localDate}`,
+  );
+  await action.click();
+  await expect(page).toHaveURL(`/plan/conversation?date=${localDate}`);
+  await expect(page.getByRole("heading", { name: "康复助手" })).toBeVisible();
+  expect(mutatingRequests).toBe(0);
+
+  await page.goBack();
+  await expect(
+    page.getByRole("button", {
+      name: new RegExp(`^${localDate}，已选中`),
+    }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expectActiveTab(page, "/calendar", "/calendar", `?date=${localDate}`);
 });
 
 for (const safetyLevel of ["yellow", "red"] as const) {

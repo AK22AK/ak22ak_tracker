@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AkActionRow,
   AkCard,
+  AkCalendarActionLink,
   AkCompactActionCard,
   AkInsetList,
   AkKonstaProvider,
@@ -41,6 +42,25 @@ describe("UI-R9 Konsta compatibility adapter", () => {
     expect(action.getAttribute("href")).toBe("/feedback");
     expect(action.getAttribute("data-ak-action-variant")).toBe("tonal");
     expect(action.getAttribute("data-ak-compact-action")).toBe("true");
+  });
+
+  it("keeps Calendar actions in their own semantic adapter namespace", () => {
+    render(
+      <AkKonstaProvider>
+        <AkCalendarActionLink
+          href="/plan/conversation?date=2026-07-19"
+          label="补充这一天"
+        />
+      </AkKonstaProvider>,
+    );
+
+    const action = screen.getByRole("link", { name: "补充这一天" });
+    expect(action.getAttribute("data-ak-calendar-action")).toBe("assistant");
+    expect(action.getAttribute("data-ak-today-action")).toBeNull();
+    expect(action.getAttribute("data-ak-action-variant")).toBe("tonal");
+    expect(action.getAttribute("href")).toBe(
+      "/plan/conversation?date=2026-07-19",
+    );
   });
 
   it("exposes the Today primitives through stable AK semantics", () => {

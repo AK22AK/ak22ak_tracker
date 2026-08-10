@@ -107,6 +107,20 @@ describe("calendar visual semantics", () => {
     expect(screen.queryByRole("button", { name: "退出" })).toBeNull();
   });
 
+  it("keeps today semantic state separate from the date number layout", () => {
+    renderCalendarShell("2026-07-19");
+
+    const today = screen.getByRole("button", {
+      name: /2026-07-19.*今天/,
+    });
+    expect(today.getAttribute("aria-current")).toBe("date");
+    expect(today.querySelector(".calendar-date-number")?.textContent).toBe(
+      "19",
+    );
+    expect(today.querySelector(".calendar-today-mark")).toBeNull();
+    expect(screen.queryByText("今")).toBeNull();
+  });
+
   it("describes today, selection, future plans and historical outcomes without relying on color", () => {
     renderCalendarShell();
 
@@ -138,6 +152,11 @@ describe("calendar visual semantics", () => {
     expect(
       screen.getByRole("link", { name: "补充这一天" }).getAttribute("href"),
     ).toBe("/plan/conversation?date=2026-07-18");
+    expect(
+      screen
+        .getByRole("link", { name: "补充这一天" })
+        .getAttribute("data-ak-calendar-action"),
+    ).toBe("assistant");
     expect(
       screen.getByRole("link", { name: "补充这项训练" }).getAttribute("href"),
     ).toContain(`task=${dashboard.tasks[0].id}`);
@@ -249,10 +268,7 @@ describe("calendar visual semantics", () => {
     });
 
     expect(screen.getByText("当天没有计划任务")).toBeTruthy();
-    expect(screen.getByLabelText("当天概览").textContent).toContain("0 项任务");
-    expect(screen.getByLabelText("当天概览").textContent).not.toContain(
-      "条来源",
-    );
+    expect(screen.queryByLabelText("当天概览")).toBeNull();
     expect(screen.queryByText("计划 v1")).toBeNull();
   });
 
