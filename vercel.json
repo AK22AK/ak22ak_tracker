@@ -1,18 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "regions": ["sin1"],
-  "crons": [
-    {
-      "path": "/api/cron/github-mirror",
-      "schedule": "0 19 * * *"
-    },
-    {
-      "path": "/api/cron/garmin-activity",
-      "schedule": "0 20 * * *"
-    },
-    {
-      "path": "/api/cron/xunji-training",
-      "schedule": "0 20 * * *"
-    }
-  ]
+  "regions": ["sin1"]
 }
